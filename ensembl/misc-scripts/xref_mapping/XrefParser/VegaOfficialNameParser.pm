@@ -23,33 +23,20 @@ sub run_script {
 
   my ($type, $my_args) = split(/:/,$file);
 
-  my $host;
+  my ($host, $source_name);
   if($my_args =~ /host[=][>](\S+?)[,]/){
     $host = $1;
+  }
+  if ($my_args =~ /source[=][>](\S+?)[,]/) {
+    $source_name = $1;
   }
 
   my %id2name = $self->species_id2name;
   my $species_name = $id2name{$species_id}[0];
 
-  my $source_name;
   my $prepend = 1;
-
-
-  if($species_name eq "homo_sapiens" ){
-    $source_name = "HGNC";
-    $host = "ens-staging1";
-  }
-  elsif($species_name eq "mus_musculus" ){
-    $source_name = "MGI";
+  if($species_name eq "mus_musculus" ){
     $prepend = 0;
-    $host = "ens-staging2";
-  }
-  elsif($species_name eq "danio_rerio" ){
-    $source_name = "ZFIN_ID";
-    $host = "ens-staging1";
-  }
-  else{
-    die "Species is $species_name and is not homo_sapines, mus_musculus or danio_rerio the only three valid species\n";
   }
 
   my $user = 'ensro';
@@ -57,9 +44,9 @@ sub run_script {
     $user = $1;
   }
 
-  my $vuser;
+  my $vuser = 'ensro';
   my $vhost;
-  my $vport;
+  my $vport = 3306;
   my $vdbname;
   my $vpass;
 
@@ -79,9 +66,9 @@ sub run_script {
     $vpass = $1;
   }
 
-  my $cuser;
+  my $cuser = 'ensro';
   my $chost;
-  my $cport;
+  my $cport = 3306;
   my $cdbname;
   my $cpass;
 
@@ -117,20 +104,7 @@ sub run_script {
       print "Problem could not open connectipn to $vhost, $vport, $vuser, $vdbname, $vpass\n";
       return 1;
     }
-    my $core_db =  XrefParser::Database->new({ host   => $chost,
-					       port   => $cport,
-					       user   => $cuser,
-					       dbname => $cdbname,
-					       pass   => $cpass});
-
-    $core_dbc = $core_db->dbi();
-    if(!defined($core_dbc)){
-      print "Problem could not open connectipn to $chost, $cport, $cuser, $cdbname, $cpass\n";
-      return 1;
-    }
-
-  }
-  else{
+  } else{
     $reg->load_registry_from_db(
                                 -host => $host,
                                 -user => $user);
@@ -141,6 +115,25 @@ sub run_script {
       return 1;
     }
     $vega_dbc = $vega_dbc->dbc;
+ }
+ if (defined $cdbname) {
+    my $core_db =  XrefParser::Database->new({ host   => $chost,
+                                               port   => $cport,
+                                               user   => $cuser,
+                                               dbname => $cdbname,
+                                               pass   => $cpass});
+
+    $core_dbc = $core_db->dbi();
+    if(!defined($core_dbc)){
+      print "Problem could not open connectipn to $chost, $cport, $cuser, $cdbname, $cpass\n";
+      return 1;
+    }
+
+  } else {
+    $reg->load_registry_from_db(
+                                -host => $host,
+                                -user => $user);
+
     $core_dbc = $reg->get_adaptor($species_name,"core","slice");
     if(!defined($core_dbc)){
       print "Could not connect to $species_name core database using load_registry_from_db $host $user\n";
@@ -248,8 +241,8 @@ EXT
   }
   $sth->finish;
   if($ext_loaded_count == 0){
-    warn "No point continuing no external references there\n";
-    return 1;
+    warn "No point continuing, no external references there\n";
+    return 0;
   }
 
   my $ignore_count = 0;
@@ -310,7 +303,7 @@ EXT
 
   print "Parsed $line_count $source_name identifiers from $file, added $xref_count xrefs and $line_count direct_xrefs\n" if($verbose);
   if($ignore_count){
-    print $ignore_count." ignoreed due to numbers no identifiers being no longer valid :- $ignore_examples\n" if($verbose);
+    print $ignore_count." ignored due to numbers no identifiers being no longer valid :- $ignore_examples\n" if($verbose);
   }
   
   if ($at_least_1_xref_loaded == 0) {    

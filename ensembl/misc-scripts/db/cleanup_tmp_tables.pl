@@ -49,10 +49,6 @@ table. This means any table which contains
 
 =over 8
 
-=item tmp
-
-=item temp
-
 =item bak
 
 =item backup
@@ -70,7 +66,7 @@ Please see http://www.ensembl.org/code_licence.html for details
 
 =head1 AUTHOR
 
-Patrick Meidl <meidl@ebi.ac.uk>, Ensembl core API team
+Ensembl core API team
 
 =head1 CONTACT
 
@@ -123,18 +119,18 @@ $support->check_required_params;
 my @databases;
 
 # connect to database
-my $dbh = $support->get_dbconnection('');
-
-if($support->param('dbname') =~ /%/) {
-  my $ref = $dbh->selectall_arrayref('show databases like ?', {}, $support->param('dbname'));
+my $dbh;
+my $original_dbname = $support->param('dbname'); 
+if($original_dbname =~ /%/) {
+  $support->param('dbname', q{});
+  $dbh = $support->get_dbconnection('');
+  my $ref = $dbh->selectall_arrayref('show databases like ?', {}, $original_dbname);
   push(@databases, map {$_->[0]} @{$ref})
 }
 else {
-  push(@databases, $support->param('dbname'));
+  $dbh = $support->get_dbconnection('');
+  push(@databases, $original_dbname);
 }
-
-# find all backup tables
-my @tables;
 
 my @patterns = map { '%\\_'.$_.'%' } qw/bak backup/;
 if($support->param('mart')) {
@@ -144,20 +140,23 @@ if($support->param('mart')) {
 }
 
 foreach my $db (@databases) {
-  $support->log('Switching to '.$db);
+  my %tables;
+  $support->log('Switching to '.$db."\n");
   $dbh->do('use '.$db);
   foreach my $pattern (@patterns) {
     my $ref = $dbh->selectall_arrayref('show tables like ?', {}, $pattern);
-    push(@tables, map {$_->[0]} @{$ref});
+    $tables{$_->[0]} = 1 for @{$ref};
   }
   
-  @tables = sort @tables;
+  my @tables = sort keys %tables;
   
   if ($support->param('dry_run')) {
     # for a dry run, only show which databases would be deleted
-    $support->log("Temporary and backup tables found:\n");
-    foreach my $table (@tables) {
-      $support->log("$table\n", 1);
+    if(scalar(@tables) > 0) {
+      $support->log("Temporary and backup tables found:\n");
+      foreach my $table (@tables) {
+        $support->log("$table\n", 1);
+      }
     }
   
   } else {

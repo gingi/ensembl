@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -71,7 +71,7 @@ use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 use Bio::EnsEMBL::Utils::Argument  qw(rearrange);
 use Bio::EnsEMBL::Utils::Scalar qw(assert_ref);
 use Bio::EnsEMBL::Slice;
-use Bio::EnsEMBL::Variation::Utils::Constants qw(%VARIATION_CLASSES);
+use Bio::EnsEMBL::Variation::Utils::Constants qw($DEFAULT_OVERLAP_CONSEQUENCE %VARIATION_CLASSES); 
 use Bio::EnsEMBL::Variation::Utils::VariationEffect qw(MAX_DISTANCE_FROM_TRANSCRIPT);
 use Bio::EnsEMBL::Variation::StructuralVariationOverlap;
 use Bio::EnsEMBL::Variation::TranscriptStructuralVariation;
@@ -146,7 +146,7 @@ our @ISA = ('Bio::EnsEMBL::Variation::BaseVariationFeature');
   Returntype : Bio::EnsEMBL::Variation::StructuralVariationFeature
   Exceptions : none
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -217,7 +217,7 @@ sub new_fast {
   Returntype : string
   Exceptions : none
   Caller     : webcode
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -325,7 +325,7 @@ sub structural_variation {
     ReturnType  : reference to list of Bio::EnsEMBL::Variation::VariationSets
     Exceptions  : if no adaptor is attached to this object
     Caller      : general
-    Status      : At Risk
+    Status      : Stable
 =cut
 
 sub get_all_VariationSets {
@@ -651,8 +651,48 @@ sub add_TranscriptStructuralVariation {
   my ($self, $tsv) = @_;
   assert_ref($tsv, 'Bio::EnsEMBL::Variation::TranscriptStructuralVariation');
   # we need to weaken the reference back to us to avoid a circular reference
-  weaken($tsv->{base_variation_feature});
+  weaken($tsv->{base_variation_feature}) unless isweak($tsv->{base_variation_feature});
   $self->{transcript_structural_variations}->{$tsv->transcript_stable_id} = $tsv;
+}
+
+
+=head2 get_all_OverlapConsequences
+
+  Description: Get a list of all the unique OverlapConsequences of this StructuralVariationFeature, 
+               calculating them on the fly from the StructuralTranscriptVariations if necessary
+  Returntype : listref of Bio::EnsEMBL::Variation::OverlapConsequence objects
+  Exceptions : none
+  Status     : Stable
+
+=cut
+
+sub get_all_OverlapConsequences {
+    my $self = shift;
+
+    unless ($self->{overlap_consequences}) {
+        
+        # work them out and store them in a hash keyed by SO_term as we don't 
+        # want duplicates from different VFOs
+
+        my %overlap_cons;
+
+        for my $vfo (@{ $self->get_all_TranscriptStructuralVariations }) {
+            for my $allele (@{ $vfo->get_all_alternate_TranscriptStructuralVariationAlleles }) {
+                for my $cons (@{ $allele->get_all_OverlapConsequences }) {
+                    $overlap_cons{$cons->SO_term} = $cons;
+                }
+            }
+        }
+
+        # if we don't have any consequences we use a default from Constants.pm 
+        # (currently set to the intergenic consequence)
+
+        $self->{overlap_consequences} = [ 
+            %overlap_cons ? values %overlap_cons : $DEFAULT_OVERLAP_CONSEQUENCE
+        ];
+    }
+
+    return $self->{overlap_consequences};
 }
 
 
@@ -664,7 +704,7 @@ sub add_TranscriptStructuralVariation {
     ReturnType   : String
     Exceptions   : none
     Caller       : General
-    Status       : At Risk
+    Status       : Stable
 
 =cut
 
@@ -691,7 +731,7 @@ sub var_class {
     ReturnType   : String
     Exceptions   : none
     Caller       : General
-    Status       : At Risk
+    Status       : Stable
 
 =cut
 
@@ -711,7 +751,7 @@ sub class_SO_term {
   Returntype : string
   Exceptions : none
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -748,7 +788,7 @@ sub source_version {
     ReturnType  : int
     Exceptions  : none
     Caller      : general
-    Status      : At risk
+    Status      : Stable
 =cut
 
 sub bound_start{
@@ -766,7 +806,7 @@ sub bound_start{
     ReturnType  : int
     Exceptions  : none
     Caller      : general
-    Status      : At risk
+    Status      : Stable
 =cut
 
 sub bound_end{
@@ -785,7 +825,7 @@ sub bound_end{
     ReturnType  : int
     Exceptions  : none
     Caller      : general
-    Status      : At risk
+    Status      : Stable
 =cut
 
 sub outer_start{
@@ -804,7 +844,7 @@ sub outer_start{
     ReturnType  : int
     Exceptions  : none
     Caller      : general
-    Status      : At risk
+    Status      : Stable
 =cut
 
 sub outer_end{

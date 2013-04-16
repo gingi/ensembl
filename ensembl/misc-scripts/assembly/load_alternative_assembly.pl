@@ -82,22 +82,17 @@ use strict;
 use warnings;
 no warnings 'uninitialized';
 
-use FindBin qw($Bin);
-use vars qw($SERVERROOT);
-
-BEGIN {
-    $SERVERROOT = "$Bin/../../..";
-    unshift(@INC, "$SERVERROOT/ensembl/modules");
-    unshift(@INC, "$SERVERROOT/bioperl-live");
-}
-
 use Getopt::Long;
 use Pod::Usage;
 use Bio::EnsEMBL::Utils::ConversionSupport;
+use Cwd;
+
 
 $| = 1;
 
-my $support = new Bio::EnsEMBL::Utils::ConversionSupport($SERVERROOT);
+my $path = getcwd;
+
+my $support = new Bio::EnsEMBL::Utils::ConversionSupport($path);
 
 # parse options
 $support->parse_common_options(@_);
@@ -165,7 +160,9 @@ $support->log_stamped("Creating table backups...\n");
 $support->log_stamped("seq_region...\n", 1);
 $dbh->{'ref'}->do('CREATE TABLE seq_region_bak LIKE seq_region');
 $dbh->{'ref'}->do('INSERT INTO seq_region_bak SELECT * FROM seq_region');
-
+$support->log_stamped("seq_region_attrib...\n", 1);
+$dbh->{'ref'}->do('CREATE TABLE seq_region_attrib_bak LIKE seq_region_attrib');
+$dbh->{'ref'}->do('INSERT INTO seq_region_attrib_bak SELECT * FROM seq_region_attrib');
 $support->log_stamped("assembly...\n", 1);
 $dbh->{'ref'}->do('CREATE TABLE assembly_bak LIKE assembly');
 $dbh->{'ref'}->do('INSERT INTO assembly_bak SELECT * FROM assembly');
@@ -264,6 +261,28 @@ $sql = qq(
 );
 my $c = $dbh->{'alt'}->do($sql);
 $support->log_stamped("Done loading $c seq_regions.\n\n");
+
+## Add in any codon table attributes as HCs complain otherwise
+$sql = qq(
+    INSERT IGNORE INTO $ref_db.seq_region_attrib
+    SELECT
+        sr.seq_region_id+$sri_adjust,
+        codon_at.attrib_type_id,
+        codon_sra.value
+    FROM seq_region sr, coord_system cs, seq_region_attrib sra, attrib_type at, seq_region_attrib codon_sra, attrib_type codon_at
+    WHERE sr.coord_system_id = cs.coord_system_id
+    AND sr.seq_region_id = sra.seq_region_id
+    AND sra.attrib_type_id = at.attrib_type_id
+    AND sr.seq_region_id = codon_sra.seq_region_id
+    AND codon_sra.attrib_type_id = codon_at.attrib_type_id
+    AND at.code = 'toplevel'
+    AND cs.name IN ($cs_string)
+    AND cs.version = '$alt_assembly'
+    AND codon_at.code = 'codon_table';
+);
+$c = 0;
+$c = $dbh->{'alt'}->do($sql);
+$support->log_stamped("Done loading $c seq_region codon_table attributes.\n\n");
 
 #####
 # add appropriate entries to coord_system

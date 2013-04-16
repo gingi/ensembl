@@ -121,10 +121,10 @@ sub fetch_input {
 
       #decide whether to use GenomicAlignTree object or species tree.
       my $mlss = $gab->method_link_species_set;
-      my $method_link_class = $mlss->method->class;
+      my $method_class = $mlss->method->class;
 
       my $tree_string;
-      if ($method_link_class =~ /GenomicAlignTree/) {
+      if ($method_class =~ /GenomicAlignTree/) {
 	  #use GenomicAlignTree 
 	  my $gata = $self->compara_dba->get_GenomicAlignTreeAdaptor;
 	  my $gat = $gata->fetch_by_GenomicAlignBlock($gab);
@@ -822,7 +822,7 @@ sub _build_tree_string {
     
     $tree = $self->_update_tree($tree, $genomic_aligns);
     
-    my $tree_string = $tree->newick_simple_format;
+    my $tree_string = $tree->newick_format('simple');
 
     # Remove quotes around node labels
     $tree_string =~ s/"(_\d+_)"/$1/g;

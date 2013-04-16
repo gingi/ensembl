@@ -144,7 +144,16 @@ foreach my $slice (@$slices) {
         
         my $old_canonical = $gene->canonical_transcript;
         
-        if ($new_canonical->dbID != $old_canonical->dbID) {
+        if (! defined($old_canonical)) {
+            # Original canonical transcript is now absent, or never set.
+            if ($log_fh) {
+                print $log_fh "//\n";
+                print $log_fh "Old=[undef,undef,undef,undef,undef,undef,undef]\n";
+                printf $log_fh "New=[%s,%s,%s,%s,%s,%s,'%s']\n", @{ $transcript_selector->encode_transcript($new_canonical) };
+            }
+            push @change_list,[$gene->dbID,$new_canonical->dbID];
+            $canonical_changes++;
+        } elsif ($new_canonical->dbID != $old_canonical->dbID) {
             no warnings 'uninitialized';
             printf "%s (%s) changed transcript from %s (%s) to %s (%s)\n",
                 $gene->stable_id,$gene->dbID,$old_canonical->stable_id,$old_canonical->dbID,
@@ -166,6 +175,7 @@ foreach my $slice (@$slices) {
                 printf $log_fh "New=[%s,%s,%s,%s,%s,%s,'%s']\n", @{ $transcript_selector->encode_transcript($new_canonical) };
             }
         }
+        
     }
 }
 

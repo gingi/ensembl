@@ -92,8 +92,8 @@ sub new {
 
     if (scalar @args) {
         #do this explicitly.
-        my ($dbid, $stable_id, $version, $method_link_species_set_id, $description, $adaptor)
-            = rearrange([qw(DBID STABLE_ID VERSION METHOD_LINK_SPECIES_SET_ID DESCRIPTION ADAPTOR)], @args);
+        my ($dbid, $stable_id, $version, $method_link_species_set_id, $description, $adaptor, $members)
+            = rearrange([qw(DBID STABLE_ID VERSION METHOD_LINK_SPECIES_SET_ID DESCRIPTION ADAPTOR MEMBERS)], @args);
 
         $dbid && $self->dbID($dbid);
         $stable_id && $self->stable_id($stable_id);
@@ -101,6 +101,12 @@ sub new {
         $description && $self->description($description);
         $method_link_species_set_id && $self->method_link_species_set_id($method_link_species_set_id);
         $adaptor && $self->adaptor($adaptor);
+        if ($members) {
+            $self->clear;
+            foreach my $member (@$members) {
+                $self->add_Member($member);
+            }
+        }
     }
 
     return $self;
@@ -320,6 +326,18 @@ sub member_class {
     return 'Bio::EnsEMBL::Compara::Member';
 }
 
+=head2 _attr_to_copy_list
+
+  Description: Returns the list of all the attributes to be copied by deep_copy()
+  Returntype : Array of String
+  Caller     : deep_copy()
+  Status     : Stable
+
+=cut
+
+sub _attr_to_copy_list {
+    return qw(_dbID _adaptor _version _stable_id _description _method_link_species_set_id);
+}
 
 =head2 deep_copy
 
@@ -335,7 +353,7 @@ sub deep_copy {
     my $copy = {};
     bless $copy, ref($self);
 
-    foreach my $attr (qw(_dbID _adaptor _version _stable_id _description _method_link_species_set_id)) {
+    foreach my $attr ($self->_attr_to_copy_list) {
         $copy->{$attr} = $self->{$attr};
     }
 
@@ -433,6 +451,7 @@ sub get_all_Members {
   
     unless (defined $self->{'_member_array'}) {
 
+        return [] unless $self->adaptor;
         $self->clear;
         my $am_adaptor = $self->adaptor->db->get_MemberAdaptor();
         my $members = $am_adaptor->fetch_all_by_MemberSet($self);
@@ -502,6 +521,38 @@ sub gene_list {  # DEPRECATED
 sub get_all_Member_Attribute {  # DEPRECATED
     my $self = shift;
     return $self->_tranform_array_to_Member_Attributes($self->get_all_Members);
+}
+
+
+sub print_sequences_to_fasta {
+    my ($self, $pep_file, $subset_header) = @_;
+    my $pep_counter = 0;
+    open PEP, ">$pep_file";
+    foreach my $member (@{$self->get_all_Members}) {
+        next if $member->source_name eq 'ENSEMBLGENE';
+        my $member_stable_id = $member->stable_id;
+        my $member_id = $member->member_id;
+        my $seq = $member->sequence;
+
+        if ($subset_header) {
+            my $source_name = $member->source_name;
+            my $genome_db_id = $member->genome_db_id || 0;
+            my $description = $member->description;
+            print PEP ">$source_name:$member_stable_id IDs:$genome_db_id:$member_id $description\n";
+        } else {
+            print PEP ">$member_id\n";
+        }
+        $seq =~ s/(.{72})/$1\n/g;
+        chomp $seq;
+        unless (defined($seq)) {
+            my $set_id = $self->dbID;
+            die "member $member_stable_id in MemberSet $set_id doesn't have a sequence";
+        }
+        print PEP $seq,"\n";
+        $pep_counter++;
+    }
+    close PEP;
+    return $pep_counter;
 }
 
 

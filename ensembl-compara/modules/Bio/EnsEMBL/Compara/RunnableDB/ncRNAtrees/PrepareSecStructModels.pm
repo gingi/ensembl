@@ -33,7 +33,6 @@ my $ncsecstructtree = Bio::EnsEMBL::Compara::RunnableDB::ncRNAtrees::PrepareSecM
   );
 $ncsecstructtree->fetch_input(); #reads from DB
 $ncsecstructtree->run();
-$ncsecstructtree->output();
 $ncsecstructtree->write_output(); #writes to DB
 
 =head1 DESCRIPTION
@@ -61,7 +60,7 @@ use strict;
 use Time::HiRes qw(time);
 use Bio::EnsEMBL::Compara::Graph::NewickParser;
 
-use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
+use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable', 'Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::StoreTree');
 
 sub param_defaults {
     return {
@@ -183,7 +182,7 @@ sub _run_bootstrap_raxml {
   die "Cannot execute '$raxml_exe'" unless(-x $raxml_exe);
 
   my $bootstrap_num = 10;
-  my $tag = 'ml_IT_' . $bootstrap_num;
+  my $tag = 'ml_it_' . $bootstrap_num;
 
   # Checks if the bootstrap tree is already in the DB (is this a rerun?)
   if ($self->param('nc_tree')->has_tag($tag)) {
@@ -319,17 +318,10 @@ sub _store_newick_into_nc_tree_tag_string {
   my $tag = shift;
   my $newick_file = shift;
 
-  my $newick = '';
   print("load from file $newick_file\n") if($self->debug);
-  open (FH, $newick_file) or $self->throw("Couldnt open newick file [$newick_file]");
-  while(<FH>) {
-    chomp $_;
-    $newick .= $_;
-  }
-  close(FH);
-  $newick =~ s/(\d+\.\d{4})\d+/$1/g; # We round up to only 4 digits
+  my $newick = $self->_slurp($newick_file);
 
-  $self->param('nc_tree')->store_tag($tag, $newick);
+  $self->store_alternative_tree($newick, $tag, $self->param('nc_tree'));
   if (defined($self->param('model'))) {
     my $bootstrap_tag = $self->param('model') . "_bootstrap_num";
     $self->param('nc_tree')->store_tag($bootstrap_tag, $self->param('bootstrap_num'));

@@ -91,7 +91,7 @@ sub new_fast {
   Description: Get/set the associated TranscriptVariation
   Returntype : Bio::EnsEMBL::Variation::TranscriptVariation
   Exceptions : throws if the argument is the wrong type
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -106,7 +106,7 @@ sub transcript_variation {
   Description: Get the associated VariationFeature
   Returntype : Bio::EnsEMBL::Variation::VariationFeature
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -122,7 +122,7 @@ sub variation_feature {
                allele does not change the peptide (e.g. because it is synonymous)
   Returntype : string or undef if this allele is not in the CDS
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -146,7 +146,7 @@ sub pep_allele_string {
                codon resulting from this allele 
   Returntype : string or undef if this allele is not in the CDS
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -170,7 +170,7 @@ sub codon_allele_string {
                nucleotides in lower case
   Returntype : string or undef if this allele is not in the CDS
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -193,7 +193,7 @@ sub display_codon_allele_string {
   Description: Return the amino acid sequence that this allele is predicted to result in
   Returntype : string or undef if this allele is not in the CDS or is a frameshift
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -252,7 +252,7 @@ sub peptide {
   Description: Return the codon sequence that this allele is predicted to result in
   Returntype : string or undef if this allele is not in the CDS or is a frameshift
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -321,7 +321,7 @@ sub codon {
                nucleotides in lower case
   Returntype : string or undef if this allele is not in the CDS or is a frameshift
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -600,12 +600,12 @@ sub hgvs_transcript {
         reverse_comp(\$ref_al_for_checking);
     }
     $ref_al_for_checking =~ s/-//;
-    if($DEBUG ==1 && $hgvs_notation->{ref}  ne $ref_al_for_checking &&
+    if($DEBUG ==1 && $hgvs_notation->{ref} ne $ref_al_for_checking &&
             $hgvs_notation->{type} ne 'dup' &&
-            $hgvs_notation->{type} ne 'inv'){
+            $hgvs_notation->{type} ne 'inv' ){
         warn "\nError - calculated reference ($hgvs_notation->{ref}) and input reference ($ref_al_for_checking) disagree - skipping HGVS transcript for $var_name\n";
+    
     }
-
     ### create reference name - transcript name & seq version
     my $stable_id = $self->transcript_variation->transcript_stable_id();    
     $stable_id .= "." . $self->transcript_variation->transcript->version() unless $stable_id =~ /\.\d+$/;
@@ -698,11 +698,11 @@ sub hgvs_protein {
         $hgvs_notation = _clip_alleles( $hgvs_notation);
     }
     unless( defined $hgvs_notation->{type} && $hgvs_notation->{type} eq "="){
-	#### define type - types are different for protein numbering
-	$hgvs_notation  = $self->_get_hgvs_protein_type($hgvs_notation);
-	
-	##### Convert ref & alt peptides taking into account HGVS rules
-	$hgvs_notation = $self->_get_hgvs_peptides($hgvs_notation);
+        #### define type - types are different for protein numbering
+        $hgvs_notation  = $self->_get_hgvs_protein_type($hgvs_notation);
+
+        ##### Convert ref & alt peptides taking into account HGVS rules
+        $hgvs_notation = $self->_get_hgvs_peptides($hgvs_notation);
     }
     ##### String formatting
     $self->{hgvs_protein}  =  $self->_get_hgvs_protein_format($hgvs_notation);
@@ -715,18 +715,15 @@ sub _get_hgvs_protein_format{
     my $self          = shift;
     my $hgvs_notation = shift;
 
-   # if ((defined  $hgvs_notation->{ref} && defined $hgvs_notation->{alt} && 
-   #  $hgvs_notation->{ref} eq $hgvs_notation->{alt}) || 
-    if  (defined  $hgvs_notation->{type} && $hgvs_notation->{type} eq "="){
-
+    if (defined  $hgvs_notation->{type} && $hgvs_notation->{type} eq "="){
         ### no protein change - return transcript nomenclature with flag for neutral protein consequence
-	if(defined $self->hgvs_transcript()){
-	    $hgvs_notation->{'hgvs'} = $self->hgvs_transcript() . "(p.=)";
-	    return $hgvs_notation->{'hgvs'} ;
-	}
-	else{
-	    return undef;
-	}
+        if(defined $self->hgvs_transcript()){
+            $hgvs_notation->{'hgvs'} = $self->hgvs_transcript() . "(p.=)";
+            return $hgvs_notation->{'hgvs'} ;
+        }
+        else{
+            return undef;
+        }
     }
 
     ### all start with refseq name & numbering type
@@ -854,20 +851,20 @@ sub _get_hgvs_protein_format{
 sub _get_hgvs_protein_type{
 
     my $self = shift;
-    my $hgvs_notation = shift;   
-
+    my $hgvs_notation = shift;
+   
     if( defined $hgvs_notation->{ref} && defined $hgvs_notation->{alt} ){
-
+    ### Run type checks on peptides if available
         $hgvs_notation->{ref} =~ s/\*/X/;
         $hgvs_notation->{alt} =~ s/\*/X/;
 
-	if( length($hgvs_notation->{ref}) ==1 && length($hgvs_notation->{alt}) ==1 ) {
- 
-          $hgvs_notation->{type} = ">";
-      }
-      elsif($hgvs_notation->{ref} eq "-" || $hgvs_notation->{ref} eq "") {
+      if($hgvs_notation->{ref} eq "-" || $hgvs_notation->{ref} eq "") {
 
           $hgvs_notation->{type} = "ins";
+      }
+      elsif( length($hgvs_notation->{ref}) ==1 && length($hgvs_notation->{alt}) ==1 ) {
+ 
+          $hgvs_notation->{type} = ">";
       }
       elsif($hgvs_notation->{alt} eq "" ) {
 
@@ -901,19 +898,20 @@ sub _get_hgvs_protein_type{
     
       elsif($alt_length >1  ){
         if($hgvs_notation->{start} == ($hgvs_notation->{end} + 1) ){
-           ### convention for insertions - end one less than start
-           $hgvs_notation->{type} = "ins";
+          ### convention for insertions - end one less than start
+          $hgvs_notation->{type} = "ins";
         }
         elsif( $hgvs_notation->{start} != $hgvs_notation->{end}  ){
           $hgvs_notation->{type} = "delins";
         }
         else{
           $hgvs_notation->{type} = ">";
-        }
+        } 
       }
       elsif($ref_length >1  ){
-        $hgvs_notation->{type} = "del";
+        $hgvs_notation->{type} = "del"; 
       }
+   
       else{
         #print STDERR "DEBUG ".$self->variation_feature->start."\n";
         #warn "Cannot define protein variant type [$ref_length  - $alt_length]\n";
@@ -936,7 +934,13 @@ sub _get_hgvs_peptides{
   elsif($hgvs_notation->{type} eq "ins" ){
 
     ### HGVS ref are peptides flanking insertion
-    $hgvs_notation->{ref} = $self->_get_surrounding_peptides($hgvs_notation->{start});
+    my $min;
+    if($hgvs_notation->{start} < $hgvs_notation->{end}){
+        $min = $hgvs_notation->{start};
+    }
+    else{ $min = $hgvs_notation->{end};}
+
+    $hgvs_notation->{ref} = $self->_get_surrounding_peptides($min);
 
     if( $hgvs_notation->{alt} =~/\*/){
         ## inserted bases after stop irrelevant; consider as substitution gaining stop MAINTAIN PREVIOUS BEHAVIOUR FOR NOW
@@ -966,7 +970,7 @@ sub _get_hgvs_peptides{
   }
 
   elsif(  $hgvs_notation->{type} eq "del"){ 
-     if( $hgvs_notation->{ref} =~/\w+/){
+    if( $hgvs_notation->{ref} =~/\w+/){
          $hgvs_notation->{alt} = "del";
      }
      else{
@@ -1001,8 +1005,9 @@ sub _clip_alleles{
   my $check_next_alt = substr( $check_alt, 0, 1);
     
     if($check_next_ref eq  "*" && $check_next_alt eq "*"){
-        ### stop re-created by variant - no protein change; trailing aa don't matter
+        ### stop re-created by variant - no protein change
         $hgvs_notation->{type} = "=";
+
         return($hgvs_notation);
     }
     
@@ -1015,7 +1020,7 @@ sub _clip_alleles{
         last;
     }
   }
- my $len = length ($check_ref);
+  my $len = length ($check_ref);
   #### strip same bases from end of string
   for (my $q =0; $q < $len; $q++){
     my $check_next_ref = substr( $check_ref, -1, 1);
@@ -1095,7 +1100,7 @@ sub _get_fs_peptides{
   my $alt_trans = $alt_cds->translate()->seq();
   
   ### get changed end (currently in single letter AA coding)    
-  my $ref_trans  = $self->transcript_variation->_peptide();
+  my $ref_trans  = $self->transcript_variation->_peptide;
   $ref_trans    .= "*";   ## appending ref stop for checking purposes 
   
   $hgvs_notation->{start} = $self->transcript_variation->translation_start() ;
@@ -1202,11 +1207,11 @@ sub _check_for_peptide_duplication{
 
    if ( $test_new_start >= 0 && $test_seq eq $hgvs_notation->{alt}) {
 
-	  $hgvs_notation->{type}   = 'dup';
-	  $hgvs_notation->{end}    = $hgvs_notation->{start} -1;
-	  $hgvs_notation->{start} -= length($hgvs_notation->{alt});
+          $hgvs_notation->{type}   = 'dup';
+          $hgvs_notation->{end}    = $hgvs_notation->{start} -1;
+          $hgvs_notation->{start} -= length($hgvs_notation->{alt});
 
-	}
+        }
    
    return $hgvs_notation;
 

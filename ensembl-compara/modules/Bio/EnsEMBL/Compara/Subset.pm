@@ -1,4 +1,4 @@
-# $Id: Subset.pm,v 1.11 2012-09-10 10:55:55 mm14 Exp $
+# $Id: Subset.pm,v 1.12 2012-11-27 13:03:35 mm14 Exp $
 #
 # Module to handle family members
 #
@@ -34,6 +34,7 @@ use strict;
 use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::Utils::Argument;
 
+deprecate('SubsetAdaptor and Subset are deprecated and will be removed in e71. Please have a look at Member and MemberAdaptor, at the canonical member methods.');
 
 sub new {
   my ($class, @args) = @_;

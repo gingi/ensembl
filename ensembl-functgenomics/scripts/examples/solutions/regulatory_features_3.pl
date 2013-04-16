@@ -13,7 +13,7 @@ $registry->load_registry_from_db(
 
 
 # Regulatory Features: What RegulatoryFeatures are near the oncogene BRCA2?
-# Create a script which gets all the RegulatoryFeatures within 2KB of the 'BRCA2' gene.
+# Create a script which gets all the RegulatoryFeatures within 1KB of the 'BRCA2' gene.
 # Print out their stable IDs, bound_start/end and start/end values, name of the cell and feature types.
 
 

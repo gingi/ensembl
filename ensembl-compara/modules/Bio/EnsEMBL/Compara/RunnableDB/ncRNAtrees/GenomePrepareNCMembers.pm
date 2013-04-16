@@ -20,7 +20,6 @@ my $g_load_members = Bio::EnsEMBL::Compara::RunnableDB::ncRNAtrees::GenomePrepar
                                                     -analysis   => $analysis );
 $g_load_members->fetch_input(); #reads from DB
 $g_load_members->run();
-$g_load_members->output();
 $g_load_members->write_output(); #writes to DB
 
 =cut
@@ -50,7 +49,6 @@ package Bio::EnsEMBL::Compara::RunnableDB::ncRNAtrees::GenomePrepareNCMembers;
 use strict;
 use Bio::EnsEMBL::Slice;
 use Bio::EnsEMBL::Gene;
-use Bio::EnsEMBL::Compara::Subset;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
@@ -76,20 +74,6 @@ sub fetch_input {
     my $core_db = $genome_db->db_adaptor() or die "Can't connect to genome database for id=$genome_db_id";
     $self->param('core_db', $core_db);
 
-
-        # create subsets for the gene members, and the longest peptide members
-    my $subset_adaptor = $self->compara_dba->get_SubsetAdaptor;
-
-# FIXME: change the fan dataflow branch to 2, allowing branch 1 to output something too
-    my $genome_db_name = $genome_db->name;
-    my $ncrna_subset = Bio::EnsEMBL::Compara::Subset->new( -name=>"genome_db_id:${genome_db_id} ${genome_db_name} longest ncRNAs" );
-    my $gene_subset  = Bio::EnsEMBL::Compara::Subset->new( -name=>"genome_db_id:${genome_db_id} ${genome_db_name} ncRNA genes" );
-
-    my $ncrna_subset_id = $subset_adaptor->store($ncrna_subset) or die "Could not store ncRNA subset";
-    my $gene_subset_id  = $subset_adaptor->store($gene_subset)  or die "Could not store gene subset";
-
-    $self->param('ncrna_subset_id', $ncrna_subset_id);
-    $self->param('gene_subset_id',  $gene_subset_id);
 }
 
 
@@ -138,14 +122,10 @@ sub write_output {
     my $self = shift @_;
 
     my $genome_db_id    = $self->param('genome_db_id');
-    my $ncrna_subset_id = $self->param('ncrna_subset_id');
-    my $gene_subset_id  = $self->param('gene_subset_id');
 
     foreach my $stable_id (@{ $self->param('stable_ids') }) {
         $self->dataflow_output_id( {
             'genome_db_id'    => $genome_db_id,
-            'ncrna_subset_id' => $ncrna_subset_id,
-            'gene_subset_id'  => $gene_subset_id,
             'stable_id'       => $stable_id,
         }, 2);
     }

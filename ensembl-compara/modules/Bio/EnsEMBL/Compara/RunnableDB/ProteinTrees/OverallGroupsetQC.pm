@@ -37,7 +37,6 @@ my $sillytemplate = Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::OverallGrou
   );
 $sillytemplate->fetch_input(); #reads from DB
 $sillytemplate->run();
-$sillytemplate->output();
 $sillytemplate->write_output(); #writes to DB
 
 =head1 AUTHORSHIP
@@ -50,7 +49,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.13 $
+$Revision: 1.16 $
 
 =head1 APPENDIX
 
@@ -173,7 +172,7 @@ sub fetch_groupset {        # see Bio::EnsEMBL::Compara::StableId::Adaptor::load
   my $default_noname = 'NoName';
   my $dataset;
 
-  my $sql = "SELECT gtn.root_id, m2.stable_id FROM gene_tree_node gtn, gene_tree_member gtm, member m1, member m2 WHERE gtm.member_id=m1.member_id AND m1.gene_member_id=m2.member_id AND gtn.node_id = gtm.node_id";
+  my $sql = "SELECT gtn.root_id, m2.stable_id FROM gene_tree_node gtn, member m1, member m2 WHERE gtn.member_id=m1.member_id AND m1.gene_member_id=m2.member_id";
 
   my $sth = $given_compara_dba->dbc->prepare($sql);
   $sth->execute();
@@ -475,13 +474,12 @@ sub quantify_mapping {
   print STDERR "# Average contribution mapped clusters = $average_mapped_contribution\n";
 
   my $groupset_tree = $self->param('groupset_tree');
-  my $groupset_tag  = $self->param('groupset_tag').'QC';
 
-  $groupset_tree->store_tag('sid_map_novel_cls' . '_' . $groupset_tag, $num_novel_clusters);
-  $groupset_tree->store_tag('sid_map_mapped_cls' . '_' . $groupset_tag, $num_mapped_clusters);
-  $groupset_tree->store_tag('sid_map_summary_contrib' . '_' . $groupset_tag, $sum_contrib);
-  $groupset_tree->store_tag('sid_map_average_contrib' . '_' . $groupset_tag, $average_mapped_contribution);
-  $groupset_tree->store_tag('sid_prop_novel_cls' . '_' . $groupset_tag, $proportion_novel_clusters);
+  $groupset_tree->store_tag('sid_map_novel_cls', $num_novel_clusters);
+  $groupset_tree->store_tag('sid_map_mapped_cls', $num_mapped_clusters);
+  $groupset_tree->store_tag('sid_map_summary_contrib', $sum_contrib);
+  $groupset_tree->store_tag('sid_map_average_contrib', $average_mapped_contribution);
+  $groupset_tree->store_tag('sid_prop_novel_cls', $proportion_novel_clusters);
 
   my $unmap_tolerance = $self->param('unmap_tolerance');
   print STDERR "# Unmap tolerance parameter set to $unmap_tolerance\n";

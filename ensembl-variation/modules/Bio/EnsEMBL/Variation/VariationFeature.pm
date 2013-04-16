@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -18,10 +18,7 @@
 
 =cut
 
-# Ensembl module for Bio::EnsEMBL::Variation::VariationFeature
-#
-# Copyright (c) 2004 Ensembl
-#
+
 
 
 =head1 NAME
@@ -91,7 +88,7 @@ use Bio::EnsEMBL::Variation::BaseVariationFeature;
 use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 use Bio::EnsEMBL::Utils::Scalar qw(assert_ref);
 use Bio::EnsEMBL::Utils::Argument  qw(rearrange);
-use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp); 
+use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp expand); 
 use Bio::EnsEMBL::Variation::Utils::Sequence qw(ambiguity_code hgvs_variant_notation SO_variation_class format_hgvs_string);
 use Bio::EnsEMBL::Variation::Utils::Sequence;
 use Bio::EnsEMBL::Variation::Variation;
@@ -105,6 +102,7 @@ use Bio::EnsEMBL::Slice;
 use Bio::EnsEMBL::Variation::DBSQL::TranscriptVariationAdaptor;
 use Bio::PrimarySeq;
 use Bio::SeqUtils;
+use Bio::EnsEMBL::Variation::Utils::Sequence  qw(%EVIDENCE_VALUES); 
 
 our @ISA = ('Bio::EnsEMBL::Variation::BaseVariationFeature');
 
@@ -175,7 +173,7 @@ our $DEBUG = 0;
   Returntype : Bio::EnsEMBL::Variation::Variation
   Exceptions : none
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -199,7 +197,8 @@ sub new {
       $class_so_term,
       $minor_allele,
       $minor_allele_freq,
-      $minor_allele_count
+      $minor_allele_count,
+      $evidence
   ) = rearrange([qw(
           ALLELE_STRING 
           VARIATION_NAME 
@@ -215,6 +214,7 @@ sub new {
           MINOR_ALLELE
           MINOR_ALLELE_FREQUENCY
           MINOR_ALLELE_COUNT
+          EVIDENCE
         )], @_);
 
   $self->{'allele_string'}          = $allele_str;
@@ -231,7 +231,7 @@ sub new {
   $self->{'minor_allele'}           = $minor_allele;
   $self->{'minor_allele_frequency'} = $minor_allele_freq;
   $self->{'minor_allele_count'}     = $minor_allele_count;
-  
+  $self->{'evidence'}               = $evidence;
   return $self;
 }
 
@@ -252,6 +252,8 @@ sub new_fast {
 
   Arg [1]    : string $newval (optional)
                The new value to set the allele_string attribute to
+  Arg [2]    : int $strand (optional)
+               Strand on which to report alleles (default is $obj->strand)
   Example    : $allele_string = $obj->allele_string()
   Description: Getter/Setter for the allele_string attribute.
                The allele_string is a '/' demimited string representing the
@@ -265,8 +267,27 @@ sub new_fast {
 
 sub allele_string{
   my $self = shift;
-  return $self->{'allele_string'} = shift if(@_);
-  return $self->{'allele_string'};
+  my $newval = shift;
+  my $strand = shift;
+  
+  if(defined($newval)) {
+	return $self->{'allele_string'} = $newval;
+  }
+  
+  my $as = $self->{'allele_string'};
+  
+  if(defined($strand) && $strand != $self->strand) {
+	my @flipped;
+	
+	foreach my $a(split /\//, $as) {
+	  reverse_comp(\$a) if $a =~ /^[ACGTn\-]+$/;
+	  push @flipped, $a;
+	}
+	
+	$as = join '/', @flipped;
+  }
+  
+  return $as;
 }
 
 =head2 display_id
@@ -279,7 +300,7 @@ sub allele_string{
   Returntype : string
   Exceptions : none
   Caller     : webcode
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -323,7 +344,7 @@ sub variation_name{
   Returntype : int
   Exceptions : none
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -402,7 +423,7 @@ sub minor_allele_count {
   Returntype  : listref of Bio::EnsEMBL::Variation::TranscriptVariation objects
   Exceptions  : Thrown on wrong argument type
   Caller      : general
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 
@@ -482,13 +503,37 @@ sub get_all_TranscriptVariations {
   Description : Get all the RegulatoryFeatureVariations associated with this VariationFeature.
   Returntype  : listref of Bio::EnsEMBL::Variation::RegulatoryFeatureVariation objects
   Exceptions  : none
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 
 sub get_all_RegulatoryFeatureVariations {
-    my $self = shift;
-    return $self->_get_all_RegulationVariations('RegulatoryFeature', @_);
+    my ($self, $regulatory_features) = @_;
+
+    if ($regulatory_features) {
+        assert_ref($regulatory_features, 'ARRAY');
+        map { assert_ref($_, 'Bio::EnsEMBL::Funcgen::RegulatoryFeature') } @$regulatory_features;
+    }
+
+    if ($self->dbID && not defined $self->{regulatory_feature_variations}) {
+        # This VariationFeature is from the database, so we can just fetch the
+        # RegulatoryFeatureVariations from the database as well
+        if (my $db = $self->adaptor->db) {
+            my $rfva = $db->get_RegulatoryFeatureVariationAdaptor;
+            my $rfvs = $rfva->fetch_all_by_VariationFeatures([$self]);
+            map {$self->add_RegulatoryFeatureVariation($_)} @$rfvs;
+        }
+    } else {
+        # This VariationFeature is not in the database, so we have to build the
+        # RegulatoryFeatureVariations ourselves
+        my $rfvs = $self->_get_all_RegulationVariations('RegulatoryFeature', @_);
+        map {$self->add_RegulatoryFeatureVariation($_)} @$rfvs;
+    }
+    if ($regulatory_features) {
+        return [ map {$self->{regulatory_feature_variations}->{$_->stable_id}} @$regulatory_features];
+    } else {
+        return [ values %{ $self->{regulatory_feature_variations}}];
+    }
 }
 
 =head2 get_all_MotifFeatureVariations
@@ -496,13 +541,32 @@ sub get_all_RegulatoryFeatureVariations {
   Description : Get all the MotifFeatureVariations associated with this VariationFeature.
   Returntype  : listref of Bio::EnsEMBL::Variation::MotifFeatureVariation objects
   Exceptions  : none
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 
 sub get_all_MotifFeatureVariations {
-    my $self = shift;
-    return $self->_get_all_RegulationVariations('MotifFeature', @_);
+    my ($self, $motif_features) = @_;
+
+    if ($motif_features) {
+        assert_ref($motif_features, 'ARRAY');
+        map { assert_ref($_, 'Bio::EnsEMBL::Funcgen::MotifFeature')} @$motif_features;
+    }
+    if ($self->dbID && not defined $self->{motif_feature_variations}) {
+        if (my $db = $self->adaptor->db) {
+            my $mfva = $db->get_MotifFeatureVariationAdaptor;
+            my $mfvs = $mfva->fetch_all_by_VariationFeatures([$self]);   
+            map {$self->add_MotifFeatureVariation($_)} @$mfvs;
+        }
+    } else {
+        my $mfvs = $self->_get_all_RegulationVariations('MotifFeature', @_);
+        map {$self->add_MotifFeatureVariation($_)} @$mfvs;
+    } 
+    if ($motif_features) {
+        return [ map {$self->{motif_feature_variations}->{$_->dbID}} @$motif_features]; 
+    } else {
+        return [ values %{ $self->{motif_feature_variations}}];
+    }
 }
 
 =head2 get_all_ExternalFeatureVariations
@@ -551,6 +615,7 @@ sub _get_all_RegulationVariations {
         my $slice = $self->feature_Slice;
                 
         my $constructor = 'Bio::EnsEMBL::Variation::'.$type.'Variation';
+        my $get_adaptor = 'get_'.$type.'VariationAdaptor';
 
 		eval {
 		  $self->{regulation_variations}->{$type} = [ 
@@ -558,6 +623,7 @@ sub _get_all_RegulationVariations {
 				  $constructor->new(
 					  -variation_feature  => $self,
 					  -feature            => $_,
+                      -adaptor            => ($self->adaptor->db ? $self->adaptor->db->$get_adaptor : undef),
 				  );
 			  } map { $_->transfer($self->slice) } @{ $fg_adaptor->fetch_all_by_Slice($slice) } 
 		  ];
@@ -630,8 +696,46 @@ sub add_TranscriptVariation {
     my ($self, $tv) = @_;
     assert_ref($tv, 'Bio::EnsEMBL::Variation::TranscriptVariation');
     # we need to weaken the reference back to us to avoid a circular reference
-    weaken($tv->{base_variation_feature});
+    weaken($tv->{base_variation_feature}) unless isweak($tv->{base_variation_feature});
     $self->{transcript_variations}->{$tv->transcript_stable_id} = $tv;
+}
+
+=head2 add_RegulatoryFeatureVariation
+
+   Arg [1]     : Bio::EnsEMBL::Variation::RegulatoryFeatureVariation
+   Example     : $vf->add_RegulatoryFeatureVariation($rfv);
+   Description : Adds a RegulatoryFeatureVariation to the variation feature object.
+   Exceptions  : thrown on bad argument
+   Caller      : Bio::EnsEMBL::Variation::RegulatoryFeatureVariationAdaptor
+   Status      : At Risk
+
+=cut
+
+sub add_RegulatoryFeatureVariation {
+    my ($self, $rfv) = @_;
+    assert_ref($rfv, 'Bio::EnsEMBL::Variation::RegulatoryFeatureVariation');
+    # we need to weaken the reference back to us to avoid a circular reference
+    weaken($rfv->{base_variation_feature}) unless isweak($rfv->{base_variation_feature});
+    $self->{regulatory_feature_variations}->{$rfv->regulatory_feature_stable_id} = $rfv;
+}
+
+=head2 add_MotifFeatureVariation
+
+   Arg [1]     : Bio::EnsEMBL::Variation::MotifFeatureVariation
+   Example     : $vf->add_MotifFeatureVariation($mfv);
+   Description : Adds a MotifFeatureVariation to the variation feature object.
+   Exceptions  : thrown on bad argument
+   Caller      : Bio::EnsEMBL::Variation::MotifFeatureVariationAdaptor
+   Status      : At Risk
+
+=cut
+
+sub add_MotifFeatureVariation {
+    my ($self, $mfv) = @_;
+    assert_ref($mfv, 'Bio::EnsEMBL::Variation::MotifFeatureVariation');
+    # we need to weaken the reference back to us to avoid a circular reference
+    weaken($mfv->{base_variation_feature}) unless isweak($mfv->{base_variation_feature});
+    $self->{motif_feature_variations}->{$mfv->motif_feature_id} = $mfv;
 }
 
 =head2 variation
@@ -668,60 +772,13 @@ sub variation {
   return $self->{'variation'};
 }
 
-=head2 consequence_type
-
-  Arg [1]    : (optional) String $term_type
-  Description: Get a list of all the unique consequence terms of this 
-               VariationFeature. By default returns Ensembl display terms
-               (e.g. 'NON_SYNONYMOUS_CODING'). $term_type can also be 'label'
-               (e.g. 'Non-synonymous coding'), 'SO' (Sequence Ontology, e.g.
-               'non_synonymous_codon') or 'NCBI' (e.g. 'missense')
-  Returntype : listref of strings
-  Exceptions : none
-  Status     : At Risk
-
-=cut
-
-sub consequence_type {
-    
-    my $self = shift;
-	my $term_type = shift;
-	
-	my $method_name;
-	
-    # delete cached term
-    if(defined($term_type)) {
-        delete $self->{consequence_types};
-		$method_name = $term_type.($term_type eq 'label' ? '' : '_term');
-		$method_name = 'SO_term' unless @{$self->get_all_OverlapConsequences} && $self->get_all_OverlapConsequences->[0]->can($method_name);
-    }
-	
-	$method_name ||= 'SO_term';
-
-	if (exists($self->{current_consequence_method}) && $self->{current_consequence_method} ne $method_name) {
-		delete $self->{consequence_type};
-	}
-
-    unless ($self->{consequence_types}) {
-
-        # work out the terms from the OverlapConsequence objects
-        
-        $self->{consequence_types} = 
-            [ map { $_->$method_name } @{ $self->get_all_OverlapConsequences } ];
-    }
-
-	$self->{current_consequence_method} = $method_name;
-    
-    return $self->{consequence_types};
-}
-
 =head2 get_all_OverlapConsequences
 
   Description: Get a list of all the unique OverlapConsequences of this VariationFeature, 
                calculating them on the fly from the TranscriptVariations if necessary
   Returntype : listref of Bio::EnsEMBL::Variation::OverlapConsequence objects
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -800,37 +857,6 @@ sub most_severe_OverlapConsequence {
     return $self->{_most_severe_consequence};
 }
 
-=head2 display_consequence
-
-  Arg [1]    : (optional) String $term_type
-  Description: Get the term for the most severe consequence of this 
-               VariationFeature. By default returns Ensembl display terms
-               (e.g. 'NON_SYNONYMOUS_CODING'). $term_type can also be 'label'
-               (e.g. 'Non-synonymous coding'), 'SO' (Sequence Ontology, e.g.
-               'non_synonymous_codon') or 'NCBI' (e.g. 'missense')
-  Returntype : string
-  Exceptions : none
-  Status     : At Risk
-
-=cut
-
-sub display_consequence {
-    my $self = shift;
-	my $term_type = shift;
-	
-	my $method_name;
-	
-    # delete cached term
-    if(defined($term_type)) {
-		$method_name = $term_type.($term_type eq 'label' ? '' : '_term');
-		$method_name = 'SO_term' unless @{$self->get_all_OverlapConsequences} && $self->get_all_OverlapConsequences->[0]->can($method_name);
-    }
-	
-	$method_name ||= 'SO_term';
-	
-    return $self->most_severe_OverlapConsequence->$method_name;
-}
-
 =head2 add_consequence_type
 
     Status : Deprecated, use add_OverlapConsequence instead
@@ -857,20 +883,24 @@ sub get_consequence_type {
 
 =head2 ambig_code
 
-    Args         : None
+    Args         : int $strand (optional)
     Example      : my $ambiguity_code = $vf->ambig_code()
     Description  : Returns the ambigutiy code for the alleles in the VariationFeature
+	               Specify a strand to give the ambiguity code on that genomic strand;
+				   use $strand = 1 to always give the ambiguity code on the forward
+				   strand.
     ReturnType   : String $ambiguity_code
     Exceptions   : none    
     Caller       : General
-    Status       : At Risk
+    Status       : Stable
 
 =cut 
 
 sub ambig_code{
     my $self = shift;
+	my $strand = shift;
     
-    return &ambiguity_code($self->allele_string());
+    return &ambiguity_code($self->allele_string(undef, $strand));
 }
 
 =head2 var_class
@@ -882,7 +912,7 @@ sub ambig_code{
     ReturnType   : string
     Exceptions   : throws if we can't find a corresponding display term for an SO term
     Caller       : General
-    Status       : At Risk
+    Status       : Stable
 
 =cut
 
@@ -915,7 +945,7 @@ sub var_class {
     ReturnType   : string
     Exceptions   : none
     Caller       : General
-    Status       : At Risk
+    Status       : Stable
 
 =cut
 
@@ -930,6 +960,25 @@ sub class_SO_term {
 
     return $self->{class_SO_term};
 }
+=head2 get_all_evidence_values
+
+  Arg [1]    : none
+  Example    : my @vstates = @{$vf->get_all_validation_states()};
+  Description: Retrieves all evidence values for this variationFeature.  Current
+               possible evidence values are 'Multiple_observations','Frequency',
+              'HapMap', '1000Genomes','Cited'
+  Returntype : reference to list of strings
+  Exceptions : none
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub get_all_evidence_values {
+    my $self = shift;
+    return $self->{'evidence'};
+}
+
 
 =head2 get_all_validation_states
 
@@ -967,6 +1016,34 @@ sub add_validation_state {
     Bio::EnsEMBL::Variation::Utils::Sequence::add_validation_state(@_);
 }
 
+
+=head2 add_evidence_value
+
+  Arg [1]    : string $state
+  Example    : $v->add_evidence_value('Frequency');
+  Description: Adds an evidence value  to this variation.
+  Returntype : none
+  Exceptions : 
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub add_evidence_value {
+    
+    my $self = shift;
+    my $add_ev = shift if(@_);
+
+    ## do not add evidence value unless it is in the list of permitted values
+    return $self->{'evidence'} unless $EVIDENCE_VALUES{$add_ev};
+
+    push @{$self->{'evidence'}}, $add_ev;
+    my %unique = map { $_ => 1 } @{$self->{'evidence'}};
+    @{$self->{'evidence'}} = keys %unique;
+
+    return $self->{'evidence'};    
+}
+
 =head2 source
 
   Arg [1]    : string $source_name (optional) - the new value to set the source attribute to
@@ -975,7 +1052,7 @@ sub add_validation_state {
   Returntype : the source name as a string, 
   Exceptions : none
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -1323,7 +1400,7 @@ sub ref_allele_string{
     ReturnType  : reference to list of Bio::EnsEMBL::Variation::VariationSets
     Exceptions  : if no adaptor is attached to this object
     Caller      : general
-    Status      : At Risk
+    Status      : Stable
 =cut
 
 sub get_all_VariationSets {
@@ -1612,16 +1689,7 @@ sub hgvs_genomic{
 	$ref_slice = $ref_feature->feature_Slice;	    
     }         
     
-    # Create new VariationFeature on the slice of the reference feature (unless the reference feature is the slice the VF is on)
-    my $tr_vf;
-    if ( $self->slice->coord_system->name() eq "chromosome") {
-	$tr_vf = $self;
-    }
-    else {	
-	$tr_vf = $self->transfer($ref_slice);
-    }
-    # Return undef if this VariationFeature could not be transferred
-    return {} if (!defined($tr_vf));
+    my $tr_vf = $self;
 	
 	
     # Return undef if this VariationFeature does not fall within the supplied feature.
@@ -1651,6 +1719,8 @@ sub hgvs_genomic{
 	## If a particular allele was requested, ignore others
 	next if  (defined($use_allele) && $allele ne $use_allele);
 
+        ## expand tandems before check for non nucleotide character
+        expand(\$allele);
 	# Skip if the allele contains weird characters
 	next if $allele =~ m/[^ACGT\-]/ig;   
 	
@@ -1663,25 +1733,9 @@ sub hgvs_genomic{
 	    if($DEBUG ==1){print "***************Flipping alt allele $allele => $check_allele to match coding strand\n";}
 	}
 
-	## work out chrom coord for hgvs string if transcript slice supplied
-	my ($chr_start,$chr_end);  
-	if ( $tr_vf->slice->is_toplevel() == 1) {
-	    $chr_start = $tr_vf->seq_region_start();
-	    $chr_end   = $tr_vf->seq_region_end();
-	}
-	else{
-	    ## add feature start to start of var-in-feature
-	    if( $tr_vf->seq_region_start() <  $tr_vf->seq_region_end()){
-		$chr_start =  $tr_vf->start() + $tr_vf->seq_region_start() ; 
-		$chr_end   =  $tr_vf->end()   + $tr_vf->seq_region_start() ;
-	    }
-	    else{
-		$chr_start =  $tr_vf->seq_region_start() - $tr_vf->start()  ;
-		$chr_end   =  $tr_vf->seq_region_start() - $tr_vf->end()  ;
-	    }
-	}
-	   
-
+	my $chr_start = $tr_vf->seq_region_start();
+	my $chr_end   = $tr_vf->seq_region_end();
+	
 	my $hgvs_notation = hgvs_variant_notation( $check_allele,          ## alt allele in refseq strand orientation
 						   $ref_seq,               ## substring of slice for ref allele extraction
 						   $ref_start,             ## start on substring of slice for ref allele extraction

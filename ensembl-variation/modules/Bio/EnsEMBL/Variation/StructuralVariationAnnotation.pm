@@ -110,7 +110,7 @@ use vars qw(@ISA);
   Returntype : Bio::EnsEMBL::Variation::StructuralVariationAnnotation
   Exceptions : none
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -195,7 +195,7 @@ sub structural_variation {
   Returntype : Bio::EnsEMBL::Variation::Study
   Exceptions : none
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -363,7 +363,11 @@ sub strain_name {
 sub phenotype_description{
   my $self = shift;
   return $self->{'phenotype_description'} = shift if(@_);
-  return $self->{'phenotype_description'};
+	
+  ## Hack to hide wrong phenotypes for COSMIC data ##
+	return undef if ($self->{'study'}->description =~ /COSMIC/ && $self->{'phenotype_description'} !~ /^COSMIC/);
+	
+	return $self->{'phenotype_description'};
 }
 
 

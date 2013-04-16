@@ -21,6 +21,10 @@ Required arguments:
   --altdbname=NAME                    alternative database NAME
   --altassembly=ASSEMBLY              alternative assembly version ASSEMBLY
 
+  --nolog                             outside of a webserver environment, 
+                                      logging needs to be handled manually.
+                                      Use in conjunction with shell redirects.
+
 Optional arguments:
 
   --althost=HOST                      alternative databases host HOST
@@ -63,10 +67,6 @@ for the details.
 This code is distributed under an Apache style licence:
 Please see http://www.ensembl.org/code_licence.html for details
 
-=head1 AUTHOR
-
-Patrick Meidl <meidl@ebi.ac.uk>, Ensembl core API team
-
 =head1 CONTACT
 
 Please post comments/questions to the Ensembl development list
@@ -91,6 +91,8 @@ use Getopt::Long;
 use Pod::Usage;
 use Bio::EnsEMBL::Utils::ConversionSupport;
 
+use Algorithm::Diff qw(diff);
+
 $| = 1;
 
 my $support = new Bio::EnsEMBL::Utils::ConversionSupport($SERVERROOT);
@@ -103,6 +105,7 @@ $support->parse_extra_options(
     'altassembly=s',
     'althost=s',
     'altport=n',
+    'altpass=s',
     'chromosomes|chr=s@',
 );
 $support->allowed_params(
@@ -112,6 +115,7 @@ $support->allowed_params(
     'altassembly',
     'althost',
     'altport',
+    'altpass',
     'chromosomes',
 );
 
@@ -123,7 +127,7 @@ if ($support->param('help') or $support->error) {
 $support->comma_to_list('chromosomes');
 
 # ask user to confirm parameters to proceed
-$support->confirm_params;
+#$support->confirm_params;
 
 # get log filehandle and print heading and parameters to logfile
 $support->init_log;
@@ -147,6 +151,8 @@ my $A_dba = $support->get_database('core', 'alt');
 my $A_sa = $A_dba->get_SliceAdaptor;
 
 $support->log("Looping over toplevel seq_regions...\n\n");
+
+my @global_diff_bins;
 
 foreach my $chr ($support->sort_chromosomes) {
   $support->log_stamped("Toplevel seq_region $chr...\n", 1);
@@ -205,6 +211,47 @@ foreach my $chr ($support->sort_chromosomes) {
       $support->log("Alt: $A_sub_seq\n\n", 3);
 
       $i++;
+      
+      
+      if (length($R_seq) == length($A_seq)){
+          #my $diffs = ($R_seq ^ $A_seq) =~ tr/\0//c;  # A concatenation of differences
+          # this approach is x10 faster than relying on Algorithm::Diff, as long as there
+          # are no InDels, and the lengths are comparable.
+          my $mask = ($R_seq ^ $A_seq);
+          my @diffs = split (//,$mask);
+          my ($in_change,$change_start,$change_end);
+          for (my $x=0; $x<scalar(@diffs); $x++) {
+              if ($in_change) {
+                  if ($diffs[$x] eq "\0") {
+                      $in_change = 0;
+                      $change_end = $x;
+                      
+                      my $length = $change_end - $change_start + 1;
+                      $global_diff_bins[$length]++;
+                  }
+                  else {
+                      next;
+                  }                  
+              } elsif ($diffs[$x] ne "\0") {
+                  $in_change = 1;
+                  $change_start = $x;
+              }
+              
+          }
+      } else {
+          my @Ref = split(//,$R_seq);
+          my @Alt = split(//,$A_seq);
+          my @diffs = diff( \@Ref, \@Alt );
+          foreach (@diffs) {
+              my $length = 0;
+              foreach my $desc (@{$_}) {
+                  if ($desc->[0] eq '+') {$length++;}
+                  if ($desc->[0] eq '-') {$length--;}
+              };
+              $global_diff_bins[$length]++;
+          }
+      }
+      
     }
 
     $k++;
@@ -217,6 +264,14 @@ foreach my $chr ($support->sort_chromosomes) {
   }
 
   $support->log_stamped("Done.\n\n", 1);
+}
+
+$support->log("Summary of changes across all chromosomes\n\n",1);
+$support->log("|Bin  |Frequency\n",2);
+for (my $bin = 0; $bin < scalar(@global_diff_bins); $bin++) {
+    if (defined ($global_diff_bins[$bin])) {
+        $support->log("|$bin  |$global_diff_bins[$bin]\n");
+    }
 }
 
 # finish logfile

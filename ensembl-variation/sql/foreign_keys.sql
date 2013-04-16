@@ -35,9 +35,6 @@ ALTER TABLE failed_variation ADD FOREIGN KEY (failed_description_id) REFERENCES 
 ALTER TABLE failed_structural_variation ADD FOREIGN KEY (structural_variation_id) REFERENCES structural_variation(structural_variation_id);
 ALTER TABLE failed_structural_variation ADD FOREIGN KEY (failed_description_id) REFERENCES failed_description(failed_description_id);
 
-ALTER TABLE flanking_sequence ADD FOREIGN KEY (variation_id) REFERENCES variation(variation_id);
-ALTER TABLE flanking_sequence ADD FOREIGN KEY (seq_region_id) REFERENCES seq_region(seq_region_id);
-
 ALTER TABLE genotype_code ADD FOREIGN KEY (allele_code_id) REFERENCES allele_code(allele_code_id);
 
 ALTER TABLE individual ADD FOREIGN KEY (sample_id) REFERENCES sample(sample_id);
@@ -95,6 +92,10 @@ ALTER TABLE tagged_variation_feature ADD FOREIGN KEY (variation_feature_id) REFE
 ALTER TABLE tagged_variation_feature ADD FOREIGN KEY (sample_id) REFERENCES sample(sample_id);
 
 ALTER TABLE transcript_variation ADD FOREIGN KEY (variation_feature_id) REFERENCES variation_feature(variation_feature_id);
+
+ALTER TABLE motif_feature_variation ADD FOREIGN KEY (variation_feature_id) REFERENCES variation_feature(variation_feature_id);
+
+ALTER TABLE regulatory_feature_variation ADD FOREIGN KEY (variation_feature_id) REFERENCES variation_feature(variation_feature_id);
 
 ALTER TABLE variation ADD FOREIGN KEY (source_id) REFERENCES source(source_id);
 ALTER TABLE variation ADD FOREIGN KEY (class_attrib_id) REFERENCES attrib(attrib_id);

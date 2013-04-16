@@ -37,7 +37,6 @@ my $sillytemplate = Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::PerGenomeGr
   );
 $sillytemplate->fetch_input(); #reads from DB
 $sillytemplate->run();
-$sillytemplate->output();
 $sillytemplate->write_output(); #writes to DB
 
 =head1 AUTHORSHIP
@@ -46,11 +45,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: lg4 $
+$Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.8 $
+$Revision: 1.12 $
 
 =head1 APPENDIX
 
@@ -69,9 +68,8 @@ use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 sub run {
     my $self = shift @_;
     my $genome_db_id            = $self->param('genome_db_id') or die "'genome_db_id' is an obligatory parameter";
-    my $groupset_tag            = $self->param('groupset_tag') or die "'groupset_tag' is an obligatory parameter";
 
-    my $this_orphans            = $self->fetch_gdb_orphan_genes($self->compara_dba, $genome_db_id, 'gene_tree_member');
+    my $this_orphans            = $self->fetch_gdb_orphan_genes($self->compara_dba, $genome_db_id);
     my $total_orphans_num       = scalar keys (%$this_orphans);
     my $total_num_genes         = scalar @{ $self->compara_dba->get_MemberAdaptor->fetch_all_by_source_genome_db_id('ENSEMBLGENE',$genome_db_id) };
 
@@ -83,7 +81,7 @@ sub run {
     my $reuse_db                = $self->param('reuse_db') or die "'reuse_db' connection parameters hash has to be defined in reuse mode";
     my $reuse_compara_dba       = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->go_figure_compara_dba($reuse_db);    # may die if bad parameters
 
-    my $reuse_orphans           = $self->fetch_gdb_orphan_genes($reuse_compara_dba, $genome_db_id, 'gene_tree_member');
+    my $reuse_orphans           = $self->fetch_gdb_orphan_genes($reuse_compara_dba, $genome_db_id);
     my %common_orphans = ();
     my %new_orphans = ();
     foreach my $this_orphan_id (keys %$this_orphans) {
@@ -103,19 +101,18 @@ sub write_output {
     my $self = shift @_;
 
     my $genome_db_id            = $self->param('genome_db_id');
-    my $groupset_tag            = $self->param('groupset_tag');
 
     my $sql = "INSERT IGNORE INTO protein_tree_qc (genome_db_id) VALUES (?)";
     my $sth = $self->compara_dba->dbc->prepare($sql);
     $sth->execute($genome_db_id);
 
-    my $sql = "UPDATE protein_tree_qc SET total_orphans_num_$groupset_tag=?, prop_orphans_$groupset_tag=? WHERE genome_db_id=?";
+    my $sql = "UPDATE protein_tree_qc SET total_orphans_num=?, prop_orphans=? WHERE genome_db_id=?";
     my $sth = $self->compara_dba->dbc->prepare($sql);
     $sth->execute($self->param('total_orphans_num'), $self->param('prop_orphan'), $genome_db_id);
 
     return unless $self->param('reuse_this');
 
-    my $sql = "UPDATE protein_tree_qc SET common_orphans_num_$groupset_tag=?, new_orphans_num_$groupset_tag=? WHERE genome_db_id=?";
+    my $sql = "UPDATE protein_tree_qc SET common_orphans_num=?, new_orphans_num=? WHERE genome_db_id=?";
     my $sth = $self->compara_dba->dbc->prepare($sql);
     $sth->execute($self->param('common_orphans_num'), $self->param('new_orphans_num'), $genome_db_id);
 
@@ -123,14 +120,14 @@ sub write_output {
 
 
 sub fetch_gdb_orphan_genes {
-    my ($self, $given_compara_dba, $genome_db_id, $gene_member_table_name) = @_;
+    my ($self, $given_compara_dba, $genome_db_id) = @_;
 
     my %orphan_stable_id_hash = ();
 
-    my $sql = "SELECT m3.stable_id FROM member m2, member m3, subset_member sm WHERE m3.member_id=m2.gene_member_id AND m2.source_name='ENSEMBLPEP' AND sm.member_id=m2.member_id AND sm.member_id IN (SELECT m1.member_id FROM member m1 LEFT JOIN $gene_member_table_name ptm ON m1.member_id=ptm.member_id WHERE ptm.member_id IS NULL AND m1.genome_db_id=$genome_db_id)";
+    my $sql = 'SELECT mg.stable_id FROM member mg LEFT JOIN gene_tree_node gtn ON (mg.canonical_member_id = gtn.member_id) WHERE gtn.member_id IS NULL AND mg.genome_db_id = ?';
 
     my $sth = $given_compara_dba->dbc->prepare($sql);
-    $sth->execute();
+    $sth->execute($genome_db_id);
 
     while(my ($member) = $sth->fetchrow()) {
         $orphan_stable_id_hash{$member} = 1;

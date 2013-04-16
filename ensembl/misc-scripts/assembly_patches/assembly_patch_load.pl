@@ -1,7 +1,7 @@
 #!/usr/local/ensembl/bin/perl -w
 
 use Bio::EnsEMBL::Registry;
-use Bio::EnsEMBL::Utils::Exception qw(throw);
+use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 use Getopt::Long;
 
 use strict;
@@ -9,17 +9,17 @@ use strict;
 my $assembly_acc;
 my $assembly_name;
 my $pass;
-my $mapping_file = "./data/alt.scaf.agp";
-my $txt_file     = "./data/alt_scaffold_placement.txt";
+my $mapping_file   = "./data/alt.scaf.agp";
+my $txt_file       = "./data/alt_scaffold_placement.txt";
 my $patchtype_file = "./data/patch_type";
 my $dbname;
 my $host;
 my $user;
-my $port = 3306;
+my $port            = 3306;
 my $scaf_syn_ext_id = 700;
-my $central_coord_system = 'supercontig';
+my $central_coord_system;
 
-&GetOptions(
+GetOptions(
             'pass=s'            => \$pass,
             'mapping_file=s'    => \$mapping_file,
             'txt_file=s'        => \$txt_file,
@@ -31,6 +31,7 @@ my $central_coord_system = 'supercontig';
             'scaf_syn_ext_id=n' => \$scaf_syn_ext_id,
             'assembly_name=s'   => \$assembly_name,
             'assembly_acc=s'    => \$assembly_acc,
+            'coord_system=s'    => \$central_coord_system
            );
 
 #needed to update the meta table
@@ -62,21 +63,31 @@ $sth->bind_columns(\$max_seq_region_id) || die "problem binding";
 $sth->fetch() || die "problem fetching";
 $sth->finish;
 
-$sth = $dba->dbc->prepare("select max(assembly_exception_id) from assembly_exception")
-  || die "Could not get max assembly_exception_id";
-
-$sth->execute || die "problem executing get max assembly_exception_id";
-my $max_assembly_exception_id;
-$sth->bind_columns(\$max_assembly_exception_id) || die "problem binding";
+$sth = $dba->dbc->prepare("select count(assembly_exception_id) from assembly_exception")
+  || die "Could not get number of rows in assembly_exception";
+my $count_assembly_exception_id;
+$sth->execute || die "problem executing";
 $sth->fetch() || die "problem fetching";
 $sth->finish;
 
-print "starting new seq_region at seq_region_id of $max_seq_region_id\n";
+my $max_assembly_exception_id;
+if (defined $count_assembly_exception_id && $count_assembly_exception_id > 0) {
+  $sth = $dba->dbc->prepare("select max(assembly_exception_id) from assembly_exception")
+    || die "Could not get max assembly_exception_id";
 
-if (defined( $max_assembly_exception_id ) ) {
-  print "\nTo reset\ndelete from dna where seq_region_id > $max_seq_region_id\ndelete from seq_region where seq_region_id > $max_seq_region_id\ndelete from assembly_exception where assembly_exception_id > $max_assembly_exception_id\n\n";
+  $sth->execute || die "problem executing get max assembly_exception_id";
+  $sth->bind_columns(\$max_assembly_exception_id) || die "problem binding";
+  $sth->fetch() || die "problem fetching";
+  $sth->finish;
 } else {
-  print "\nNOTE! assembly_exception table is not populated, probably the first patch release.\n\n";
+  warning("The assembly_exception table is empty. This is OK if it's the first ever patch release for a species, otherwise there is a problem.");
+  $max_assembly_exception_id = 0;
+}
+
+print "starting new seq_region at seq_region_id of $max_seq_region_id\n";
+print "\nTo reset\ndelete from dna where seq_region_id > $max_seq_region_id\ndelete from seq_region where seq_region_id > $max_seq_region_id\n";
+if (defined $count_assembly_exception_id && $count_assembly_exception_id > 0) {
+  print "delete from assembly_exception where assembly_exception_id > $max_assembly_exception_id\n\n";
 }
 
 $max_seq_region_id++;
@@ -184,7 +195,10 @@ SCAF: while(<TXT>){
   if(/^#/){
     chomp;
     my @arr = split(/\t/,$_);
-    my $i = 0;
+    # please note: this split was originally on whitespace and not tabs for human. 
+    # the $i was then set to 1 instead of zero as a workaround because the human assembly name was 2 words
+    # however this workaround broke for mouse where the assembly name is one word without whitespace
+    my $i = 0; 
     foreach my $name (@arr){
       $key_to_index{$name} = $i;
       $i++;
@@ -200,7 +214,6 @@ SCAF: while(<TXT>){
   }
   else{
     my @arr = split(/\t/,$_);
-
     my $alt_acc = $arr[$key_to_index{'alt_scaf_acc'}];
     my $alt_name = $arr[$key_to_index{'alt_scaf_name'}];
 
@@ -336,7 +349,7 @@ SCAF: while(<TXT>){
 MAP: while(<MAPPER>){
   next if /^#/; # ignore comments
   chomp;
-  my ($acc, $p_start, $p_end, $part, $type, $contig, $c_start, $c_end, $strand) = split;
+  my ($acc, $p_start, $p_end, $part, $type, $contig, $c_start, $c_end, $strand) = split(/\t/,$_);
 
   # check if this is one of the new patches
   if(!$name_to_seq_id{$acc}){
@@ -364,12 +377,18 @@ MAP: while(<MAPPER>){
       $get_seq_id_sth->execute($contig);
       $get_seq_id_sth->bind_columns(\$cmp_seq_id);
       $get_seq_id_sth->fetch;
+
       if(!defined($cmp_seq_id)){
         print "Could not get seq_region_id for $contig trying pfetch\n";
-        my $out = system("pfetch $contig  > ./$contig.fa");
-        # awful hack for GRC patch 8 assembly problem:
-        if ($contig eq "FP700111.21") {
-          $out = system("wget 'http://www.ebi.ac.uk/cgi-bin/sva/sva.pl?query=FP700111.21&snapshot=&save_id=Save&format=FASTA&entry_id=1415709343' -O - -o wget.log | tr '[:lower:]' '[:upper:]' > ./$contig.fa");
+        my $out = `pfetch $contig`;
+
+        if ($out =~ /no match/) {
+          print "Could not get seq_region_id for $contig trying eutils\n";
+          $out = system("wget -o $contig.wget.log -O $contig.fa 'http://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=$contig&rettype=fasta&retmode=text' > ./$contig.fa");
+        } else {
+          open (CONTIGFILE, ">$contig.fa");
+          print CONTIGFILE $out;
+          close (CONTIGFILE); 
         }
         my $contig_seq ="";
         open(FA,"<./$contig.fa") || die "Could not open file ./$contig.fa\n";

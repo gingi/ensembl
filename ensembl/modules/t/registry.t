@@ -46,7 +46,7 @@ TMPL
   print $fh $final;
   close $fh;
   
-  my $call = sub {  
+  my $call = sub {
     my @results;
     foreach my $inc (0..9) {
       push(@results, $reg->load_all($filename));
@@ -55,8 +55,8 @@ TMPL
   };
   
   if($threads) {
+    $ENV{RUNTESTS_HARNESS_NORESTORE} = 1;
     my @thrds;
-    local $ENV{RUNTESTS_HARNESS_NORESTORE} = 1;
     foreach my $thr (0..9) {
       push(@thrds, threads->create($call));
     }

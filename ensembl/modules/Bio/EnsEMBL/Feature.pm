@@ -28,7 +28,8 @@ Bio::EnsEMBL::Feature - Ensembl specific sequence feature.
       -start  => 100,
       -end    => 220,
       -strand => -1,
-      -slice  => $slice -analysis => $analysis
+      -slice  => $slice,
+      -analysis => $analysis
     );
 
     my $start  = $feat->start();
@@ -273,7 +274,6 @@ sub strand {
   Arg [1]    : int start
   Arg [2]    : int end
   Arg [3]    : (optional) int strand
-  Example    : None
   Description: Sets the start, end and strand in one call rather than in 
                3 seperate calls to the start(), end() and strand() methods.
                This is for convenience and for speed when this needs to be
@@ -492,8 +492,8 @@ sub equals {
   Arg [2]    : string $version (optional)
                The version of the coord system to transform this feature to.
   Arg [3]    : Bio::EnsEMBL::Slice (optional)
-               Restrict transformation to this Slice. Useful if your source
-               feature has multiple mappings in the target coordinate system
+               Specified when a projection may land on many overlapping slices
+               and disambiguation is required.
   Example    : $feature = $feature->transform('contig');
                next if(!defined($feature));
   Description: Returns a copy of this feature, but converted to a different
@@ -610,7 +610,7 @@ sub transform {
 	    my $slice = $proj->[2];
 	    warn "available slice ".$slice->seq_regon_name."\n";
 	  }
-	  warn "MORE than one projection and none to slice specified (".$to_slice->seq_region_name.")\n";
+	  warn "MORE than one projection and no to slice specified (".$to_slice->seq_region_name.")\n";
 	}
       }	
       else {
@@ -1415,7 +1415,7 @@ sub get_overlapping_Genes{
 
 =head2 get_nearest_Gene
 
-  Description: Get all the nearest  gene to the feature
+  Description: Get the nearest gene to the feature
   Returntype : Bio::EnsEMBL::Gene
   Caller     : general
   Status     : UnStable
@@ -1437,7 +1437,7 @@ sub get_nearest_Gene {
 
   Example       : $feature_summary = $feature->summary_as_hash();
   Description   : Retrieves a textual summary of this Feature.
-	              Should be overidden by subclasses for specific tweaking
+                  Should be overidden by subclasses for specific tweaking
   Returns       : hashref of arrays of descriptive strings
   Status        : Intended for internal use
 =cut
@@ -1477,7 +1477,7 @@ sub species {
 
 =head2 contig
 
- This method is deprecated and included for backwards compatibility only.
+ Deprecated - Included for backwards compatibility only.
  Use slice() instead
 =cut
 sub contig {
@@ -1489,7 +1489,7 @@ sub contig {
 
 =head2 sub_SeqFeature
 
- This method is deprecated and only for genebuild backwards compatibility.
+ Deprecated - For genebuild backwards compatibility.
  Avoid using it if possible
 =cut
 sub sub_SeqFeature{
@@ -1499,7 +1499,7 @@ sub sub_SeqFeature{
 
 =head2 add_sub_SeqFeature
 
- This method is deprecated and only for genebuild backwards compatibility.
+ Deprecated - only for genebuild backward compatibility.
  Avoid using it if possible
 =cut
 sub add_sub_SeqFeature{
@@ -1533,8 +1533,8 @@ sub add_sub_SeqFeature{
 
 =head2 flush_sub_SeqFeature
 
- This method is deprecated and only for genebuild backwards compatibility.
- Avoid using it isf possible
+ Deprecated - Only for genebuild backwards compatibility.
+ Avoid using it if possible
 =cut
 sub flush_sub_SeqFeature {
   my ($self) = @_;
@@ -1575,7 +1575,7 @@ sub _deprecated_transform {
 
 =head2 id
 
-This method is deprecated and only included for backwards compatibility.
+Deprecated - only included for backwards compatibility.
 Use display_id, hseqname, dbID or stable_id instead
 
 =cut

@@ -168,7 +168,7 @@ CREATE TABLE coord_system (
 
 /**
 @table dna
-@desc Contains DNA sequence. This table has a 1:1 relationship with the contig table.
+@desc Contains DNA sequence. This table has a 1:1 relationship with the seq_region table.
 
 @column seq_region_id           Primary key, internal identifier. Foreign key references to the @link seq_region table.
 @column sequence                DNA sequence.
@@ -503,13 +503,25 @@ CREATE TABLE IF NOT EXISTS meta (
 # Add schema type and schema version to the meta table.
 INSERT INTO meta (species_id, meta_key, meta_value) VALUES
   (NULL, 'schema_type',     'core'),
-  (NULL, 'schema_version',  '69');
+  (NULL, 'schema_version',  '70');
 
 # Patches included in this schema file:
 # NOTE: At start of release cycle, remove patch entries from last release.
 # NOTE: Avoid line-breaks in values.
 INSERT INTO meta (species_id, meta_key, meta_value) VALUES
-  (NULL, 'patch', 'patch_68_69_a.sql|schema_version')
+  (NULL, 'patch', 'patch_69_70_a.sql|schema_version')
+ ;
+INSERT INTO meta (species_id, meta_key, meta_value) VALUES
+  (NULL, 'patch', 'patch_69_70_b.sql|add_mapping_set_history')
+ ;
+INSERT INTO meta (species_id, meta_key, meta_value) VALUES
+  (NULL, 'patch', 'patch_69_70_c.sql|column_datatype_consistency')
+ ;
+INSERT INTO meta (species_id, meta_key, meta_value) VALUES
+  (NULL, 'patch', 'patch_69_70_d.sql|data_file_id_auto_increment')
+ ;
+INSERT INTO meta (species_id, meta_key, meta_value) VALUES
+  (NULL, 'patch', 'patch_69_70_e.sql|protein_feature_hit_description')
  ;
 
 /**
@@ -1590,6 +1602,7 @@ CREATE TABLE protein_align_feature (
 @column evalue                      Alignment E-value.
 @column perc_ident                  Alignment percentage identity.
 @column external_data               External data for protein feature.
+@column hit_description             Optional description of the hit. This can be a human readable name
 
 @see analysis
 
@@ -1610,6 +1623,7 @@ CREATE TABLE protein_feature (
   evalue                      DOUBLE,
   perc_ident                  FLOAT,
   external_data               TEXT,
+  hit_description             TEXT,
 
   PRIMARY KEY (protein_feature_id),
   KEY translation_idx (translation_id),
@@ -2067,9 +2081,11 @@ CREATE TABLE mapping_session (
 CREATE TABLE mapping_set (
 
         mapping_set_id  INT(10) UNSIGNED NOT NULL,
-        schema_build    VARCHAR(20) NOT NULL,
+        internal_schema_build    VARCHAR(20) NOT NULL,
+        external_schema_build    VARCHAR(20) NOT NULL,
 
-        PRIMARY KEY(schema_build)
+        PRIMARY KEY(mapping_set_id),
+        UNIQUE KEY mapping_idx (internal_schema_build, external_schema_build)
 
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
@@ -2186,9 +2202,9 @@ They are linked to primary external references instead.
 
 CREATE TABLE dependent_xref(
 
-  object_xref_id         INT NOT NULL,
-  master_xref_id         INT NOT NULL,
-  dependent_xref_id      INT NOT NULL,
+  object_xref_id         INT(10) UNSIGNED NOT NULL,
+  master_xref_id         INT(10) UNSIGNED NOT NULL,
+  dependent_xref_id      INT(10) UNSIGNED NOT NULL,
 
   PRIMARY KEY( object_xref_id ),
   KEY dependent ( dependent_xref_id ),
@@ -2337,7 +2353,7 @@ CREATE TABLE object_xref (
   ensembl_object_type         ENUM('RawContig', 'Transcript', 'Gene',
                                    'Translation', 'Operon', 'OperonTranscript')
                               NOT NULL,
-  xref_id                     INT UNSIGNED NOT NULL,
+  xref_id                     INT(10) UNSIGNED NOT NULL,
   linkage_annotation          VARCHAR(255) DEFAULT NULL,
   analysis_id                 SMALLINT UNSIGNED DEFAULT 0 NOT NULL,
 
@@ -2570,17 +2586,18 @@ CREATE TABLE interpro (
 */
 
 CREATE TABLE data_file (
-  data_file_id int(11) unsigned NOT NULL AUTO_INCREMENT,
-  coord_system_id int(11) NOT NULL,
-  analysis_id int(11) NOT NULL,
-  name varchar(100) NOT NULL,
-  version_lock tinyint(1) DEFAULT 0 NOT NULL,
-  absolute tinyint(1) DEFAULT 0 NOT NULL,
-  url text,
-  file_type enum('BAM','BIGBED','BIGWIG','VCF'),
+  data_file_id      INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  coord_system_id   INT(10) UNSIGNED NOT NULL,
+  analysis_id       SMALLINT UNSIGNED NOT NULL,
+  name              VARCHAR(100) NOT NULL,
+  version_lock      TINYINT(1) DEFAULT 0 NOT NULL,
+  absolute          TINYINT(1) DEFAULT 0 NOT NULL,
+  url               TEXT,
+  file_type         ENUM('BAM','BIGBED','BIGWIG','VCF'),
+  
   PRIMARY KEY (data_file_id),
   UNIQUE KEY df_unq_idx(coord_system_id, analysis_id, name, file_type),
   INDEX df_name_idx(name),
   INDEX df_analysis_idx(analysis_id)
-) ENGINE=MyISAM;
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 

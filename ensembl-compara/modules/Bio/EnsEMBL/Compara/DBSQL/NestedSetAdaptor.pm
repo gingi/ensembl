@@ -36,7 +36,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.59 $
+$Revision: 1.62 $
 
 =head1 APPENDIX
 
@@ -54,6 +54,8 @@ use Bio::EnsEMBL::Utils::Exception qw(throw warning deprecate);
 use Bio::EnsEMBL::Utils::SqlHelper;
 
 use Bio::EnsEMBL::Compara::NestedSet;
+
+use DBI qw(:sql_types);
 
 use base ('Bio::EnsEMBL::Compara::DBSQL::BaseAdaptor');
 
@@ -90,9 +92,9 @@ sub fetch_node_by_node_id {
   }
 
   my $table= ($self->_tables)[0]->[1];
-  my $constraint = "$table.node_id = $node_id";
-  my ($node) = @{$self->generic_fetch($constraint)};
-  return $node;
+  my $constraint = "$table.node_id = ?";
+  $self->bind_param_generic_fetch($node_id, SQL_INTEGER);
+  return $self->generic_fetch_one($constraint);
 }
 
 =head2 fetch_parent_for_node
@@ -127,7 +129,8 @@ sub fetch_all_children_for_node {
     throw("set arg must be a [Bio::EnsEMBL::Compara::NestedSet] not a $node");
   }
 
-  my $constraint = "parent_id = " . $node->node_id;
+  my $constraint = 'parent_id = ?';
+  $self->bind_param_generic_fetch($node->node_id, SQL_INTEGER);
   my $kids = $self->generic_fetch($constraint);
   foreach my $child (@{$kids}) { $node->add_child($child); }
 
@@ -140,12 +143,11 @@ sub fetch_all_leaves_indexed {
   unless($node->isa('Bio::EnsEMBL::Compara::NestedSet')) {
     throw("set arg must be a [Bio::EnsEMBL::Compara::NestedSet] not a $node");
   }
-
   my $table= ($self->_tables)[0]->[1];
-  my $left_index = $node->left_index;
-  my $right_index = $node->right_index;
-  my $root_id = $node->_root_id;
-  my $constraint = "($table.root_id = $root_id) AND (($table.right_index - $table.left_index) = 1) AND ($table.left_index BETWEEN $left_index AND $right_index)";
+  $self->bind_param_generic_fetch($node->_root_id, SQL_INTEGER);
+  $self->bind_param_generic_fetch($node->left_index, SQL_INTEGER);
+  $self->bind_param_generic_fetch($node->right_index, SQL_INTEGER);
+  my $constraint = "($table.root_id = ?) AND (($table.right_index - $table.left_index) = 1) AND ($table.left_index BETWEEN ? AND ?)";
   return $self->generic_fetch($constraint);
 }
 
@@ -164,10 +166,10 @@ sub fetch_subtree_under_node {
 
   my $alias = ($self->_tables)[0]->[1];
 
-  my $left_index = $node->left_index;
-  my $right_index = $node->right_index;
-  my $root_id = $node->_root_id;
-  my $constraint = "($alias.root_id = $root_id) AND ($alias.left_index BETWEEN $left_index AND $right_index)";
+  $self->bind_param_generic_fetch($node->_root_id, SQL_INTEGER);
+  $self->bind_param_generic_fetch($node->left_index, SQL_INTEGER);
+  $self->bind_param_generic_fetch($node->right_index, SQL_INTEGER);
+  my $constraint = "($alias.root_id = ?) AND ($alias.left_index BETWEEN ? AND ?)";
   my $all_nodes = $self->generic_fetch($constraint);
   push @{$all_nodes}, $node;
   $self->_build_tree_from_nodes($all_nodes);
@@ -205,27 +207,11 @@ sub fetch_tree_by_root_id {
   my ($self, $root_id) = @_;
 
   my $table = ($self->_tables)[0]->[1];
-  my $constraint = "$table.root_id = $root_id";
+  my $constraint = "$table.root_id = ?";
+  $self->bind_param_generic_fetch($root_id, SQL_INTEGER);
   return $self->_build_tree_from_nodes($self->generic_fetch($constraint));
 }
 
-
-
-sub fetch_subroot_by_left_right_index {
-  deprecate('fetch_subroot_by_left_right_index() should not be used and will be removed in release 70.
-  If you are using it, please contact the dev mailing-list dev@ensembl.org');
-  my ($self,$node) = @_;
-
-  unless ($node->left_index && $node->right_index) {
-    warning("fetch_subroot_by_left_right_index subroutine assumes that left and right index has been built and store in the database.\n This does not seem to be the case.\n");
-  }
-  my $left_index = $node->left_index;
-  my $right_index = $node->right_index;
-  my $root_id = $node->_root_id;
-
-  my $constraint = "parent_id = $root_id AND left_index<=$left_index AND right_index>=$right_index";
-  return $self->generic_fetch($constraint)->[0];
-}
 
 
 =head2 fetch_root_by_node
@@ -251,15 +237,13 @@ sub fetch_root_by_node {
 
   my $alias = ($self->_tables)[0]->[1];
 
-  my $left_index = $node->left_index;
-  my $right_index = $node->right_index;
-  my $root_id = $node->_root_id;
+  $self->bind_param_generic_fetch($node->_root_id, SQL_INTEGER);
+  $self->bind_param_generic_fetch($node->left_index, SQL_INTEGER);
+  $self->bind_param_generic_fetch($node->right_index, SQL_INTEGER);
 
-  my $constraint = "($alias.root_id = $root_id) AND ($alias.left_index <= $left_index) AND ($alias.right_index >= $right_index)";
-  my $nodes = $self->generic_fetch($constraint);
-  my $root = $self->_build_tree_from_nodes($nodes);
+  my $constraint = "($alias.root_id = ?) AND ($alias.left_index <= ?) AND ($alias.right_index >= ?)";
 
-  return $root;
+  return $self->_build_tree_from_nodes($self->generic_fetch($constraint));
 }
 
 
@@ -293,11 +277,12 @@ sub fetch_first_shared_ancestor_indexed {
   }
 
   my $alias = ($self->_tables)[0]->[1];
-  my $constraint = "$alias.root_id=$root_id AND $alias.left_index <= $min_left AND $alias.right_index >= $max_right";
+  my $constraint = "$alias.root_id = ? AND $alias.left_index <= ? AND $alias.right_index >= ?";
   my $final = " ORDER BY ($alias.right_index-$alias.left_index) LIMIT 1";
-  
-  my $ancestor = $self->generic_fetch($constraint, '', $final)->[0];
-  return $ancestor;
+  $self->bind_param_generic_fetch($root_id, SQL_INTEGER);
+  $self->bind_param_generic_fetch($min_left, SQL_INTEGER);
+  $self->bind_param_generic_fetch($max_right, SQL_INTEGER);
+  return $self->generic_fetch_one($constraint, '', $final);
 }
 
 
@@ -313,22 +298,10 @@ sub update {
     throw("set arg must be a [Bio::EnsEMBL::Compara::NestedSet] not a $node");
   }
 
-  my $parent_id = 0;
-  if($node->parent) {
-    $parent_id = $node->parent->node_id ;
-  }
-  my $root_id = $node->root->node_id;
-
  my $table= ($self->_tables)[0]->[0];
-  my $sql = "UPDATE $table SET ".
-               "parent_id=$parent_id".
-               ",root_id=$root_id".
-               ",left_index=" . $node->left_index .
-               ",right_index=" . $node->right_index .
-               ",distance_to_parent=" . $node->distance_to_parent .
-             " WHERE $table.node_id=". $node->node_id;
+  my $sth = $self->prepare("UPDATE $table SET parent_id = ?, root_id = ?, left_index = ?, right_index = ?, distance_to_parent = ? WHERE $table.node_id = ?");
 
-  $self->dbc->do($sql);
+  $sth->execute($node->parent ? $node->parent->node_id : undef, $node->root->node_id, $node->left_index, $node->right_index, $node->distance_to_parent, $node->node_id);
 }
 
 
@@ -343,85 +316,6 @@ sub update_subtree {
   }
 }
 
-=head2 sync_tree_leftright_index
-
-  Arg [1]    : Bio::EnsEMBL::Compara::NestedSet $root
-  Arg [2]    : Boolean; indicates if you wish to use a fresh database 
-               connection to perform any locking. If you are within an existing
-               transaction this is a good idea to avoid locking the LR table
-               for the duration of your transaction
-  Example    : $nsa->sync_tree_leftright_index($root);
-  Description: For the given root this method looks for left right index
-               offset recorded in lr_index_offset for the configured
-               table. The program locks on this table to reserve a batch
-               of identifiers which are then used to left_right index
-               the tree.
-
-               The left right indexing is called by this method on your given
-               tree root
-  Returntype : Nothing
-  Exceptions : Only raised from DBI problems
-  Caller     : Public
-
-=cut
-
-sub sync_tree_leftright_index {
-  my ($self, $tree_root, $use_fresh_connection) = @_;
-  my $starting_lr_index = $self->_get_starting_lr_index($tree_root, $use_fresh_connection);
-  $tree_root->build_leftright_indexing($starting_lr_index);
-  return;
-}
-
-##
-## Offset is pre-calculated by taking the number of nodes in the tree
-## and multiplying by 2. This is then stored & passed back to
-## sync_tree_leftright_index()
-##
-sub _get_starting_lr_index {
-  my ($self, $tree_root, $use_fresh_connection) = @_;
-
-  my $table = $self->_lr_table_name();
-  my $node_count = scalar(@{$tree_root->get_all_nodes()});
-  my $lr_ids_needed = $node_count*2;
-  
-  my $select_sql = 'SELECT lr_index_offset_id, lr_index FROM lr_index_offset WHERE table_name =? FOR UPDATE';
-  my $update_sql = 'UPDATE lr_index_offset SET lr_index =? WHERE lr_index_offset_id =?';
-
-  my $conn = ($use_fresh_connection) ?
-    Bio::EnsEMBL::DBSQL::DBConnection->new(-DBCONN => $self->dbc()) :
-    $self->dbc();
-  my $h = Bio::EnsEMBL::Utils::SqlHelper->new(-DB_CONNECTION => $conn);
-
-  my $starting_lr_index;
-  #Retry because this *cannot* fail due to NJTREE -> QuickTreeBreak flow
-  $h->transaction(
-    -RETRY => 3,
-    -CONDITION => sub {
-      my ($error) = @_;
-      return ( $error =~ /deadlock/i ) ? 1 : 0;
-    },
-    -CALLBACK => sub {
-      my $rows = $h->execute(-SQL => $select_sql, -PARAMS => [$table]);
-      if(!@{$rows}) {
-        throw("The table '${table}' does not have an entry in lr_index_offset");
-      }
-      my ($id, $max) = @{$rows->[0]};
-      $starting_lr_index = $max+1;
-      my $new_max = $max+$lr_ids_needed;
-      $h->execute_update(-SQL => $update_sql, -PARAMS => [$new_max, $id]);
-      return;
-    }
-  );
-  
-  $conn->disconnect_if_idle() if($use_fresh_connection);
-
-  return $starting_lr_index;
-}
-
-sub _lr_table_name {
-  my ($self) = @_;
-  return ($self->_tables)[0]->[0];
-}
 
 ##################################
 #

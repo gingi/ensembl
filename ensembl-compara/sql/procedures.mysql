@@ -17,7 +17,7 @@ READS SQL DATA
 SELECT CONCAT(
 	GROUP_CONCAT( IF(pip.left_index IS NULL,'',CONCAT(IF(parent.left_index-pip.left_index=1, '|', ' '),'     ')) ORDER BY parent.left_index SEPARATOR ''),
 	IF(node.node_id=node.root_id,
-		CONCAT(IFNULL(CONCAT(root.stable_id, ' '), ''), root.tree_type, '/', root.member_type, ': '),
+		CONCAT(IFNULL(CONCAT(root.stable_id, ' '), ''), root.tree_type, '/', root.member_type, '/', root.clusterset_id, ': '),
 		CONCAT(IF(MIN(node.left_index-parent.left_index)=1, '+', '\\'), '----')
 	),
 	'(', node.node_id, ')',	' ',
@@ -30,8 +30,7 @@ FROM gene_tree_node AS node
 	LEFT JOIN gene_tree_node_attr AS attr ON attr.node_id=node.node_id
 	LEFT JOIN gene_tree_node AS parent ON node.root_id=parent.root_id AND parent.left_index<node.left_index AND node.right_index<parent.right_index
 	LEFT JOIN gene_tree_node pip ON pip.node_id=parent.parent_id AND pip.root_id=node.root_id
-	LEFT JOIN gene_tree_member ptm ON node.node_id=ptm.node_id
-	LEFT JOIN member m USING(member_id)
+	LEFT JOIN member m ON node.member_id=m.member_id
 	LEFT JOIN genome_db g USING(genome_db_id)
 WHERE node.root_id = user_root_id
 GROUP BY node.node_id

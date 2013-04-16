@@ -27,43 +27,33 @@ sub run_script {
 
   my ($type, $my_args) = split(/:/,$file);
   
-  my $host;
+  my ($host, $source_prefix);
   my $user = "ensro";
 
   if($my_args =~ /user[=][>](\S+?)[,]/){
     $user = $1;
   }
-  my %id2name = $self->species_id2name;
-  my $species_name = $id2name{$species_id}[0];
-  my $source_prefix;
-  if($species_name eq "homo_sapiens" ){
-    $source_prefix = "HGNC";
-    $host = "ens-staging1";
-  }
-  elsif($species_name eq "mus_musculus" ){
-    $source_prefix = "MGI";
-    $host = "ens-staging2";
-  }
-  elsif($species_name eq "danio_rerio" ){
-    $source_prefix = "ZFIN_ID";
-    $host = "ens-staging1";
-  }
-  else{
-    die "Species is $species_name and is not homo_sapines, mus_musculus or danio_rerio the only three valid species\n";
-  }
-
   if($my_args =~ /host[=][>](\S+?)[,]/){
     $host = $1;
   }
-  my $vuser  ="ensro";
+  if ($my_args =~ /source[=][>](\S+?)[,]/){
+    $source_prefix = $1;
+  }
+  my %id2name = $self->species_id2name;
+  my $species_name = $id2name{$species_id}[0];
+  if (!$source_prefix){
+    die "Species is $species_name and is not homo_sapiens, mus_musculus, danio_rerio or sus_scrofa, the only four valid species\n";
+  }
+
+  my $vuser = "ensro";
   my $vhost;
-  my $vport;
+  my $vport = 3306;
   my $vdbname;
   my $vpass;
  
   my $cuser  ="ensro";
   my $chost;
-  my $cport;
+  my $cport = 3306;
   my $cdbname;
   my $cpass;
 
@@ -101,7 +91,7 @@ sub run_script {
   my $vega_dbc;
   my $core_dbc;
   if(defined($vdbname)){
-    print "Using $host $vdbname for Vega and $cdbname for Core\n";
+    print "Using $vhost $vdbname for Vega\n";
 
     my $vega_db =  XrefParser::Database->new({ host   => $vhost,
 					       port   => $vport,
@@ -114,7 +104,21 @@ sub run_script {
       print "Problem could not open connection to $vhost, $vport, $vuser, $vdbname, $vpass\n";
       return 1;
     }
+  } else {
+    $reg->load_registry_from_db(
+                                -host => $host,
+                                -user => $user,
+                                -species => $species_name);
 
+    $vega_dbc = $reg->get_adaptor($species_name,"vega","slice");
+    if(!defined($vega_dbc)){
+      print "Could not connect to $species_name vega database using load_registry_from_db $host $user\n";
+      return 1;
+    }
+    $vega_dbc = $vega_dbc->dbc;
+  }
+
+   if (defined($cdbname)){
     my $core_db =  XrefParser::Database->new({ host   => $chost,
 					       port   => $cport,
 					       user   => $cuser,
@@ -125,21 +129,12 @@ sub run_script {
       print "Problem could not open connectipn to $chost, $cport, $cuser, $cdbname, $cpass\n";
       return 1;
     }
-
-  }
-  else{
-
+  } else{
     $reg->load_registry_from_db(
                                 -host => $host,
                                 -user => $user,
 			        -species => $species_name);
 
-    $vega_dbc = $reg->get_adaptor($species_name,"vega","slice");
-    if(!defined($vega_dbc)){
-      print "Could not connect to $species_name vega database using load_registry_from_db $host $user\n";
-      return 1;
-    }
-    $vega_dbc = $vega_dbc->dbc;
     $core_dbc = $reg->get_adaptor($species_name,"core","slice");
     if(!defined($core_dbc)){
       print "Could not connect to $species_name core database using load_registry_from_db $host $user\n";
@@ -156,9 +151,9 @@ sub run_script {
  
  print "source id is $source_id, curated_source_id is $curated_source_id\n";
 
-  my $sql = 'select distinct t.stable_id, x.display_label, t.status from analysis a, xref x, object_xref ox , external_db e, transcript t where t.analysis_id = a.analysis_id and a.logic_name like "%havana%" and e.external_db_id = x.external_db_id and x.xref_id = ox.xref_id and t.transcript_id = ox.ensembl_id and e.db_name like ?';
+  my $sql = 'select distinct t.stable_id, x.display_label, t.status from analysis a, xref x, object_xref ox , external_db e, transcript t where t.analysis_id = a.analysis_id and a.logic_name like "%havana%" and e.external_db_id = x.external_db_id and x.xref_id = ox.xref_id and t.transcript_id = ox.ensembl_id and ox.ensembl_object_type = "Transcript" and e.db_name like ?';
 
-  my $sql_vega = 'select t.stable_id, x.display_label, t.status from xref x, object_xref ox , external_db e, transcript t where e.external_db_id = x.external_db_id and x.xref_id = ox.xref_id and t.transcript_id = ox.ensembl_id and t.stable_id <> x.display_label and e.db_name like ?';
+  my $sql_vega = 'select t.stable_id, x.display_label, t.status from xref x, object_xref ox , external_db e, transcript t where e.external_db_id = x.external_db_id and x.xref_id = ox.xref_id and t.transcript_id = ox.ensembl_id and t.stable_id <> x.display_label and ox.ensembl_object_type = "Transcript" and e.db_name like ?';
 
 
   my %ott_to_vega_name;
@@ -226,7 +221,7 @@ sub run_script {
  
 
   # need to add gene info to havana_status table
-  $sql = 'select g.stable_id, x.display_label from xref x, object_xref ox , external_db e, gene g where e.external_db_id = x.external_db_id and x.xref_id = ox.xref_id and g.gene_id = ox.ensembl_id and e.db_name like "OTTG"';
+  $sql = 'select g.stable_id, x.display_label from xref x, object_xref ox , external_db e, gene g where e.external_db_id = x.external_db_id and x.xref_id = ox.xref_id and g.gene_id = ox.ensembl_id and e.db_name like "OTTG" and ox.ensembl_object_type = "Gene" ';
 
   $sth = $core_dbc->prepare($sql) || die "Could not prepare for core $sql\n";
   $sth->execute() or croak( $core_dbc->errstr());

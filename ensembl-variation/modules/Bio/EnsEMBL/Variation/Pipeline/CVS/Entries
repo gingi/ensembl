@@ -1,12 +1,12 @@
 D/ProteinFunction////
 D/VariantQC////
-/BaseVariationProcess.pm/1.7/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
-/FinishVariationClass.pm/1.4/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
-/InitTranscriptEffect.pm/1.9/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
-/InitVariationClass.pm/1.5/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
-/RebuildIndexes.pm/1.3/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
-/SetVariationClass.pm/1.8/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
-/TranscriptEffect.pm/1.12/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
-/TranscriptFileAdaptor.pm/1.5/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
-/UpdateVariationFeature.pm/1.5/Tue Apr 16 20:37:21 2013//Tbranch-ensembl-69
-/VariationConsequence_conf.pm/1.20/Tue Apr 16 20:37:21 2013//Tbranch-ensembl-69
+/BaseVariationProcess.pm/1.7/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-70
+/FinishVariationClass.pm/1.4/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-70
+/InitTranscriptEffect.pm/1.9/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-70
+/InitVariationClass.pm/1.5/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-70
+/RebuildIndexes.pm/1.3/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-70
+/SetVariationClass.pm/1.8/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-70
+/TranscriptEffect.pm/1.12/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-70
+/TranscriptFileAdaptor.pm/1.5/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-70
+/UpdateVariationFeature.pm/1.5/Tue Apr 16 20:37:21 2013//Tbranch-ensembl-70
+/VariationConsequence_conf.pm/1.20/Tue Apr 16 20:37:21 2013//Tbranch-ensembl-70

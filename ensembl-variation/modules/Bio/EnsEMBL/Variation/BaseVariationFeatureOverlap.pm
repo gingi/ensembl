@@ -103,7 +103,7 @@ sub new_fast {
   Description: Get/set the associated Feature, lazy-loading it if required
   Returntype : Bio::EnsEMBL::Feature
   Exceptions : throws isf the argument is the wrong type
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -116,33 +116,53 @@ sub feature {
     }
  
     if ($type && !$self->{feature}) {
-    
-        # try to lazy load the feature
-        
         if (my $adap = $self->{adaptor}) {
-            
-            my $get_method = 'get_'.$type.'Adaptor';
-           
-            # XXX: this can doesn't work because the method is AUTOLOADed, need to rethink this...
-            #if ($adap->db->dnadb->can($get_method)) {
-                if (my $fa = $adap->db->dnadb->$get_method) {
-                    
-                    # if we have a stable id for the feature use that
-                    if (my $feature_stable_id = $self->{_feature_stable_id}) {
-                        if (my $f = $fa->fetch_by_stable_id($feature_stable_id)) {
-                            $self->{feature} = $f;
-                            delete $self->{_feature_stable_id};
+            # try to lazy load the feature
+            my $feature_stable_id = $self->{_feature_stable_id};
+            if ($type eq 'RegulatoryFeature') {
+                my $funcgen_db = $adap->db->get_db_adaptor('funcgen');
+                unless ($funcgen_db) {
+                    warn("Ensembl Funcgen DB is missing.");
+                }
+                my $rfa = $funcgen_db->get_RegulatoryFeatureAdaptor;
+                if ($feature_stable_id) {
+                    my $feature = $rfa->fetch_by_stable_id($feature_stable_id);
+                    $self->{feature} = $feature;
+                }
+            } elsif ($type eq 'MotifFeature') {
+                my $funcgen_db = $adap->db->get_db_adaptor('funcgen');
+                unless ($funcgen_db) {
+                    warn("Ensembl Funcgen DB is missing.")
+                }
+                my $mfa = $funcgen_db->get_MotifFeatureAdaptor;
+                if (my $motif_feature_id = $self->{motif_feature_id}) {
+                    my $feature = $mfa->fetch_by_dbID($motif_feature_id);
+                    $self->{feature} = $feature;
+                }    
+            } else {
+                my $get_method = 'get_'.$type.'Adaptor';
+               
+                # XXX: this can doesn't work because the method is AUTOLOADed, need to rethink this...
+                #if ($adap->db->dnadb->can($get_method)) {
+                    if (my $fa = $adap->db->dnadb->$get_method) {
+                        
+                        # if we have a stable id for the feature use that
+                        if (my $feature_stable_id = $self->{_feature_stable_id}) {
+                            if (my $f = $fa->fetch_by_stable_id($feature_stable_id)) {
+                                $self->{feature} = $f;
+                                #delete $self->{_feature_stable_id};
+                            }
+                        }
+                        elsif (my $feature_label = $self->{_feature_label}) {
+                            # get a slice covering the vf
+                            
+                            #for my $f ($fa->fetch_all_by_Slice_constraint)
                         }
                     }
-                    elsif (my $feature_label = $self->{_feature_label}) {
-                        # get a slice covering the vf
-                        
-                        #for my $f ($fa->fetch_all_by_Slice_constraint)
-                    }
+                #}
+                else {
+                    warn "Cannot get an adaptor for type: $type";
                 }
-            #}
-            else {
-                warn "Cannot get an adaptor for type: $type";
             }
         }
     }
@@ -180,7 +200,7 @@ sub _fetch_feature_for_stable_id {
                     if (my $feature_stable_id = $self->{_feature_stable_id}) {
                         if (my $f = $fa->fetch_by_stable_id($feature_stable_id)) {
                             $self->{feature} = $f;
-                            delete $self->{_feature_stable_id};
+                            #delete $self->{_feature_stable_id};
                         }
                     }
                     elsif (my $feature_label = $self->{_feature_label}) {
@@ -205,11 +225,14 @@ sub _fetch_adaptor_for_group {
 
 sub _feature_stable_id {
     my $self = shift;
-    if ($self->feature && $self->feature->can('stable_id')) {
-        return $self->feature->stable_id;
-    }
-    elsif (my $id = $self->{_feature_stable_id}) {
+    
+    if (my $id = $self->{_feature_stable_id}) {
         return $id;
+    }
+    elsif ($self->feature && $self->feature->can('stable_id')) {
+        $self->{_feature_stable_id} = $self->feature->stable_id;
+        
+        return $self->{_feature_stable_id};
     }
     else {
         return undef;
@@ -222,7 +245,7 @@ sub _feature_stable_id {
   Description: Get/set the associated BaseVariationFeature
   Returntype : Bio::EnsEMBL::Variation::BaseVariationFeature
   Exceptions : throws if the argument is the wrong type
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -324,7 +347,7 @@ sub get_all_BaseVariationFeatureOverlapAlleles {
                'non_synonymous_codon') or 'NCBI' (e.g. 'missense')
   Returntype : listref of strings
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -406,7 +429,7 @@ sub most_severe_OverlapConsequence {
                'non_synonymous_codon') or 'NCBI' (e.g. 'missense')
   Returntype : string
   Exceptions : none
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 

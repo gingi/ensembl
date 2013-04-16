@@ -42,8 +42,8 @@ CREATE TABLE ncbi_taxa_node (
   rank                            char(32) default '' NOT NULL,
   genbank_hidden_flag             tinyint(1) default 0 NOT NULL,
 
-  left_index                      int(10) NOT NULL,
-  right_index                     int(10) NOT NULL,
+  left_index                      int(10) DEFAULT 0 NOT NULL,
+  right_index                     int(10) DEFAULT 0 NOT NULL,
   root_id                         int(10) default 1 NOT NULL,
 
   PRIMARY KEY (taxon_id),
@@ -303,8 +303,7 @@ CREATE TABLE genomic_align_tree (
   PRIMARY KEY node_id (node_id),
   KEY parent_id (parent_id),
   KEY root_id (root_id),
-  KEY left_index (left_index),
-  KEY right_index (right_index)
+  KEY left_index (root_id, left_index)
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
@@ -413,6 +412,7 @@ CREATE TABLE member (
   genome_db_id                int(10) unsigned, # FK genome_db.genome_db_id
   sequence_id                 int(10) unsigned, # FK sequence.sequence_id
   gene_member_id              int(10) unsigned, # FK member.member_id
+  canonical_member_id         int(10) unsigned, # FK member.member_id
   description                 text DEFAULT NULL,
   chr_name                    char(40),
   chr_start                   int(10),
@@ -468,34 +468,20 @@ CREATE TABLE subset_member (
 
 
 #
-# Table structure for table 'sequence_exon_bounded' (holds the sequence exon boundaries information)
+# Table structure for table 'other_member_sequence' (holds any other member-related sequences)
 #
 
-CREATE TABLE sequence_exon_bounded (
+CREATE TABLE other_member_sequence (
   member_id                   int(10) unsigned NOT NULL, # unique internal id
+  seq_type                    VARCHAR(40) NOT NULL,
   length                      int(10) NOT NULL,
-  sequence_exon_bounded       longtext NOT NULL,
+  sequence                    longtext NOT NULL,
 
   FOREIGN KEY (member_id) REFERENCES member(member_id),
 
-  PRIMARY KEY (member_id),
-  KEY sequence_exon_bounded (sequence_exon_bounded(18))
-) MAX_ROWS = 10000000 AVG_ROW_LENGTH = 19000 COLLATE=latin1_swedish_ci ENGINE=MyISAM;
-
-
-#
-# Table structure for table 'sequence_cds' ( holds the sequence cds information )
-#
-
-CREATE TABLE sequence_cds (
-  member_id                   int(10) unsigned NOT NULL, # unique internal id
-  length                      int(10) NOT NULL,
-  sequence_cds                longtext NOT NULL,
-
-  FOREIGN KEY (member_id) REFERENCES member(member_id),
-
-  PRIMARY KEY (member_id),
-  KEY sequence_cds (sequence_cds(64))
+  PRIMARY KEY (member_id, seq_type),
+  KEY (seq_type, member_id),
+  KEY sequence (sequence(18))
 ) MAX_ROWS = 10000000 AVG_ROW_LENGTH = 60000 COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
 
@@ -639,6 +625,32 @@ CREATE TABLE domain_member (
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
 
+CREATE TABLE gene_align (
+       gene_align_id         int(10) unsigned NOT NULL AUTO_INCREMENT,
+	 seq_type              varchar(40),
+	 aln_method            varchar(40) NOT NULL DEFAULT '',
+	 aln_length            int(10) NOT NULL DEFAULT 0,
+
+  PRIMARY KEY (gene_align_id)
+
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
+
+
+CREATE TABLE gene_align_member (
+       gene_align_id         int(10) unsigned NOT NULL,
+       member_id             int(10) unsigned NOT NULL,
+       cigar_line            mediumtext,
+
+  FOREIGN KEY (gene_align_id) REFERENCES gene_align(gene_align_id),
+  FOREIGN KEY (member_id) REFERENCES member(member_id),
+
+  PRIMARY KEY (gene_align_id,member_id),
+  KEY member_id (member_id)
+
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
+
+
+
 #
 # Table structure for table 'gene_tree_node'
 #
@@ -661,14 +673,17 @@ CREATE TABLE gene_tree_node (
   left_index                      int(10) NOT NULL DEFAULT 0,
   right_index                     int(10) NOT NULL DEFAULT 0,
   distance_to_parent              double default 1.0 NOT NULL,
+  member_id                       int(10) unsigned,
 
   FOREIGN KEY (root_id) REFERENCES gene_tree_node(node_id),
   FOREIGN KEY (parent_id) REFERENCES gene_tree_node(node_id),
+  FOREIGN KEY (member_id) REFERENCES member(member_id),
 
   PRIMARY KEY (node_id),
-  KEY (parent_id),
-  KEY (root_id,left_index),
-  KEY (root_id,right_index)
+  KEY parent_id (parent_id),
+  KEY member_id (member_id),
+  KEY root_id (root_id),
+  KEY root_id_left_index (root_id,left_index)
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
@@ -694,55 +709,23 @@ CREATE TABLE gene_tree_root (
     tree_type                       ENUM('clusterset', 'supertree', 'tree') NOT NULL,
     clusterset_id                   VARCHAR(20) NOT NULL DEFAULT 'default',
     method_link_species_set_id      INT(10) UNSIGNED NOT NULL,
+    gene_align_id                   INT(10) UNSIGNED,
+    ref_root_id                     INT(10) UNSIGNED,
     stable_id                       VARCHAR(40),            # unique stable id, e.g. 'ENSGT'.'0053'.'1234567890'
     version                         INT UNSIGNED,           # version of the stable_id (changes only when members move to/from existing trees)
 
     FOREIGN KEY (root_id) REFERENCES gene_tree_node(node_id),
     FOREIGN KEY (method_link_species_set_id) REFERENCES method_link_species_set(method_link_species_set_id),
+    FOREIGN KEY (gene_align_id) REFERENCES gene_align(gene_align_id),
+    FOREIGN KEY (ref_root_id) REFERENCES gene_tree_root(root_id),
 
     PRIMARY KEY (root_id ),
     UNIQUE KEY ( stable_id ),
+    KEY ref_root_id (ref_root_id),
     KEY (tree_type)
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
-
-
-#
-# Table structure for table 'gene_tree_member'
-#
-# overview:
-#   to allow certain nodes (leaves) to have aligned members attached to them
-# semantics:
-#    node_id                  -- the id of node associated with this name
-#    member_id                -- link to member.member_id in many-1 relation (single member per node)
-#    cigar_line               -- compressed alignment information
-
-CREATE TABLE gene_tree_member (
-  node_id                     int(10) unsigned NOT NULL,
-  member_id                   int(10) unsigned NOT NULL,
-  cigar_line                  mediumtext,
-
-  FOREIGN KEY (node_id) REFERENCES gene_tree_node(node_id),
-  FOREIGN KEY (member_id) REFERENCES member(member_id),
-
-  PRIMARY KEY (node_id),
-  KEY (member_id)
-
-) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
-
-
-#
-# Table structure for table 'protein_tree_member_score'
-#
-# overview:
-#   to allow certain nodes (leaves) to have aligned protein member_scores attached to them
-# semantics:
-#    node_id                  -- the id of node associated with this name
-#    member_id                -- link to member.member_id in many-1 relation (single member per node)
-#    cigar_line               -- string with the alignment score values 
-
-CREATE TABLE protein_tree_member_score LIKE gene_tree_member;
 
 
 #
@@ -807,7 +790,6 @@ CREATE TABLE gene_tree_root_tag (
 #    taxon_name                      -- Only present after reconciliation, the name of the species refered to by taxon_id
 #    bootstrap                       -- A bootstrap value
 #    duplication_confidence_score    -- Only for duplications: the ratio between the number of species in the intersection by the number of the species in the union
-#    tree_support                    -- Set of the 5 different trees that we compute that are supporting the node
 
 # The following foreign key is honoured in Ensembl Compara
 #  FOREIGN KEY (taxon_id) REFERENCES ncbi_taxa_node(taxon_id),
@@ -821,7 +803,6 @@ CREATE TABLE gene_tree_node_attr (
   taxon_name                      VARCHAR(255),
   bootstrap                       TINYINT UNSIGNED,
   duplication_confidence_score    DOUBLE(5,4),
-  tree_support                    SET('phyml_nt', 'nj_ds', 'phyml_aa', 'nj_dn', 'nj_mm', 'quicktree'),
 
   FOREIGN KEY (node_id) REFERENCES gene_tree_node(node_id),
 
@@ -994,53 +975,6 @@ CREATE TABLE sitewise_aln (
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
-#
-# Table structure for table 'protein_tree_hmmprofile'
-#
-# overview:
-#   to allow nodes to have hmm profiles attached to them
-# semantics:
-#    node_id                  -- the id of the root node associated with this hmm profile
-#    type                     -- type of hmm profile (eg: 'hmmls','hmmfs','hmms','hmmsw')
-#    hmmprofile               -- foreign key from method_link_species_set table
-
-CREATE TABLE protein_tree_hmmprofile (
-  node_id                     int(10) unsigned NOT NULL,
-  type                        varchar(40) DEFAULT '' NOT NULL,
-  hmmprofile                  mediumtext,
-
-  KEY(node_id),
-  UNIQUE KEY type_node_id (type, node_id)
-
-) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
-
-#
-# Table structure for table 'lr_index_offset'
-#
-# overview:
-#   Used to store the current maximum left right index for a given table. Table
-#   name is unique and lr_index should be equal to the SQL statement
-#   select max(right_index) from table_name
-# semantics:
-#   lr_index_offset_id -- id of the row since this is an InnoDB table
-#   table_name      -- name of the table this lr_index corresponds to
-#   lr_index        -- max right index for the given table
-
-CREATE TABLE lr_index_offset (
-  lr_index_offset_id int(10) unsigned NOT NULL AUTO_INCREMENT,
-  table_name  varchar(64) NOT NULL,
-  lr_index int(10) unsigned DEFAULT 0,
-  PRIMARY KEY (lr_index_offset_id),
-  UNIQUE KEY (table_name)
-
-) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
-
-# Auto-populate lr_index_offset with all tables
-INSERT INTO lr_index_offset (table_name, lr_index) 
-values 
-  ('ncbi_taxa_node', 0), 
-  ('genomic_align_tree', 0);
-
 
 
 # ---------------------------------- CAFE tables --------------------------------
@@ -1063,8 +997,7 @@ CREATE TABLE `species_tree_node` (
 
   PRIMARY KEY (`node_id`),
   KEY `parent_id` (`parent_id`),
-  KEY `root_id` (`root_id`,`left_index`),
-  KEY `root_id_2` (`root_id`,`right_index`)
+  KEY `root_id` (`root_id`,`left_index`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
 
@@ -1170,12 +1103,23 @@ CREATE TABLE `CAFE_species_gene` (
   KEY `cafe_gene_family_id` (`cafe_gene_family_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
+-- Table structure for table `CAFE_data`                                              
+                                                                                      
+SET @saved_cs_client     = @@character_set_client;                                    
+SET character_set_client = utf8;                                                      
+CREATE TABLE `CAFE_data` (                                                            
+  `fam_id` varchar(20) NOT NULL,                                                      
+  `tree` mediumtext NOT NULL,                                                         
+  `tabledata` mediumtext NOT NULL,                                                    
+  PRIMARY KEY (`fam_id`)                                                              
+) ENGINE=MyISAM DEFAULT CHARSET=latin1;                                               
+SET character_set_client = @saved_cs_client;
 
 
 # ------------------------ End of CAFE tables --------------------------------------
 
 # Auto add schema version to database (this will override whatever hive puts there)
-REPLACE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_version', '69');
+REPLACE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_version', '70');
 
 #Add schema type
 INSERT INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_type', 'compara');

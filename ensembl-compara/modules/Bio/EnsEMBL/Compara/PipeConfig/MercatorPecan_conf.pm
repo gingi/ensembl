@@ -51,13 +51,13 @@ sub default_options {
 #       'ce_mlss_id'            => 523,   # it is very important to check that this value is current (commented out to make it obligatory to specify)
 	#conservation score mlss_id
 #       'cs_mlss_id'            => 50029, # it is very important to check that this value is current (commented out to make it obligatory to specify)
-        'release'               => '68',
+        'release'               => '70',
         'release_suffix'        => '',    # an empty string by default, a letter otherwise
         'ensembl_cvs_root_dir'  => $ENV{'ENSEMBL_CVS_ROOT_DIR'},
-	'dbname'                => $ENV{USER}.'_pecan_19way_'.$self->o('release').$self->o('release_suffix'),
+	'dbname'                => $ENV{USER}.'_pecan_20way_'.$self->o('release').$self->o('release_suffix'),
         'work_dir'              => '/lustre/scratch109/ensembl/' . $ENV{'USER'} . '/scratch/hive/release_' . $self->o('rel_with_suffix') . '/' . $self->o('dbname'),
-#	'do_not_reuse_list'     => [ ],     # names of species we don't want to reuse this time. This is normally done automatically, so only need to set this if we think that this will not be picked up automatically.
-	'do_not_reuse_list'     => [ 87 ],     # names of species we don't want to reuse this time. This is normally done automatically, so only need to set this if we think that this will not be picked up automatically.
+	'do_not_reuse_list'     => [ 112, 132 ],     # genome_db_ids of species we don't want to reuse this time. This is normally done automatically, so only need to set this if we think that this will not be picked up automatically.
+#	'do_not_reuse_list'     => [ 87 ],     # names of species we don't want to reuse this time. This is normally done automatically, so only need to set this if we think that this will not be picked up automatically.
 
     # dependent parameters:
         'rel_with_suffix'       => $self->o('release').$self->o('release_suffix'),
@@ -112,11 +112,11 @@ sub default_options {
     # connection parameters to various databases:
 
         'pipeline_db' => {                      # the production database itself (will be created)
-            -host   => 'compara1',
+            -host   => 'compara2',
             -port   => 3306,
             -user   => 'ensadmin',
             -pass   => $self->o('password'),                    
-            -dbname => $ENV{'USER'}.'_pecan_19way_'.$self->o('rel_with_suffix'),
+            -dbname => $ENV{'USER'}.'_pecan_20way_'.$self->o('rel_with_suffix'),
         },
 
         'master_db' => {                        # the master database for synchronization of various ids
@@ -158,7 +158,7 @@ sub default_options {
            -port   => 3306,
            -user   => 'ensro',
            -pass   => '',
-           -dbname => 'kb3_pecan_19way_67',
+           -dbname => 'kb3_pecan_19way_68',
 	   -driver => 'mysql',
         },
 
@@ -310,12 +310,8 @@ sub pipeline_analyses {
                 'compara_db'    => $self->o('master_db'),   # that's where genome_db_ids come from
                 'mlss_id'       => $self->o('mlss_id'),
 
-		'adaptor_name'          => 'MethodLinkSpeciesSetAdaptor',
-                'adaptor_method'        => 'fetch_by_dbID',
-                'method_param_list'     => [ '#mlss_id#' ],
-                'object_method'         => 'species_set',
-
-		'column_names2getters'  => { 'genome_db_id' => 'dbID', 'species_name' => 'name', 'assembly_name' => 'assembly', 'genebuild' => 'genebuild', 'locator' => 'locator' },
+                'call_list'             => [ 'compara_dba', 'get_MethodLinkSpeciesSetAdaptor', ['fetch_by_dbID', '#mlss_id#'], 'species_set_obj', 'genome_dbs'],
+                'column_names2getters'  => { 'genome_db_id' => 'dbID', 'species_name' => 'name', 'assembly_name' => 'assembly', 'genebuild' => 'genebuild', 'locator' => 'locator' },
 
                 'fan_branch_code'       => 2,
             },
@@ -466,41 +462,11 @@ sub pipeline_analyses {
             -hive_capacity => 4,
             -can_be_empty  => 1,
             -flow_into => {
-		 1 => [ 'subset_table_reuse' ],   # n_reused_species
-            },
-	    -rc_name => '100Mb',
-        },
-        {   -logic_name => 'subset_table_reuse',
-            -module     => 'Bio::EnsEMBL::Hive::RunnableDB::MySQLTransfer',
-            -parameters => {
-		'src_db_conn'   => $self->o('reuse_db'),
-                'table'         => 'subset',
-		'mode'          => 'insertignore',
-                'where'         => 'description like "gdb:#genome_db_id# %"',
-            },
-            -hive_capacity => 4,
-            -can_be_empty  => 1,
-	    -flow_into => {
-                1 => [ 'subset_member_table_reuse' ],    # n_reused_species
+		 1 => [ 'reuse_dump_subset_fasta' ],   # n_reused_species
             },
 	    -rc_name => '100Mb',
         },
 
-        {   -logic_name => 'subset_member_table_reuse',
-            -module     => 'Bio::EnsEMBL::Hive::RunnableDB::JobFactory',
-            -parameters => {
-                'db_conn'    => $self->o('reuse_db'),
-                'inputquery' => 'SELECT sm.* FROM subset_member sm JOIN member USING (member_id) WHERE genome_db_id = #genome_db_id#',
-			    'fan_branch_code' => 2,
-			   },
-            -hive_capacity => 4,
-            -can_be_empty  => 1,
-            -flow_into => {
-		 1 => [ 'reuse_dump_subset_fasta'],
-		 2 => 'mysql:////subset_member',
-            },
-	    -rc_name => '1Gb',
-        },
         {   -logic_name => 'paf_table_reuse',
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::MySQLTransfer',
             -parameters => {
@@ -520,6 +486,7 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::SqlCmd',
             -parameters => {
                 'sql' => [  'CREATE TABLE IF NOT EXISTS peptide_align_feature_#per_genome_suffix# like peptide_align_feature',
+                            'ALTER TABLE peptide_align_feature_#per_genome_suffix# ADD KEY hmember_hit (hmember_id, hit_rank)',
                             'ALTER TABLE peptide_align_feature_#per_genome_suffix# DISABLE KEYS',
                 ],
             },
@@ -531,7 +498,7 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::LoadMembers',
             -parameters => {'coding_exons' => 1,
 			    'min_length' => 20 },
-            -wait_for => [ 'check_reuse_db', 'paf_create_empty_table', 'accumulate_reuse_ss', 'member_table_reuse', 'subset_table_reuse', 'subset_member_table_reuse', 'sequence_table_reuse' ],
+            -wait_for => [ 'check_reuse_db', 'paf_create_empty_table', 'accumulate_reuse_ss', 'member_table_reuse', 'sequence_table_reuse' ],
             -hive_capacity => -1,
             -can_be_empty  => 1,
             -flow_into => {
@@ -549,7 +516,7 @@ sub pipeline_analyses {
             },
              -batch_size    =>  20,  # they can be really, really short
 	    -can_be_empty  => 1,
-            -wait_for  => [ 'member_table_reuse', 'subset_table_reuse', 'subset_member_table_reuse', 'sequence_table_reuse' ],   # act as a funnel
+            -wait_for  => [ 'member_table_reuse', 'sequence_table_reuse' ],   # act as a funnel
             -flow_into => {
                 1 => [ 'make_blastdb' ],
                 2 => [ 'blast_factory' ],
@@ -602,6 +569,7 @@ sub pipeline_analyses {
 		'fasta_dir'    => $self->o('blastdb_dir'),
             },
 	    -wait_for => [ 'paf_table_reuse' ],
+            -batch_size => 10,
             -hive_capacity => $self->o('blast_capacity'),
 	    -rc_name => '1.8Gb',
         },
@@ -663,6 +631,7 @@ sub pipeline_analyses {
              -flow_into => {
                  1 => [ 'gerp' ],
 		 2 => [ 'pecan_mem1'], #retry with more heap memory
+		-1 => [ 'pecan_mem1'], #MEMLIMIT (pecan didn't fail, but lsf did)
 		-2 => [ 'pecan_mem1'], #RUNLIMIT
              },
 	    -rc_name => '1.8Gb',

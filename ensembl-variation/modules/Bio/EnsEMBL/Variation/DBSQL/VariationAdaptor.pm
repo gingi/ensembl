@@ -135,7 +135,7 @@ sub store {
         (join ",", @{$var->get_all_validation_states}) || undef,
         $var->ancestral_allele,
         $var->{flipped},
-        $var->{class_attrib_id} || $var->adaptor->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $var->{class_SO_term}) || 18,
+        $var->{class_attrib_id} || $self->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $var->{class_SO_term}) || 18,
         $var->is_somatic,
         $var->minor_allele,
         $var->minor_allele_frequency,
@@ -149,35 +149,6 @@ sub store {
 	my $dbID = $dbh->last_insert_id(undef, undef, 'variation', 'variation_id');
     $var->{dbID}    = $dbID;
     $var->{adaptor} = $self;
-    
-    # flanking sequence
-    $sth = $dbh->prepare(q{
-        INSERT INTO flanking_sequence (
-            variation_id,
-            up_seq,
-            down_seq,
-            up_seq_region_start,
-            up_seq_region_end,
-            down_seq_region_start,
-            down_seq_region_end,
-            seq_region_id,
-            seq_region_strand
-        ) VALUES (?,?,?,?,?,?,?,?,?)
-    });
-    
-    $sth->execute(
-        $var->dbID,
-        $var->{five_prime_flanking_seq},
-        $var->{three_prime_flanking_seq},
-        $var->{up_seq_region_start},
-        $var->{up_seq_region_end},
-        $var->{down_seq_region_start},
-        $var->{down_seq_region_end},
-        $var->{seq_region_id},
-        $var->{seq_region_strand}
-    );
-    
-    $sth->finish;
 }
 
 sub update {
@@ -239,7 +210,7 @@ sub update {
 
   Description: Returns a listref of all germline variations
   Returntype : listref of Variations
-  Status     : At risk
+  Status     : Stable
 
 =cut
 
@@ -253,7 +224,7 @@ sub fetch_all {
 
   Description: Returns a listref of all somatic variations
   Returntype : listref of Variations
-  Status     : At risk
+  Status     : Stable
 
 =cut
 
@@ -787,7 +758,7 @@ sub fetch_all_by_source_type {
   Returntype : reference to list of Bio::EnsEMBL::Variation::Variation objects
   Exceptions : throw on bad argument
   Caller     : general, IndividualGenotypeAdaptor, PopulationGenotypeAdaptor
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -857,7 +828,7 @@ sub fetch_Iterator_by_dbID_list {
   Returntype : reference to list of Bio::EnsEMBL::Variation::Variation objects
   Exceptions : throw on bad argument
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -882,7 +853,7 @@ sub fetch_all_by_name_list {
   ReturnType  : array ref of string
   Exceptions  : none
   Caller      : web
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 
@@ -941,7 +912,7 @@ sub get_default_source{
   ReturnType  : int
   Exceptions  : none
   Caller      : general
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 
@@ -1111,7 +1082,7 @@ sub fetch_all_by_Population {
   Returntype : listref of Bio::EnsEMBL::Variation::Variation
   Exceptions : throw on incorrect argument
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -1317,7 +1288,7 @@ sub has_failed_subsnps {
   ReturnType  : reference to a list of strings
   Exceptions  : none
   Caller      : general
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 

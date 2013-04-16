@@ -39,8 +39,6 @@ eg "-num_alignments 20 -seg 'yes' -best_hit_overhang 0.2 -best_hit_score_edge 0.
         Species genome db id.
     'offset' => <number>
         Offset into ordered array of member_ids. Obligatory
-    'subset_id' => <number>
-        Subset id of members to select
     'start_member_id' => <number>
         Member id of member at 'offset' in order array of member ids. Obligatory
     'batch_size' => <number>
@@ -72,13 +70,13 @@ sub load_members_from_db{
 
     my $idprefixed              = $self->param('idprefixed')  || 0;
     my $debug                   = $self->debug() || $self->param('debug') || 0;
-    my $subset_id               = $self->param('subset_id');
+    my $genome_db_id            = $self->param('genome_db_id');
 
     #Get list of members and sequences
-    my $sql = "SELECT member_id, sequence_id, stable_id, sequence FROM member JOIN sequence USING (sequence_id) JOIN subset_member USING (member_id) WHERE  subset_id=?";
+    my $sql = "SELECT member_id, sequence_id, stable_id, sequence FROM member JOIN sequence USING (sequence_id) WHERE genome_db_id=?";
     
     my $sth = $self->compara_dba->dbc->prepare( $sql );
-    $sth->execute($subset_id);
+    $sth->execute($genome_db_id);
 
     my $member_list;
     while( my ($member_id, $seq_id, $stable_id, $seq) = $sth->fetchrow() ) {
@@ -112,29 +110,6 @@ sub load_members_from_db{
     return $fasta_list;
 }
 
-sub load_name2index_mapping_from_db {
-    my ($self) = @_;
-
-    my $sql = qq {
-        SELECT sequence_id, stable_id
-          FROM member
-         WHERE sequence_id
-      GROUP BY sequence_id
-    };
-
-    my $sth = $self->compara_dba->dbc->prepare( $sql );
-    $sth->execute();
-
-    my %name2index = ();
-    while( my ($seq_id, $stable_id) = $sth->fetchrow() ) {
-        $name2index{$stable_id} = $seq_id;
-    }
-    $sth->finish();
-    $self->compara_dba->dbc->disconnect_when_inactive(1);
-
-    return \%name2index;
-}
-
 #
 # Load stable_id name to member_id mappings from the database
 #
@@ -157,40 +132,6 @@ sub load_name2member_mapping_from_db {
     $self->compara_dba->dbc->disconnect_when_inactive(1);
 
     return \%name2index;
-}
-
-sub load_name2index_mapping_from_file {
-    my ($self, $filename) = @_;
-
-    my %name2index = ();
-    open(MAPPING, "<$filename") || die "Could not open name2index mapping file '$filename'";
-    while(my $line = <MAPPING>) {
-        chomp $line;
-        my ($idx, $stable_id) = split(/\s+/,$line);
-        $name2index{$stable_id} = $idx;
-    }
-    close MAPPING;
-
-    return \%name2index;
-}
-
-sub name2index { # can load the name2index mapping from db/file if necessary
-    my ($self, $name) = @_;
-
-    if($name=~/^seq_id_(\d+)_/) {
-        return $1;
-    } else {
-        my $name2index;
-        unless($name2index = $self->param('name2index')) {
-            my $tabfile                 = $self->param('tabfile');
-
-            $name2index = $self->param('name2index', $tabfile
-                ? $self->load_name2index_mapping_from_file($tabfile)
-                : $self->load_name2index_mapping_from_db()
-            );
-        }
-        return $name2index->{$name} || "UNKNOWN($name)";
-    }
 }
 
 #
@@ -299,8 +240,7 @@ sub parse_blast_table_into_paf {
         unless ($line =~ /^#/) {
             my ($qname, $hname, $evalue, $score, $nident,$pident, $qstart, $qend, $hstart,$hend, $length, $positive, $ppos ) = split(/\s+/, $line);
 
-	    my $source_name = "ENSEMBLEXON";
-
+	    my $source_name = "ENSEMBLPEP";
 	    $hname =~ s/[$source_name]*://; #Need to remove "$source_name:" from name. Need to check if this is a general problem or just for
 	                     #my old test database
             my $qmember_id = $self->name2member($qname);

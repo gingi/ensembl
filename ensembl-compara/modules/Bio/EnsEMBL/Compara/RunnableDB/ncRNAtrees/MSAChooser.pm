@@ -39,7 +39,6 @@ my $mcoffee = Bio::EnsEMBL::Compara::RunnableDB::Mcoffee->new (
                                                     -analysis   => $analysis );
 $mcoffee->fetch_input(); #reads from DB
 $mcoffee->run();
-$mcoffee->output();
 $mcoffee->write_output(); #writes to DB
 
 =head1 AUTHORSHIP
@@ -48,11 +47,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mm14 $
+$Author: lg4 $
 
 =head VERSION
 
-$Revision: 1.1.2.2 $
+$Revision: 1.3 $
 
 =head1 APPENDIX
 
@@ -94,7 +93,7 @@ sub fetch_input {
     my $tree = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_root_id($nc_tree_id);
     die "Unfetchable tree root_id=$nc_tree_id\n" unless $tree;
 
-    my $gene_count = scalar(@{$self->compara_dba->get_GeneTreeNodeAdaptor->fetch_all_AlignedMember_by_root_id($nc_tree_id)});
+    my $gene_count = scalar(@{$tree->get_all_Members});
     die "Unfetchable leaves root_id=$nc_tree_id\n" unless $gene_count;
 
     if ($gene_count > $self->param('treebreak_gene_count')) {

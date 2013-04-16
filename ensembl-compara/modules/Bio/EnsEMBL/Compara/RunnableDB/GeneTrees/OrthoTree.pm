@@ -42,7 +42,6 @@ my $otree = Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::OrthoTree->new (
                                                     -analysis   => $analysis );
 $otree->fetch_input(); #reads from DB
 $otree->run();
-$otree->output();
 $otree->write_output(); #writes to DB
 
 =head1 AUTHORSHIP
@@ -55,7 +54,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.35 $
+$Revision: 1.37 $
 
 =head1 APPENDIX
 
@@ -139,7 +138,6 @@ sub fetch_input {
         my $mlss_key = sprintf("%s_%d", $mlss_type, $gdbs->[0]->dbID * $gdbs->[-1]->dbID + 100000000*($gdbs->[0]->dbID + $gdbs->[-1]->dbID));
         $mlss_hash{$mlss_key} = $mlss;
     }
-    $self->param('taxon_hash', []);
 }
 
 
@@ -175,7 +173,6 @@ sub run {
 sub write_output {
     my $self = shift @_;
 
-    $self->store_taxon_names unless $self->param('_readonly');
     $self->store_homologies;
 }
 
@@ -484,19 +481,10 @@ sub get_ancestor_taxon_level {
     }
   }
   $ancestor->add_tag("taxon_level", $taxon_level);
-  push @{$self->param('taxon_hash')}, [$ancestor, $taxon_level];
+  $ancestor->store_tag('taxon_id', $taxon_level->get_tagvalue('taxon_id'));
+  $ancestor->store_tag('taxon_name', $taxon_level->name);
 
   return $taxon_level;
-}
-
-sub store_taxon_names {
-    my $self = shift;
-
-    foreach my $arr (@{$self->param('taxon_hash')}) {
-        my ($ancestor, $taxon_level) = @$arr;
-        $ancestor->store_tag('taxon_id', $taxon_level->get_tagvalue('taxon_id'));
-        $ancestor->store_tag('taxon_name', $taxon_level->name);
-    }
 }
 
 

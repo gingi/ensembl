@@ -99,27 +99,6 @@ sub new {
 }
 
 
-=head2 new_fast
-
-  Arg [1]    : hashref to be blessed
-  Description: Construct a new Bio::EnsEMBL::Feature using the hashref.
-  Exceptions : none
-  Returntype : Bio::EnsEMBL::Feature
-  Caller     : general, subclass constructors
-  Status     : Stable
-
-=cut
-
-
-sub new_fast {
-  my $class = shift;
-  my $hashref = shift;
-  my $self = bless $hashref, $class;
-  weaken($self->{adaptor})  if ( ! isweak($self->{adaptor}) );
-  return $self;
-}
-
-
 =head2 display_label
 
   Arg [1]    : (optional) string $value
@@ -181,6 +160,28 @@ sub score {
   my $self = shift;
   $self->{'score'} = shift if(@_);
   return $self->{'score'};
+}
+
+=head2 summary_as_hash
+
+  Example    : my $hash = $simple_feature->summary_as_hash();
+  Description: Generates a HashRef compatible with GFFSerializer. Adds
+               score, external_name and logic_name to the basic Feature
+               hash
+  Returntype : Hash
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub summary_as_hash {
+  my ($self) = @_;
+  my $hash = $self->SUPER::summary_as_hash();
+  $hash->{score} = $self->score() if $self->score();
+  $hash->{'external_name'} = $self->display_label() if $self->display_label();
+  $hash->{'logic_name'} = $self->analysis->logic_name();
+  return $hash;
 }
 
 

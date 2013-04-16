@@ -3,96 +3,22 @@ package Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor;
 use strict; 
 use warnings;
 use Bio::EnsEMBL::Compara::Member;
-use Bio::EnsEMBL::Compara::Attribute;
 use Bio::EnsEMBL::Compara::DBSQL::SequenceAdaptor;
 use Bio::EnsEMBL::Compara::DBSQL::BaseAdaptor;
 use Bio::EnsEMBL::Utils::Scalar qw(:all);
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
 use Bio::EnsEMBL::Utils::Exception qw(throw warning stack_trace_dump deprecate);
+use DBI qw(:sql_types);
 
 our @ISA = qw(Bio::EnsEMBL::Compara::DBSQL::BaseAdaptor);
 
 
 
-sub new {
-  my $class = shift;
-  my $self = $class->SUPER::new(@_);
-
-  $self->{'_member_cache'} = {};
-  return $self;
-}
-
-
-sub member_cache {  
-  my ($self,$id,$val) = @_; 
-
-  my $result ; 
-  if ( $id ) {  
-    if ( defined $val ) {   
-       $self->{_member_cache}{$id}=$val;
-    }  
-    $result =$self->{_member_cache}{$id};
-  }   
-  return $result ; 
-}  
-
-
-=head2 fetch_by_dbID
-
-  Arg [1]    : int $id
-               the unique database identifier for the feature to be obtained
-  Example    : $feat = $adaptor->fetch_by_dbID(1234);
-  Description: Returns the Member created from the database defined by the
-               the id $id.
-  Returntype : Bio::EnsEMBL::Compara::Member
-  Exceptions : thrown if $id is not defined
-  Caller     : general
-
-=cut
-
-sub fetch_by_dbID {
-  my ($self,$id) = @_;
-
-  unless(defined $id) {
-    throw("fetch_by_dbID must have an id");
-  }
-
-## adapted function to cache the member 
-  my $obj; 
-  # check if member is cached already  
-  my $member_is_cached = $self->member_cache($id) ; 
-
-  if ( defined $member_is_cached ) {   
-    $obj = $member_is_cached;
-  } else { 
-    my ($name, $syn) = @{($self->_tables)[0]};
-  
-    #construct a constraint like 't1.table1_id = 1'
-    my $constraint = "${syn}.${name}_id = $id";
-  
-    #return first element of generic_fetch list
-  
-    ($obj) = @{$self->generic_fetch($constraint)};  
-    $self->member_cache($id,$obj);  
-  }
-  return $obj;
-}
-
-
-sub fetch_by_dbIDs {
-  my $self = shift;
-
-  my $ids = join(',' , @_);
-  my $constraint = "m.member_id in ($ids)";
-  return $self->generic_fetch($constraint);
-}
-
-
-sub fetch_by_sequence_id {
+sub fetch_all_by_sequence_id {
     my ($self, $sequence_id) = @_;
 
-    my ($member) = @{ $self->generic_fetch( "m.sequence_id = $sequence_id", undef, "LIMIT 1" )};
-    return $member;
+    $self->bind_param_generic_fetch($sequence_id, SQL_INTEGER);
+    return $self->generic_fetch('m.sequence_id = ?');
 }
 
 
@@ -123,13 +49,15 @@ sub fetch_by_source_stable_id {
   }
 
   #construct a constraint like 't1.table1_id = 1'
-  my $constraint = "";
-  $constraint = "m.source_name = '$source_name' AND " if ($source_name);
-  $constraint .= "m.stable_id = '$stable_id'";
+  my $constraint = '';
+  if ($source_name) {
+    $constraint = 'm.source_name = ? AND ';
+    $self->bind_param_generic_fetch($source_name, SQL_VARCHAR);
+  }
+  $constraint .= 'm.stable_id = ?';
+  $self->bind_param_generic_fetch($stable_id, SQL_VARCHAR);
 
-  #return first element of generic_fetch list
-  my ($obj) = @{$self->generic_fetch($constraint)};
-  return $obj;
+  return $self->generic_fetch_one($constraint);
 }
 
 sub fetch_all_by_source_stable_ids {
@@ -213,45 +141,6 @@ sub fetch_all_by_source_Iterator {
     return $self->generic_fetch_Iterator($cache_size, "member.source_name = '$source_name'");
 }
 
-sub generic_fetch_Iterator {
-    my ($self, $cache_size, $constraint) = @_;
-
-    my ($name, $syn) = @{($self->_tables)[0]};
-    # Fetch all the dbIDs
-    my $sql = "SELECT ${name}.${name}_id FROM ${name}";
-    if ($constraint) {
-        $sql .= " WHERE $constraint";
-    }
-
-    my $sth = $self->prepare($sql);
-    $sth->execute();
-    my $member_id;
-    $sth->bind_columns(\$member_id);
-
-    my $more_items = 1;
-    $cache_size ||= 1000; ## Default: 1000 members per chunk
-    my @cache;
-
-    my $closure = sub {
-        if (@cache == 0 && $more_items) {
-            my @dbIDs;
-            my $items_counter = 0;
-            while ($sth->fetch) {
-                push @dbIDs, $member_id;
-                if (++$items_counter == $cache_size) {
-                    $more_items = 1;
-                    last;
-                }
-                $more_items = 0;
-            }
-            $sth->finish() unless ($more_items);
-            @cache = @{ $self->fetch_by_dbIDs(@dbIDs) } if @dbIDs;
-        }
-        return shift @cache;
-    };
-
-    return Bio::EnsEMBL::Utils::Iterator->new($closure);
-}
 
 =head2 fetch_all_by_source
 
@@ -282,17 +171,6 @@ sub fetch_all_by_source {
 }
 
 
-=head2 fetch_by_source_taxon
-
-  DEPRECATED: use fetch_all_by_source_taxon instead
-
-=cut
-
-sub fetch_by_source_taxon {
-  my ($self, @args) = @_;
-  return $self->fetch_all_by_source_taxon(@args);
-}
-
 =head2 fetch_all_by_source_taxon
 
   Arg [1]    : string $source_name
@@ -312,9 +190,9 @@ sub fetch_all_by_source_taxon {
   throw("source_name and taxon_id args are required") 
     unless($source_name && $taxon_id);
 
-  my $constraint = "m.source_name = '$source_name' and m.taxon_id = $taxon_id";
-
-  return $self->generic_fetch($constraint);
+    $self->bind_param_generic_fetch($source_name, SQL_VARCHAR);
+    $self->bind_param_generic_fetch($taxon_id, SQL_INTEGER);
+    return $self->generic_fetch('m.source_name = ? AND m.taxon_id = ?');
 }
 
 =head2 fetch_all_by_source_genome_db_id
@@ -336,10 +214,25 @@ sub fetch_all_by_source_genome_db_id {
   throw("source_name and genome_db_id args are required") 
     unless($source_name && $genome_db_id);
 
-  my $constraint = "m.source_name = '$source_name' and m.genome_db_id = $genome_db_id";
-
-  return $self->generic_fetch($constraint);
+    $self->bind_param_generic_fetch($source_name, SQL_VARCHAR);
+    $self->bind_param_generic_fetch($genome_db_id, SQL_INTEGER);
+    return $self->generic_fetch('m.source_name = ? AND m.genome_db_id = ?');
 }
+
+
+sub fetch_all_canonical_by_source_genome_db_id {
+  my ($self,$source_name,$genome_db_id) = @_;
+
+  throw("source_name and genome_db_id args are required") 
+    unless($source_name && $genome_db_id);
+
+    my $join = [[['member', 'mg'], 'mg.canonical_member_id = m.member_id']];
+
+    $self->bind_param_generic_fetch($source_name, SQL_VARCHAR);
+    $self->bind_param_generic_fetch($genome_db_id, SQL_INTEGER);
+    return $self->generic_fetch('m.source_name = ? AND mg.genome_db_id = ?', $join);
+}
+
 
 
 sub _fetch_all_by_source_taxon_chr_name_start_end_strand_limit {
@@ -384,52 +277,6 @@ sub get_source_taxon_count {
   return $count;
 }
 
-
-=head2 fetch_all_by_relation
-
-  Arg [1]    : 
-  Example    : 
-  Description: 
-  Returntype : 
-  Exceptions : 
-  Caller     : 
-
-=cut
-
-sub fetch_all_by_relation {
-  my ($self, $relation) = @_;
-
-  my $join;
-  my $constraint;
-
-  throw() 
-    unless (defined $relation && ref $relation);
-  
-  if ($relation->isa('Bio::EnsEMBL::Compara::Family')) {
-    my $family_id = $relation->dbID;
-    $constraint = "fm.family_id = $family_id";
-    my $extra_columns = [qw(fm.family_id
-                            fm.member_id
-                            fm.cigar_line)];
-    $join = [[['family_member', 'fm'], 'm.member_id = fm.member_id', $extra_columns]];
-  }
-  elsif ($relation->isa('Bio::EnsEMBL::Compara::Homology')) {
-    my $homology_id = $relation->dbID;
-    $constraint .= "hm.homology_id = $homology_id";
-    my $extra_columns = [qw(hm.homology_id
-                            hm.member_id
-                            hm.cigar_line
-                            hm.perc_cov
-                            hm.perc_id
-                            hm.perc_pos)];
-    $join = [[['homology_member', 'hm'], 'm.member_id = hm.member_id', $extra_columns]];
-  }
-  else {
-    throw();
-  }
-
-  return $self->generic_fetch($constraint, $join);
-}
 
 sub fetch_all_by_Domain {
     my ($self, $domain) = @_;
@@ -495,35 +342,6 @@ sub fetch_all_by_subset_id {
 }
 
 
-=head2 fetch_gene_for_peptide_member_id
-
-  Arg [1]    : int member_id of a peptide member
-  Example    : $geneMember = $memberAdaptor->fetch_gene_for_peptide_member_id($peptide_member_id);
-  Description: given a member_id of a peptide member,
-               does a join to a copy of member table to extract a member for its gene
-  Returntype : Bio::EnsEMBL::Compara::Member object
-  Exceptions :
-  Caller     : general
-
-=cut
-
-sub fetch_gene_for_peptide_member_id {
-  my ($self, $peptide_member_id) = @_;
-
-  throw() unless (defined $peptide_member_id);
-
-  my $constraint = "pepm.member_id = '$peptide_member_id'";
-
-  my $join = [[['member', 'pepm'], 'm.member_id = pepm.gene_member_id']];
-
-  my $obj = undef;
-  eval {
-    ($obj) = @{$self->generic_fetch($constraint, $join)};
-  };
-  return $obj;
-}
-
-
 =head2 fetch_all_peptides_for_gene_member_id
 
   Arg [1]    : int member_id of a gene member
@@ -541,13 +359,8 @@ sub fetch_all_peptides_for_gene_member_id {
 
   throw() unless (defined $gene_member_id);
 
-  my $constraint = "m.gene_member_id = '$gene_member_id'";
-
-  my $peplist = undef;
-  eval {
-    $peplist = $self->generic_fetch($constraint);
-  };
-  return $peplist;
+    $self->bind_param_generic_fetch($gene_member_id, SQL_INTEGER);
+    return $self->generic_fetch('m.gene_member_id = ?');
 }
 
 
@@ -568,41 +381,13 @@ sub fetch_canonical_member_for_gene_member_id {
 
     throw() unless (defined $gene_member_id);
 
-    my $constraint = "m.gene_member_id = '$gene_member_id'";
-    my $join = [[['subset_member', 'sm'], 'sm.member_id = m.member_id']];
+    my $constraint = 'mg.member_id = ?';
+    my $join = [[['member', 'mg'], 'm.member_id = mg.canonical_member_id']];
 
-    my $obj = undef;
-    eval {
-        ($obj) = @{$self->generic_fetch($constraint, $join)};
-    };
-    return $obj;
+    $self->bind_param_generic_fetch($gene_member_id, SQL_INTEGER);
+    return $self->generic_fetch_one($constraint, $join);
 }
 
-
-=head2 fetch_canonical_peptide_member_for_gene_member_id
-
-  Description: DEPRECATED. Use fetch_canonical_member_for_gene_member_id() instead.
-
-=cut
-
-sub fetch_canonical_peptide_member_for_gene_member_id {
-    my $self = shift;
-    deprecate("Use fetch_canonical_member_for_gene_member_id() instead. fetch_canonical_peptide_member_for_gene_member_id() will be removed in release 70.");
-    return $self->fetch_canonical_member_for_gene_member_id(@_);
-}
-
-
-=head2 fetch_canonical_transcript_member_for_gene_member_id
-
-  Description: DEPRECATED. Use fetch_canonical_member_for_gene_member_id() instead.
-
-=cut
-
-sub fetch_canonical_transcript_member_for_gene_member_id {
-    my $self = shift;
-    deprecate("Use fetch_canonical_member_for_gene_member_id() instead. fetch_canonical_transcript_member_for_gene_member_id() will be removed in release 70.");
-    return $self->fetch_canonical_member_for_gene_member_id(@_);
-}
 
 
 #
@@ -684,8 +469,7 @@ sub _objs_from_sth {
   my @members = ();
 
   while(my $rowhash = $sth->fetchrow_hashref) {
-    my ($member,$attribute);
-    $member = $self->create_instance_from_rowhash($rowhash);
+    my $member = $self->create_instance_from_rowhash($rowhash);
     
     my @_columns = $self->_columns;
     if (scalar keys %{$rowhash} > scalar @_columns) {
@@ -693,20 +477,9 @@ sub _objs_from_sth {
         bless $member, 'Bio::EnsEMBL::Compara::MemberDomain';
         $member->member_start($rowhash->{member_start});
         $member->member_end($rowhash->{member_end});
-      } else {
-        $attribute = new Bio::EnsEMBL::Compara::Attribute;
-        $attribute->member_id($rowhash->{'member_id'});
-        foreach my $autoload_method (keys %$rowhash) {
-          next if (grep /$autoload_method/,  @_columns);
-          $attribute->$autoload_method($rowhash->{$autoload_method});
-        }
       }
     }
-    if (defined $attribute) {
-      push @members, [$member, $attribute];
-    } else {
-      push @members, $member;
-    } 
+    push @members, $member;
   }
   $sth->finish;
   return \@members
@@ -739,72 +512,15 @@ sub store {
   }
 
   my $sth = $self->prepare("INSERT ignore INTO member (stable_id,version, source_name,
-                              taxon_id, genome_db_id, description,
-                              chr_name, chr_start, chr_end, chr_strand,display_label)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?)");
-
-  my $insertCount = $sth->execute($member->stable_id,
-                  $member->version,
-                  $member->source_name,
-                  $member->taxon_id,
-                  $member->genome_db_id,
-                  $member->description,
-                  $member->chr_name,
-                  $member->chr_start,
-                  $member->chr_end,
-                  $member->chr_strand,
-                  $member->display_label);
-  if($insertCount>0) {
-    #sucessful insert
-    $member->dbID( $sth->{'mysql_insertid'} );
-    $sth->finish;
-  } else {
-    $sth->finish;
-    #UNIQUE(source_name,stable_id) prevented insert since member was already inserted
-    #so get member_id with select
-    my $sth2 = $self->prepare("SELECT member_id, sequence_id FROM member WHERE source_name=? and stable_id=?");
-    $sth2->execute($member->source_name, $member->stable_id);
-    my($id, $sequence_id) = $sth2->fetchrow_array();
-    warn("MemberAdaptor: insert failed, but member_id select failed too") unless($id);
-    $member->dbID($id);
-    $member->sequence_id($sequence_id) if ($sequence_id);
-    $sth2->finish;
-  }
-
-  $member->adaptor($self);
-
-  # insert in sequence table to generate new
-  # sequence_id to insert into member table;
-  if(defined($member->sequence) and $member->sequence_id == 0) {
-    $member->sequence_id($self->db->get_SequenceAdaptor->store($member->sequence,1)); # Last parameter induces a check for redundancy
-
-    my $sth3 = $self->prepare("UPDATE member SET sequence_id=? WHERE member_id=?");
-    $sth3->execute($member->sequence_id, $member->dbID);
-    $sth3->finish;
-  }
-
-  return $member->dbID;
-}
-
-sub store_reused {
-  my ($self,$member) = @_;
-
-  unless($member->isa('Bio::EnsEMBL::Compara::Member')) {
-    throw(
-      "member arg must be a [Bio::EnsEMBL::Compara::Member]"
-    . "not a $member");
-  }
-
-  my $sth = $self->prepare("INSERT ignore INTO member (member_id, stable_id, version, source_name,
+                              gene_member_id,
                               taxon_id, genome_db_id, description,
                               chr_name, chr_start, chr_end, chr_strand,display_label)
                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
 
-  my $insertCount = $sth->execute(
-                  $member->member_id,
-                  $member->stable_id,
+  my $insertCount = $sth->execute($member->stable_id,
                   $member->version,
                   $member->source_name,
+                  $member->gene_member_id,
                   $member->taxon_id,
                   $member->genome_db_id,
                   $member->description,
@@ -844,6 +560,7 @@ sub store_reused {
 
   return $member->dbID;
 }
+
 
 
 sub update_sequence {
@@ -871,14 +588,12 @@ sub update_sequence {
   return 1;
 }
 
-sub store_gene_peptide_link {
-  my ($self, $gene_member_id, $peptide_member_id) = @_;
+sub _set_member_as_canonical {
+    my ($self, $peptide_member) = @_;
 
-  eval {
-    my $sth = $self->prepare("UPDATE member SET gene_member_id=? where member_id=?");
-    $sth->execute($gene_member_id, $peptide_member_id);
+    my $sth = $self->prepare('UPDATE member SET canonical_member_id = ? WHERE member_id = ?');
+    $sth->execute($peptide_member->member_id, $peptide_member->gene_member_id);
     $sth->finish;
-  };
 }
 
 

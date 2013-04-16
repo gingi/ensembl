@@ -39,7 +39,6 @@ my $mcoffee = Bio::EnsEMBL::Compara::RunnableDB::Mcoffee->new (
                                                     -analysis   => $analysis );
 $mcoffee->fetch_input(); #reads from DB
 $mcoffee->run();
-$mcoffee->output();
 $mcoffee->write_output(); #writes to DB
 
 =head1 AUTHORSHIP
@@ -48,11 +47,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mp12 $
+$Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.2 $
+$Revision: 1.5 $
 
 =head1 APPENDIX
 
@@ -96,8 +95,10 @@ sub fetch_input {
     my $tree = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_root_id($protein_tree_id);
     die "Unfetchable tree root_id=$protein_tree_id\n" unless $tree;
 
-    my $gene_count = scalar(@{$self->compara_dba->get_GeneTreeNodeAdaptor->fetch_all_AlignedMember_by_root_id($protein_tree_id)});
+    my $gene_count = scalar(@{$tree->get_all_Members});
     die "Unfetchable leaves root_id=$protein_tree_id\n" unless $gene_count;
+    $tree->root->release_tree;
+    $tree->clear;
     
     if ($gene_count > $self->param('treebreak_gene_count')) {
         # Create an alignment job and the waiting quicktree break job

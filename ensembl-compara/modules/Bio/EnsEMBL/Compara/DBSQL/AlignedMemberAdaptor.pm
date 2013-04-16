@@ -40,7 +40,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.6 $
+$Revision: 1.10 $
 
 =head1 APPENDIX
 
@@ -91,7 +91,7 @@ sub fetch_all_by_AlignedMemberSet {
     } elsif (UNIVERSAL::isa($set, 'Bio::EnsEMBL::Compara::GeneTree')) {
         return $self->fetch_all_by_GeneTree($set);
     } else {
-        throw("$set is not a recognized AlignedMemberSet object\n");
+        return $self->fetch_all_by_gene_align_id($set->dbID);
     }
 }
 
@@ -159,12 +159,86 @@ sub fetch_all_by_GeneTree {
     my ($self, $tree) = @_;
     assert_ref($tree, 'Bio::EnsEMBL::Compara::GeneTree');
 
-    my $extra_columns = ['gtm.cigar_line'];
-    my $join = [[['gene_tree_member', 'gtm'], 'm.member_id = gtm.member_id', $extra_columns], [['gene_tree_node', 'gtn'], 'gtm.node_id = gtn.node_id']];
-    my $constraint = 'gtn.root_id = ?';
+    return $self->fetch_all_by_gene_align_id($tree->gene_align_id);
+}
 
-    $self->bind_param_generic_fetch($tree->root_id, SQL_INTEGER);
+
+=head2 fetch_all_by_gene_align_id
+
+  Arg[1]     : integer $id
+  Example    : $aln_members = $am_adaptor->fetch_all_by_gene_align_id($id);
+  Description: Fetches from the database all the members of an alignment,
+                based on its dbID
+  Returntype : arrayref of Bio::EnsEMBL::Compara::AlignedMember
+  Exceptions : none
+  Caller     : general
+
+=cut
+
+sub fetch_all_by_gene_align_id {
+    my ($self, $id) = @_;
+
+    my $extra_columns = ['gam.cigar_line'];
+    my $join = [[['gene_align_member', 'gam'], 'm.member_id = gam.member_id', $extra_columns]];
+    my $constraint = 'gam.gene_align_id = ?';
+
+    $self->bind_param_generic_fetch($id, SQL_INTEGER);
     return $self->generic_fetch($constraint, $join);
+}
+
+
+#
+# Store an AlignedMemberSet
+##############################
+
+=head2 store
+
+ Arg [1]    : Bio::EnsEMBL::Compara::AlignedMemberSet $aln
+ Example    : $AlignedMemberAdaptor->store($fam)
+ Description: Stores an AlignedMemberSet object into a Compara database
+ Returntype : none
+ Exceptions : when isa if Arg [1] is not Bio::EnsEMBL::Compara::AlignedMemberSet
+ Caller     : general
+
+=cut
+
+sub store {
+    my ($self, $aln) = @_;
+    assert_ref($aln, 'Bio::EnsEMBL::Compara::AlignedMemberSet');
+  
+    # dbID for GeneTree is too dodgy
+    my $id = $aln->isa('Bio::EnsEMBL::Compara::GeneTree') ? $aln->gene_align_id() : $aln->dbID();
+
+    if ($id) {
+        my $sth = $self->prepare('UPDATE gene_align SET seq_type = ?, aln_length = ?, aln_method = ? WHERE gene_align_id = ?');
+        $sth->execute($aln->seq_type, $aln->aln_length, $aln->aln_method, $id);
+    } else {
+        my $sth = $self->prepare('INSERT INTO gene_align (seq_type, aln_length, aln_method) VALUES (?,?,?)');
+        $sth->execute($aln->seq_type, $aln->aln_length, $aln->aln_method);
+        $id = $sth->{'mysql_insertid'};
+
+        if ($aln->isa('Bio::EnsEMBL::Compara::GeneTree')) {
+            $aln->gene_align_id($id);
+        } else {
+            $aln->dbID($id);
+        }
+    }
+ 
+    my $sth = $self->prepare('REPLACE INTO gene_align_member (gene_align_id, member_id, cigar_line) VALUES (?,?,?)');
+
+    foreach my $member (@{$aln->get_all_Members}) {
+        $sth->execute($id, $member->member_id, $member->cigar_line) if $member->cigar_line;
+    }
+
+    $sth->finish;
+
+    # let's store the link between gene_tree_root and gene_align
+    if ($aln->isa('Bio::EnsEMBL::Compara::GeneTree') and defined $aln->root_id) {
+        $sth = $self->prepare('UPDATE gene_tree_root SET gene_align_id = ? WHERE root_id = ?');
+        $sth->execute($aln->gene_align_id,  $aln->root_id);
+        $sth->finish;
+    }
+
 }
 
 

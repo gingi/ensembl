@@ -87,14 +87,16 @@ sub store {
         INSERT INTO sample (
             name,
 			size,
-			description
-        ) VALUES (?,?,?)
+			description,
+			freqs_from_gts
+        ) VALUES (?,?,?,?)
     });
 	
 	$sth->execute(
 		$pop->name,
 		$pop->size,
-		$pop->description
+		$pop->description,
+		$pop->_freqs_from_gts || 0,
 	);
 	$sth->finish;
 	
@@ -120,7 +122,7 @@ sub store {
     Returntype           : list of Bio::EnsEMBL::Variation::Population
     Exceptions           : none
     Caller               : general
-    Status               : At Risk
+    Status               : Stable
 
 =cut
 
@@ -149,7 +151,7 @@ sub fetch_population_by_synonym{
   Returntype : Bio::EnsEMBL::Variation::Population
   Exceptions : throw if name argument is not defined
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -159,7 +161,7 @@ sub fetch_by_name {
 
   throw('name argument expected') if(!defined($name));
 
-  my $sth = $self->prepare(q{SELECT p.sample_id, s.name, s.size, s.description
+  my $sth = $self->prepare(q{SELECT p.sample_id, s.name, s.size, s.description, s.freqs_from_gts
                              FROM   population p, sample s
                              WHERE  s.name = ?
 			     AND    s.sample_id = p.sample_id});
@@ -185,7 +187,7 @@ sub fetch_by_name {
   Returntype : listref of Bio::EnsEMBL::Variation::Population objects
   Exceptions : throw if list argument is not defined
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -201,10 +203,9 @@ sub fetch_all_by_dbID_list {
   
   my $id_str = (@$list > 1)  ? " IN (".join(',',@$list).")"   :   ' = \''.$list->[0].'\'';
 
-  my $sth = $self->prepare(qq{SELECT p.sample_id, s.name, s.size, s.description
-                             FROM   population p, sample s
-                             WHERE  s.sample_id $id_str
-			     AND    s.sample_id = p.sample_id});
+  my $sth = $self->prepare(qq{SELECT p.sample_id, s.name, s.size, s.description, s.freqs_from_gts
+                              FROM   population p, sample s
+                              WHERE  s.sample_id $id_str AND s.sample_id = p.sample_id});
   $sth->execute();
 
   my $result = $self->_objs_from_sth($sth);
@@ -236,7 +237,7 @@ sub fetch_all_by_name_search {
 
   throw('name argument expected') if(!defined($name));
 
-  my $sth = $self->prepare(q{SELECT p.sample_id, s.name, s.size, s.description
+  my $sth = $self->prepare(q{SELECT p.sample_id, s.name, s.size, s.description, s.freqs_from_gts
                              FROM   population p, sample s
                              WHERE  s.name like concat('%', ?, '%')
 			     AND    s.sample_id = p.sample_id});
@@ -280,7 +281,7 @@ sub fetch_all_by_super_Population {
   }
 
   my $sth = $self->prepare(q{SELECT p.sample_id, s.name, s.size,
-                                    s.description
+                                    s.description, s.freqs_from_gts
                              FROM   population p, population_structure ps, sample s
                              WHERE  p.sample_id = ps.sub_population_sample_id
                              AND    ps.super_population_sample_id = ?
@@ -326,7 +327,7 @@ sub fetch_all_by_sub_Population {
   }
 
   my $sth = $self->prepare(q{SELECT p.sample_id, s.name, s.size,
-                                    s.description
+                                    s.description, s.freqs_from_gts
                              FROM   population p, population_structure ps, sample s
                              WHERE  p.sample_id = ps.super_population_sample_id
                              AND    ps.sub_population_sample_id = ?
@@ -442,7 +443,7 @@ sub fetch_all_1KG_Populations{
   Exceptions  : throw if incorrect argument is passed
                 warning if provided individual does not have a dbID
   Caller      : general
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 
@@ -459,7 +460,7 @@ sub fetch_all_by_Individual{
 	return [];
   } 
 
-    my $sth = $self->prepare(qq{SELECT p.sample_id, s.name, s.size, s.description
+    my $sth = $self->prepare(qq{SELECT p.sample_id, s.name, s.size, s.description, s.freqs_from_gts
 				FROM population p, individual_population ip, sample s
 				WHERE s.sample_id = ip.population_sample_id
 				AND s.sample_id = p.sample_id
@@ -487,7 +488,7 @@ sub fetch_all_by_Individual{
   Exceptions  : throw if incorrect argument is passed
                 warning if provided individual does not have a dbID
   Caller      : general
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 
@@ -507,7 +508,7 @@ sub fetch_all_by_Individual_list{
 	my $id_str = " IN (" . join(',', map {$_->dbID} @$list). ")";	
 	
 	my $sth = $self->prepare(qq{
-		SELECT p.sample_id, s.name, s.size, s.description
+		SELECT p.sample_id, s.name, s.size, s.description, s.freqs_from_gts
 		FROM population p, individual_population ip, sample s
 		WHERE s.sample_id = ip.population_sample_id
 		AND s.sample_id = p.sample_id
@@ -554,7 +555,7 @@ sub fetch_tagged_Population{
   } 
 
     my $sth = $self->prepare(qq{
-		SELECT p.sample_id, s.name, s.size, s.description
+		SELECT p.sample_id, s.name, s.size, s.description, s.freqs_from_gts
 		FROM population p, tagged_variation_feature tvf, sample s
 		WHERE p.sample_id = tvf.sample_id
 		AND   s.sample_id = p.sample_id
@@ -600,7 +601,7 @@ sub fetch_tag_Population{
   } 
 
     my $sth = $self->prepare(qq{
-		SELECT p.sample_id, s.name, s.size, s.description
+		SELECT p.sample_id, s.name, s.size, s.description, s.freqs_from_gts
 		FROM population p, tagged_variation_feature tvf, sample s
 		WHERE p.sample_id = tvf.sample_id
 		AND   s.sample_id = p.sample_id
@@ -673,9 +674,9 @@ sub _objs_from_sth {
 
   my @pops;
 
-  my ($pop_id, $name, $size, $desc);
+  my ($pop_id, $name, $size, $desc, $freqs);
 
-  $sth->bind_columns(\$pop_id, \$name, \$size, \$desc);
+  $sth->bind_columns(\$pop_id, \$name, \$size, \$desc, \$freqs);
 
   while($sth->fetch()) {
 	
@@ -684,7 +685,8 @@ sub _objs_from_sth {
        -ADAPTOR => $self,
        -NAME => $name,
        -DESCRIPTION => $desc,
-       -SIZE => $size);
+       -SIZE => $size,
+       -FREQS => $freqs);
   }
 
   return \@pops;
@@ -694,7 +696,7 @@ sub _tables{return (['population','p'],
 		    ['sample','s']);}
 
 sub _columns{
-    return qw(s.sample_id s.name s.size s.description);
+    return qw(s.sample_id s.name s.size s.description s.freqs_from_gts);
 }
 
 sub _default_where_clause{

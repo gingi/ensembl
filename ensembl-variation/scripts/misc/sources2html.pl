@@ -16,12 +16,12 @@ my ($site, $etype);
 usage() if (!scalar(@ARGV));
  
 GetOptions(
-     'v=s'   => \$e_version,
-     'o=s'   => \$html_file,
-     'help!' => \$help,
+     'v=s'     => \$e_version,
+     'o=s'     => \$html_file,
+     'help!'   => \$help,
      'hlist=s' => \$hlist,
      'phost=s' => \$phost,
-     'site=s' => \$site,
+     'site=s'  => \$site,
      'etype=s' =>  \$etype
 );
 
@@ -195,13 +195,14 @@ sub source_table {
   $species = uc($1).$2;
   my $s_name = $species;
   $s_name =~ s/\s/_/g;
-  
-  push (@species_list,{name => $species, anchor => $s_name});
+  my $s_name_id = lc($s_name);
+	
+  push (@species_list,{name => $species, anchor => $s_name_id});
   
   my $new_species = ($is_new == 1) ? qq{<span style="padding-left:20px;color:#00F;font-weight:bold">New species!</span>} : '';
   
   my $html = qq{
-  <div id="$s_name" style="padding-left:0px;padding-bottom:3px">
+  <div id="$s_name_id" style="padding-left:0px;padding-bottom:3px">
     <img src="/i/species/48/$s_name.png" alt="$species" class="sp-thumb" style="float:none;margin-right:4px;vertical-align:middle" />
     <span style="font-weight:bold;font-size:1.1em;color:#333">$species</span>$new_species
   </div>
@@ -361,7 +362,7 @@ sub create_menu {
   
   my $html = qq{
   <div style="float:right;margin-left:8px;margin-top:2px;background-color:#F2F2F2;color:#333;border-radius:5px">
-    <div style="padding:5px;font-weight:bold;color:#FFF;background-color:navy;border-top-left-radius:5px;border-top-right-radius:5px">
+    <div style="padding:5px;font-weight:bold;color:#FFF;background-color:#336;border-top-left-radius:5px;border-top-right-radius:5px">
       <img src="/i/16/rev/info.png" style="vertical-align:top" />
       Species list:
     </div> 

@@ -49,8 +49,7 @@ SELECT
 FROM
     gene_tree_root gtr
     JOIN gene_tree_node gtn ON (gtr.root_id=gtn.root_id)
-    JOIN gene_tree_member gtm ON (gtn.node_id=gtm.node_id)
-    JOIN member m ON (gtm.member_id=m.member_id)
+    JOIN member m ON (gtn.member_id=m.member_id)
     JOIN member gm ON (m.gene_member_id=gm.member_id)
     JOIN member pm ON (gm.member_id=pm.gene_member_id) 
 SQL
@@ -157,10 +156,10 @@ ayates
 
 =head1 MAINTAINER
 
-$Author: mn1 $
+$Author: mm14 $
 
 =head1 VERSION
 
-$Revision: 1.4 $
+$Revision: 1.5 $
 
 =cut

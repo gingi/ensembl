@@ -33,7 +33,6 @@ my $ncfasttree = Bio::EnsEMBL::Compara::RunnableDB::ncRNAtrees::NCFastTrees->new
   );
 $ncfasttree->fetch_input(); #reads from DB
 $ncfasttree->run();
-$ncfasttree->output();
 $ncfasttree->write_output(); #writes to DB
 
 =head1 DESCRIPTION
@@ -56,7 +55,7 @@ package Bio::EnsEMBL::Compara::RunnableDB::ncRNAtrees::NCFastTrees;
 
 use strict;
 use Bio::EnsEMBL::Compara::Graph::NewickParser;
-use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
+use base ('Bio::EnsEMBL::Compara::RunnableDB::RunCommand', 'Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable', 'Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::StoreTree');
 
 =head2 fetch_input
 
@@ -151,8 +150,8 @@ sub _run_fasttree {
     die "Cannot execute '$fasttree_exe'" unless(-x $fasttree_exe);
 
     my $fasttree_output = $self->worker_temp_directory . "FastTree.$fasttree_tag";
-    my $tag = defined $self->param('fastTreeTag') ? $self->param('fastTreeTag') : 'ft_IT_nj';
-#    my $tag = 'ft_IT_nj';
+    my $tag = defined $self->param('fastTreeTag') ? $self->param('fastTreeTag') : 'ft_it_nj';
+#    my $tag = 'ft_it_nj';
     my $cmd = $fasttree_exe;
     $cmd .= " -nt -quiet -nopr";
     $cmd .= " $aln_file";
@@ -190,12 +189,10 @@ sub _run_parsimonator {
     $cmd .= " -n $parsimonator_tag";
     $cmd .= " -p 12345";
 
-    print STDERR "$cmd\n" if ($self->debug);
-    $self->compara_dba->dbc->disconnect_when_inactive(1);
-    unless(system("cd $worker_temp_directory; $cmd") == 0) {
+    my $runCmd = $self->run_command("cd $worker_temp_directory; $cmd");
+    if ($runCmd->exit_code) {
         $self->throw("error running parsimonator\ncd $worker_temp_directory; $cmd\n");
     }
-    $self->compara_dba->dbc->disconnect_when_inactive(0);
 
     my $parsimonator_output = $worker_temp_directory . "/RAxML_parsimonyTree.${parsimonator_tag}.0";
     $self->param('parsimony_tree_file', $parsimonator_output);
@@ -217,19 +214,18 @@ sub _run_raxml_light {
 
     die "Cannot execute '$raxmlLight_exe'" unless(-x $raxmlLight_exe);
 
-    my $tag = defined $self->param('raxmlLightTag') ? $self->param('raxmlLightTag') : 'ft_IT_ml';
-#    my $tag = 'ft_IT_ml';
+    my $tag = defined $self->param('raxmlLightTag') ? $self->param('raxmlLightTag') : 'ft_it_ml';
+#    my $tag = 'ft_it_ml';
     my $cmd = $raxmlLight_exe;
     $cmd .= " -m GTRGAMMA";
     $cmd .= " -s $aln_file";
     $cmd .= " -t $parsimony_tree";
     $cmd .= " -n $raxmlight_tag";
 
-    $self->compara_dba->dbc->disconnect_when_inactive(1);
-    unless(system("cd $worker_temp_directory; $cmd") == 0) {
+    my $runCmd = $self->run_command("cd $worker_temp_directory; $cmd");
+    if ($runCmd->exit_code) {
         $self->throw("error running raxmlLight\ncd $worker_temp_directory; $cmd\n");
     }
-    $self->compara_dba->dbc->disconnect_when_inactive(0);
 
     my $raxmlight_output = $worker_temp_directory . "/RAxML_result.${raxmlight_tag}";
     $self->_store_newick_into_nc_tree_tag_string($tag, $raxmlight_output);
@@ -318,17 +314,10 @@ sub _store_newick_into_nc_tree_tag_string {
   my $tag = shift;
   my $newick_file = shift;
 
-  my $newick = '';
   print("load from file $newick_file\n") if($self->debug);
-  open (FH, $newick_file) or $self->throw("Couldnt open newick file [$newick_file]");
-  while(<FH>) {
-    chomp $_;
-    $newick .= $_;
-  }
-  close(FH);
-  $newick =~ s/(\d+\.\d{4})\d+/$1/g; # We round up to only 4 digits
+  my $newick = $self->_slurp($newick_file);
 
-  $self->param('nc_tree')->store_tag($tag, $newick);
+  $self->store_alternative_tree($newick, $tag, $self->param('nc_tree'));
   if (defined($self->param('model'))) {
     my $bootstrap_tag = $self->param('model') . "_bootstrap_num";
     $self->param('nc_tree')->store_tag($bootstrap_tag, $self->param('bootstrap_num'));
@@ -344,40 +333,31 @@ sub _load_and_dump_alignment {
     my $aln_file = $file_root . ".aln";
     open my $outaln, ">", "$aln_file" or $self->throw("Error opening $aln_file for writing");
 
-#    my $sql_load_alignment = "SELECT member_id, aligned_sequence FROM aligned_sequence WHERE alignment_id = $alignment_id";
-    my $sql_load_alignment = "SELECT member_id, aligned_sequence FROM aligned_sequence WHERE alignment_id = ?";
-    my $sth_load_alignment = $self->compara_dba->dbc->prepare($sql_load_alignment);
-    print STDERR "SELECT member_id, aligned_sequence FROM aligned_sequence WHERE alignment_id = $alignment_id\n" if ($self->debug);
-    $sth_load_alignment->execute($alignment_id);
-    my $all_aln_seq_hashref = $sth_load_alignment->fetchall_arrayref({});
+    my $aln = Bio::EnsEMBL::Compara::AlignedMemberSet->new(-seq_type => 'seq_with_flanking', -dbID => $alignment_id, -adaptor => $self->compara_dba->get_AlignedMemberAdaptor);
+    my $bioaln = $aln->get_SimpleAlign(-ID_TYPE => 'MEMBER');
+    my @all_aln_seq;
+    foreach my $seq ($bioaln->each_seq) {
+        push @all_aln_seq, $seq;
+    }
 
-    my $seqLen = length($all_aln_seq_hashref->[0]->{aligned_sequence});
+    my $seqLen = length($all_aln_seq[0]->seq);
     if ($seqLen >= 5000) {
         # It is better to feed FastTree with aln in fasta format
         my $aln_fasta = $file_root . ".fa";
         open my $aln_fasta_fh, ">", $aln_fasta or $self->throw("Error opening $aln_fasta for writing");
-        for my $row_hashref (@$all_aln_seq_hashref) {
-            my $mem_id = $row_hashref->{member_id};
-            my $member = $self->compara_dba->get_MemberAdaptor->fetch_by_dbID($mem_id);
-            my $taxid = $member->taxon_id();
-            my $aln_seq = $row_hashref->{aligned_sequence};
-            print $aln_fasta_fh ">" . $mem_id . "_" . $taxid . "\n";
-            print $aln_fasta_fh $aln_seq . "\n";
+        for my $seq (@all_aln_seq) {
+            print $aln_fasta_fh ">" . $seq->display_id . "\n";
+            print $aln_fasta_fh $seq->seq . "\n";
         }
         close ($aln_fasta_fh);
         $self->param('aln_fasta', $aln_fasta);
     }
 
-    print $outaln scalar(@$all_aln_seq_hashref), " ", $seqLen, "\n";
-    for my $row_hashref (@$all_aln_seq_hashref) {
-        my $mem_id = $row_hashref->{member_id};
-        my $member = $self->compara_dba->get_MemberAdaptor->fetch_by_dbID($mem_id);
-        my $taxid = $member->taxon_id();
-        my $aln_seq = $row_hashref->{aligned_sequence};
-        print STDERR "$mem_id\t" if ($self->debug);
-        print STDERR substr($aln_seq, 0, 60), "...\n" if ($self->debug);
+    print $outaln scalar(@all_aln_seq), " ", $seqLen, "\n";
+    for my $seq (@all_aln_seq) {
+        my $aln_seq = $seq->seq;
         $aln_seq =~ s/^N/A/;  # To avoid RAxML failure
-        print $outaln $mem_id, "_", $taxid, " ", $aln_seq, "\n";
+        print $outaln $seq->display_id, " ", $aln_seq, "\n";
     }
     close($outaln);
 

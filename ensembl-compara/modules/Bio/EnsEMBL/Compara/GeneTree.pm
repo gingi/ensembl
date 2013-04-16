@@ -38,11 +38,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mp12 $
+$Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.25 $
+$Revision: 1.31 $
 
 =head1 APPENDIX
 
@@ -85,34 +85,18 @@ sub new {
     my $self = $class->SUPER::new(@args);
 
     if (scalar @args) {
-        my ($root_id, $member_type, $tree_type, $clusterset_id) = rearrange([qw(ROOT_ID MEMBER_TYPE TREE_TYPE CLUSTERSET_ID)], @args);
+        my ($root_id, $member_type, $tree_type, $clusterset_id, $ref_root_id, $gene_align_id) =
+            rearrange([qw(ROOT_ID MEMBER_TYPE TREE_TYPE CLUSTERSET_ID REF_ROOT_ID GENE_ALIGN_ID)], @args);
 
         $self->{'_root_id'} = $root_id if defined $root_id;
         $member_type && $self->member_type($member_type);
         $tree_type && $self->tree_type($tree_type);
         $clusterset_id && $self->clusterset_id($clusterset_id);
+        $ref_root_id && $self->ref_root_id($ref_root_id);
+        $gene_align_id && $self->gene_align_id($gene_align_id);
     }
 
     return $self;
-}
-
-
-=head2 deep_copy
-
-  Description: Returns a copy of $self (as an AlignedMemberSet). All the
-               members are themselves copied, but the tree topology is lost.
-  Returntype : Bio::EnsEMBL::Compara::GeneTree
-  Caller     : General
-
-=cut
-
-sub deep_copy {
-    my $self = shift;
-    my $copy = $self->SUPER::deep_copy();
-    foreach my $attr (qw(tree_type member_type clusterset_id)) {
-        $copy->$attr($self->$attr);
-    }
-    return $copy;
 }
 
 
@@ -188,6 +172,24 @@ sub clusterset_id {
 }
 
 
+=head2 ref_root_id
+
+  Description : Getter/Setter for the ref_root_id field. This field must
+                link to a valid root_id. It refers to the main tree (the
+                tree in the "default" clusterset).
+  Returntype  : Integer
+  Example     : my $ref_root_id = $tree->ref_root_id();
+  Caller      : General
+
+=cut
+
+sub ref_root_id {
+    my $self = shift;
+    $self->{'_ref_root_id'} = shift if(@_);
+    return $self->{'_ref_root_id'};
+}
+
+
 =head2 root_id
 
   Description : Getter for the root_id of the root node of the tree.
@@ -201,6 +203,23 @@ sub root_id {
     my $self = shift;
     return $self->{'_root_id'};
 }
+
+=head2 gene_align_id
+
+  Description : Getter/Setter for the gene_align_id field. This field would map
+                to the gene_align / gene_align_member tables
+  Returntype  : String
+  Example     : my $aln_id = $tree->gene_align_id();
+  Caller      : General
+
+=cut
+
+sub gene_align_id {
+    my $self = shift;
+    $self->{'_gene_align_id'} = shift if(@_);
+    return $self->{'_gene_align_id'};
+}
+
 
 
 ################
@@ -302,8 +321,8 @@ sub attach_alignment {
 
     # Gets the alignment
     my %cigars;
-    my $gtn_adaptor = $self->adaptor->db->get_GeneTreeNodeAdaptor;
-    foreach my $leaf (@{$gtn_adaptor->fetch_all_AlignedMember_by_root_id($good_others[0]->root_id)}) {
+
+    foreach my $leaf (@{$self->adaptor->fetch_by_root_id($good_others[0]->root_id)->get_all_Members()}) {
         $cigars{$leaf->member_id} = $leaf->cigar_line;
     }
 
@@ -347,9 +366,9 @@ sub expand_subtrees {
 }
 
 
-##############################
-# AlignedMemberSet interface #
-##############################
+#######################
+# MemberSet interface #
+#######################
 
 =head2 member_class
 
@@ -361,6 +380,22 @@ sub expand_subtrees {
 
 sub member_class {
     return 'Bio::EnsEMBL::Compara::GeneTreeMember';
+}
+
+
+=head2 _attr_to_copy_list
+
+  Description: Returns the list of all the attributes to be copied by deep_copy()
+  Returntype : Array of String
+  Caller     : General
+
+=cut
+
+sub _attr_to_copy_list {
+    my $self = shift;
+    my @sup_attr = $self->SUPER::_attr_to_copy_list();
+    push @sup_attr, qw(_tree_type _member_type _clusterset_id _gene_align_id);
+    return @sup_attr;
 }
 
 

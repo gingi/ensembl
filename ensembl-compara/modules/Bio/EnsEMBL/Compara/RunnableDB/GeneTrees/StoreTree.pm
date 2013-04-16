@@ -10,15 +10,20 @@ use Bio::EnsEMBL::Compara::Graph::NewickParser;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
+sub _name_for_prot {
+    my $self = shift;
+    my $prot = shift;
+    return ($prot->member_id)."_".($self->param('use_genomedb_id') ? $prot->genome_db_id : $prot->taxon_id);
+}
 
 sub dumpTreeMultipleAlignmentToWorkdir {
   my $self = shift;
   my $gene_tree = shift;
   my $convert_to_stockholm = shift;
   
-  my $leafcount = scalar(@{$gene_tree->get_all_leaves});
+  my $leafcount = scalar(@{$gene_tree->get_all_Members});
 
-  my $file_root = $self->worker_temp_directory. $gene_tree->node_id;
+  my $file_root = $self->worker_temp_directory. ($gene_tree->dbID || $gene_tree->gene_align_id);
   $file_root =~ s/\/\//\//g;  # converts any // in path to /
 
   my $aln_file = $file_root . '.aln';
@@ -42,18 +47,18 @@ sub dumpTreeMultipleAlignmentToWorkdir {
   #
   if ($self->param('check_split_genes')) {
     my %split_genes;
-    my $sth = $self->compara_dba->dbc->prepare('SELECT DISTINCT gene_split_id FROM split_genes JOIN gene_tree_member USING (member_id) JOIN gene_tree_node USING (node_id) WHERE root_id = ?');
+    my $sth = $self->compara_dba->dbc->prepare('SELECT DISTINCT gene_split_id FROM split_genes JOIN gene_tree_node USING (member_id) WHERE root_id = ?');
     $sth->execute($self->param('gene_tree_id'));
     my $gene_splits = $sth->fetchall_arrayref();
     $sth->finish;
-    $sth = $self->compara_dba->dbc->prepare('SELECT node_id FROM split_genes JOIN gene_tree_member USING (member_id) JOIN gene_tree_node USING (node_id) WHERE root_id = ? AND gene_split_id = ?');
+    $sth = $self->compara_dba->dbc->prepare('SELECT node_id FROM split_genes JOIN gene_tree_node USING (member_id) WHERE root_id = ? AND gene_split_id = ?');
     foreach my $gene_split (@$gene_splits) {
       $sth->execute($self->param('gene_tree_id'), $gene_split->[0]);
       my $partial_genes = $sth->fetchall_arrayref;
       my $node1 = shift @$partial_genes;
-      my $protein1 = $gene_tree->find_leaf_by_node_id($node1->[0]);
+      my $protein1 = $gene_tree->root->find_leaf_by_node_id($node1->[0]);
       #print STDERR "node1 ", $node1, " ", $protein1, "\n";
-      my $name1 = ($protein1->member_id)."_".($self->param('use_genomedb_id') ? $protein1->genome_db_id : $protein1->taxon_id);
+      my $name1 = $self->_name_for_prot($protein1);
       my $cdna = $protein1->cdna_alignment_string;
       print STDERR "cnda $cdna\n" if $self->debug;
         # We start with the original cdna alignment string of the first gene, and
@@ -68,9 +73,9 @@ sub dumpTreeMultipleAlignmentToWorkdir {
         # and form:
         # cdna1 = AAA AAA AAA AAA AAA --- TTT TTT TTT TTT TTT --- CCC CCC CCC CCC CCC
       foreach my $node2 (@$partial_genes) {
-        my $protein2 = $gene_tree->find_leaf_by_node_id($node2->[0]);
+        my $protein2 = $gene_tree->root->find_leaf_by_node_id($node2->[0]);
         #print STDERR "node2 ", $node2, " ", $protein2, "\n";
-        my $name2 = ($protein2->member_id)."_".($self->param('use_genomedb_id') ? $protein2->genome_db_id : $protein2->taxon_id);
+        my $name2 = $self->_name_for_prot($protein2);
         $split_genes{$name2} = $name1;
         #print STDERR Dumper(%split_genes);
         print STDERR "Joining in ", $protein1->stable_id, " / $name1 and ", $protein2->stable_id, " / $name2 in input cdna alignment\n" if ($self->debug);
@@ -138,6 +143,7 @@ sub store_genetree
 {
     my $self = shift;
     my $tree = shift;
+    my $ref_support = shift;
 
     printf("PHYML::store_genetree\n") if($self->debug);
 
@@ -151,7 +157,7 @@ sub store_genetree
     }
 
     if ($tree->root->get_child_count == 2) {
-        $self->store_node_tags($tree->root);
+        $self->store_node_tags($tree->root, $ref_support);
         $self->store_tree_tags($tree);
     }
 }
@@ -160,6 +166,11 @@ sub store_node_tags
 {
     my $self = shift;
     my $node = shift;
+    my $ref_support = shift;
+
+    if ($self->debug) {
+        print 'storing tags for:'; $node->print_node;
+    }
 
     my $node_type = '';
     if (not $node->is_leaf) {
@@ -173,47 +184,57 @@ sub store_node_tags
             $node_type = 'speciation';
         }
         $node->store_tag('node_type', $node_type);
-        if ($self->debug) {
-            print "store node_type: $node_type"; $node->print_node;
-        }
+        print "node_type: $node_type\n" if ($self->debug);
     }
 
     if ($node->has_tag("E")) {
         my $n_lost = $node->get_tagvalue("E");
         $n_lost =~ s/.{2}//;        # get rid of the initial $-
         my @lost_taxa = split('-', $n_lost);
+        my $topup = 0;   # is used to delete all the pre-existing lost_taxon_id
         foreach my $taxon (@lost_taxa) {
-            if ($self->debug) {
-                printf("store lost_taxon_id : $taxon "); $node->print_node;
-            }
-            $node->store_tag('lost_taxon_id', $taxon, 1);
+            print "lost_taxon_id : $taxon\n" if ($self->debug);
+            $node->store_tag('lost_taxon_id', $taxon, $topup);
+            $topup = 1;
         }
     }
 
-    my %mapped_tags = ('B' => 'bootstrap', 'SIS' => 'species_intersection_score', 'T' => 'tree_support');
+    if ($node->has_tag('T') and $self->param('store_tree_support')) {
+        my $binary_support = $node->get_tagvalue('T');
+        my $i = 0;
+        my $topup = 0;   # is used to delete all the pre-existing tree_support
+        while ($binary_support) {
+            if ($binary_support & 1) {
+                print 'tree_support : ', $ref_support->[$i], "\n" if ($self->debug);
+                $node->store_tag('tree_support', $ref_support->[$i], $topup);
+                $topup = 1;
+            }
+            $binary_support >>= 1;
+            $i++;
+        }
+    }
+
+    my %mapped_tags = ('B' => 'bootstrap', 'SIS' => 'species_intersection_score', 'S' => 'treebest_taxon_id');
     foreach my $tag (keys %mapped_tags) {
         next unless $node->has_tag($tag);
         my $value = $node->get_tagvalue($tag);
         my $db_tag = $mapped_tags{$tag};
-        # tree_support is only valid in protein trees (so far)
-        next if ($tag eq 'T') and (not $self->param('store_tree_support'));
 
         $node->store_tag($db_tag, $value);
-        if ($self->debug) {
-            printf("store $tag as $db_tag: $value"); $node->print_node;
-        }
+        print "$tag as $db_tag: $value\n" if ($self->debug);
     }
 
     foreach my $child (@{$node->children}) {
-        $self->store_node_tags($child);
+        $self->store_node_tags($child, $ref_support);
     }
 }
 
 sub parse_newick_into_tree {
   my $self = shift;
-  my $newick_file = shift;
+  my $newick = shift;
   my $tree = shift;
   
+  return undef if $newick =~ /^_null_/;
   #cleanup old tree structure- 
   #  flatten and reduce to only GeneTreeMember leaves
   my %leaves;
@@ -221,17 +242,9 @@ sub parse_newick_into_tree {
     $leaves{$node->member_id} = $node if $node->isa('Bio::EnsEMBL::Compara::GeneTreeMember');
   }
 
-  #parse newick into a new tree object structure
-  my $newick = '';
-  print("load from file $newick_file\n") if($self->debug);
-  open (FH, $newick_file) or $self->throw("Couldnt open newick file [$newick_file]");
-  while(<FH>) { $newick .= $_;  }
-  close(FH);
-
   my $newroot = Bio::EnsEMBL::Compara::Graph::NewickParser::parse_newick_into_tree($newick, "Bio::EnsEMBL::Compara::GeneTreeNode");
   print  "Tree loaded from file:\n";
   $newroot->print_tree(20) if($self->debug > 1);
-  return undef if $newroot->name eq '_null_';
 
   my $split_genes = $self->param('split_genes');
 
@@ -264,10 +277,11 @@ sub parse_newick_into_tree {
     my $old_leaf = $leaves{$member_id};
     if (not $old_leaf) {
       $leaf->print_node;
-      die "unable to find node in newick for member $member_id";
+      die "unable to find member '$member_id' (from newick '$newick')";
     }
     bless $leaf, 'Bio::EnsEMBL::Compara::GeneTreeMember';
     $leaf->member_id($member_id);
+    $leaf->gene_member_id($old_leaf->gene_member_id);
     $leaf->cigar_line($old_leaf->cigar_line);
     $leaf->node_id($old_leaf->node_id);
     $leaf->adaptor($old_leaf->adaptor);
@@ -352,8 +366,53 @@ sub store_tree_into_clusterset {
     $clusterset->root->add_child($clusterset_leaf);
     $clusterset_leaf->add_child($newtree->root);
     $newtree->clusterset_id($clusterset->clusterset_id);
-    $clusterset->adaptor->db->get_GeneTreeNodeAdaptor->store($clusterset_leaf);
+    $clusterset->adaptor->db->get_GeneTreeNodeAdaptor->store_nodes_rec($clusterset_leaf);
 
 }
+
+sub fetch_or_create_other_tree {
+    my ($self, $clusterset, $tree) = @_;
+
+    if (not defined $self->param('other_trees')) {
+        my %other_trees;
+        foreach my $other_tree (@{$self->compara_dba->get_GeneTreeAdaptor->fetch_all_linked_trees($tree)}) {
+            $other_tree->preload();
+            $other_trees{$other_tree->clusterset_id} = $other_tree;
+        }
+        $self->param('other_trees', \%other_trees);
+    }
+
+    if (not exists ${$self->param('other_trees')}{$clusterset->clusterset_id}) {
+        my $newtree = $tree->deep_copy();
+        $newtree->stable_id(undef);
+        # Reformat things
+        foreach my $member (@{$newtree->get_all_Members}) {
+            $member->cigar_line(undef);
+            $member->stable_id($self->_name_for_prot($member));
+            $member->{'_children_loaded'} = 1;
+        }
+        $newtree->ref_root_id($tree->root_id);
+        $self->store_tree_into_clusterset($newtree, $clusterset);
+        ${$self->param('other_trees')}{$clusterset->clusterset_id} = $newtree;
+    }
+
+    return ${$self->param('other_trees')}{$clusterset->clusterset_id};
+}
+
+sub store_alternative_tree {
+    my ($self, $newick, $clusterset_id, $ref_tree) = @_;
+    my $clusterset = $self->compara_dba->get_GeneTreeAdaptor->fetch_all(-tree_type => 'clusterset', -clusterset_id => $clusterset_id)->[0];
+    if (not defined $clusterset) {
+        $self->throw("The clusterset_id '$clusterset_id' is not defined. Cannot store the alternative tree");
+        return;
+    }
+    my $newtree = $self->fetch_or_create_other_tree($clusterset, $ref_tree);
+    $self->parse_newick_into_tree($newick, $newtree);
+    $self->store_genetree($newtree);
+    $newtree->release_tree;
+    return $newtree;
+}
+
+
 
 1;

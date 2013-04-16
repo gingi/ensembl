@@ -1,14 +1,14 @@
-/AccessionAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/BlackListAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/CommentAdaptor.pm/1.1/Fri Aug 22 09:12:25 2008//Tbranch-ensembl-69
-/DBAdaptor.pm/1.3/Fri Aug 20 09:14:16 2010//Tbranch-ensembl-69
-/DBXrefAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/DescriptionAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/EntryAdaptor.pm/1.6/Thu Sep 30 17:37:06 2010//Tbranch-ensembl-69
-/EntryArchiveAdaptor.pm/1.1/Fri Aug 20 09:14:16 2010//Tbranch-ensembl-69
-/GeneNameAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/KeywordAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/LocationAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/SequenceAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/TaxonomyAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
+/AccessionAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/BlackListAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/CommentAdaptor.pm/1.1/Fri Aug 22 09:12:25 2008//Tbranch-ensembl-70
+/DBAdaptor.pm/1.3/Fri Aug 20 09:14:16 2010//Tbranch-ensembl-70
+/DBXrefAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/DescriptionAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/EntryAdaptor.pm/1.6/Thu Sep 30 17:37:06 2010//Tbranch-ensembl-70
+/EntryArchiveAdaptor.pm/1.1/Fri Aug 20 09:14:16 2010//Tbranch-ensembl-70
+/GeneNameAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/KeywordAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/LocationAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/SequenceAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/TaxonomyAdaptor.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
 D

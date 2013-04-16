@@ -272,7 +272,7 @@ sub _list_dbIDs {
 
   if ( !defined($pk) ) { $pk = $table . "_id" }
 
-  my $sql = sprintf( "SELECT %s FROM %s", $pk, $table );
+  my $sql = sprintf( "SELECT `%s` FROM `%s`", $pk, $table );
 
   my $join_with_cs = 0;
   if (    $self->is_multispecies()
@@ -374,6 +374,13 @@ sub bind_param_generic_fetch{
 	return $self->{'_bind_param_generic_fetch'};
     }
 	
+}
+
+# Used to reset the params without circumventing scope
+sub _bind_param_generic_fetch {
+  my ($self, $_bind_param_generic_fetch) = @_;
+  $self->{'_bind_param_generic_fetch'} = $_bind_param_generic_fetch if $_bind_param_generic_fetch;
+  return $self->{_bind_param_generic_fetch};
 }
 
 
@@ -752,7 +759,7 @@ sub last_insert_id {
 
 sub _id_cache {
   my ($self) = @_;
-  return if $self->db()->no_cache();
+  return if $self->db()->no_cache() && !$self->ignore_cache_override;
   if(! exists $self->{_id_cache}) {
     $self->{_id_cache} = $self->_build_id_cache();
   }
@@ -774,6 +781,21 @@ sub _no_id_cache {
   return 0;
 }
 
+=head2 ignore_cache_override
+
+    Description : Method to interfere with no_cache directive from Registry on
+                  a per adaptor basis. This method should be called after new()
+                  in order to trigger the _build_id_cache at first query.                  
+    Example     : $adaptor->ignore_cache_override(1);              
+    Returntype  : Boolean
+=cut
+
+sub ignore_cache_override {
+    my $self = shift;
+    $self->{'_override'} = shift if(@_);
+    unless (defined($self->{'_override'})) {return}
+    return $self->{'_override'}; 
+}
 
 #_tables
 #

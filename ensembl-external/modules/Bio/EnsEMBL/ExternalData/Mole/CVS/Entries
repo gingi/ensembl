@@ -1,13 +1,13 @@
 D/DBSQL////
-/Accession.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/BlackList.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/Comment.pm/1.1/Fri Aug 22 09:12:01 2008//Tbranch-ensembl-69
-/DBXref.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/Description.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/Entry.pm/1.4/Thu Sep 30 17:36:04 2010//Tbranch-ensembl-69
-/EntryArchive.pm/1.1/Fri Aug 20 09:14:16 2010//Tbranch-ensembl-69
-/GeneName.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/Keyword.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/Location.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/Sequence.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
-/Taxonomy.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-69
+/Accession.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/BlackList.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/Comment.pm/1.1/Fri Aug 22 09:12:01 2008//Tbranch-ensembl-70
+/DBXref.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/Description.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/Entry.pm/1.4/Thu Sep 30 17:36:04 2010//Tbranch-ensembl-70
+/EntryArchive.pm/1.1/Fri Aug 20 09:14:16 2010//Tbranch-ensembl-70
+/GeneName.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/Keyword.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/Location.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/Sequence.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70
+/Taxonomy.pm/1.1/Wed Mar 26 18:18:19 2008//Tbranch-ensembl-70

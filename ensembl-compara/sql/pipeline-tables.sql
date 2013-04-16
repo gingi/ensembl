@@ -246,33 +246,6 @@ CREATE TABLE cmsearch_hit (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
--- These tables are for passing alignments between runnables
---
-DROP TABLE IF EXISTS alignment;
-CREATE TABLE alignment (
-       alignment_id    varchar(100) NOT NULL,
-       compara_table   ENUM('compara','ncrna') NOT NULL,
-       compara_key     int(10) unsigned NOT NULL,
-
-PRIMARY KEY (alignment_id)
-) ENGINE=InnoDB;
-
-
-DROP TABLE IF EXISTS aligned_sequence;
-CREATE TABLE aligned_sequence (
-       alignment_id           varchar(100) NOT NULL,
-       aligned_seq_id         int(10) unsigned NOT NULL AUTO_INCREMENT,
-       aligned_length         int(10) NOT NULL,
-       sequence_id            int(10) unsigned,
-       member_id              int(10) unsigned,
-       aligned_sequence       mediumtext,
-
-PRIMARY KEY (aligned_seq_id),
-FOREIGN KEY (alignment_id) REFERENCES alignment(alignment_id)
--- FOREIGN KEY (sequence_id) REFERENCES sequence(sequence_id),
--- FOREIGN KEY (member_id) REFERENCES member(member_id)
-) ENGINE=InnoDB;
-
 
 -- These tables are for passing CAFE species trees and CAFE tables between runnables for
 -- CAFE Analysis
@@ -291,8 +264,6 @@ PRIMARY KEY (fam_id)
 -- Table structure for table 'protein_tree_qc'
 --
 -- overview: This table contains statistics related to the protein trees
---           Clusterset refers to the output of the clustering
---           GeneTreeset refers to the final gene tree set
 -- semantics:
 --   genome_db_id  - link to genome_db table id
 --   total_orphans_num   - number of orphaned genes (not in the set)
@@ -304,15 +275,10 @@ PRIMARY KEY (fam_id)
 CREATE TABLE protein_tree_qc (
     genome_db_id                       int(10) unsigned NOT NULL,
 
-    total_orphans_num_Clusterset       INT UNSIGNED,
-    prop_orphans_Clusterset            DOUBLE,
-    common_orphans_num_Clusterset      INT UNSIGNED,
-    new_orphans_num_Clusterset         INT UNSIGNED,
-
-    total_orphans_num_GeneTreeset      INT UNSIGNED,
-    prop_orphans_GeneTreeset           DOUBLE,
-    common_orphans_num_GeneTreeset     INT UNSIGNED,
-    new_orphans_num_GeneTreeset        INT UNSIGNED,
+    total_orphans_num                  INT UNSIGNED,
+    prop_orphans                       DOUBLE,
+    common_orphans_num                 INT UNSIGNED,
+    new_orphans_num                    INT UNSIGNED,
 
     PRIMARY KEY (genome_db_id),
     FOREIGN KEY (genome_db_id) REFERENCES genome_db(genome_db_id)

@@ -1,4 +1,4 @@
-#!/usr/local/ensembl/bin/perl -w
+#!/usr/bin/env perl
 
 # Modified from "Relational Modeling of
 # Biological Data: Trees and Graphs", page 2:
@@ -142,4 +142,4 @@ $dbh->do('OPTIMIZE TABLE closure');
 
 $dbh->disconnect();
 
-# $Id: compute_closure.pl,v 1.10 2011-10-06 08:17:51 mk8 Exp $
+# $Id: compute_closure.pl,v 1.11 2012-11-01 10:23:49 ady Exp $

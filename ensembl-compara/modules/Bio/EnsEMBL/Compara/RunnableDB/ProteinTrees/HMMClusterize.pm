@@ -70,13 +70,7 @@ sub run {
 
 sub write_output {
     my $self = shift @_;
-    $self->store_and_dataflow_clusterset('default', $self->param('allclusters'));
-
-    if (defined $self->param('additional_clustersets')) {
-        foreach my $clusterset_id (@{$self->param('additional_clustersets')}) {
-            $self->create_clusterset($clusterset_id);
-        }
-    }
+    $self->store_clusterset('default', $self->param('allclusters'));
 }
 
 ##########################################
@@ -106,7 +100,6 @@ sub load_hmmer_classifications {
     for my $model_name (keys %allclusters) {
         ## we filter out clusters singleton clusters
         if (scalar keys %{$allclusters{$model_name}{members}} == 1) {
-#            if (scalar @{$allclusters{$model_name}{members}} == 1) {
             delete $allclusters{$model_name};
         } else {
             # If it is not a singleton, we add the name of the model to store in the db

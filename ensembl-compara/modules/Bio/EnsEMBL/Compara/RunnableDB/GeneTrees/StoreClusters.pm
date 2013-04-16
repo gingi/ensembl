@@ -25,7 +25,7 @@ Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::StoreClusters
 This is a base RunnableDB to stores a set of clusters in the database.
 ProteinTrees::HclusterParseOutput and ncRNAtrees::RFAMClassify both
 inherit from it. The easiest way to use this class is by creating an
-array of arrays of member_id, and give it to store_and_dataflow_clusterset.
+array of arrays of member_id, and give it to store_clusterset.
 This would create the c;usterset and create the subsequent jobs.
 
 =head1 AUTHORSHIP
@@ -38,7 +38,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.19 $
+$Revision: 1.24 $
 
 =head1 APPENDIX
 
@@ -58,11 +58,10 @@ use Bio::EnsEMBL::Compara::GeneTreeMember;
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
 
-=head2 store_and_dataflow_clusterset
+=head2 store_clusterset
 
   Description: Shortcut for all the individual steps. This function stores the
-               clusters and the clusterset, then flow the clusters into the
-               branch 2.
+               clusters and the clusterset
   Arg [1]    : clusterset_id of the new clusterset
   Arg [2]    : hashref of hashref with at least a 'members' key
   Parameters : member_type, immediate_dataflow, sort_clusters
@@ -72,11 +71,11 @@ use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
 =cut
 
-sub store_and_dataflow_clusterset {
+sub store_clusterset {
     my $self = shift;
     my $clusterset_id = shift;
     my $allclusters = shift;
-    
+
     my $clusterset = $self->create_clusterset($clusterset_id);
     print STDERR "STORING AND DATAFLOWING THE CLUSTERSET\n" if ($self->debug());
     for my $cluster_name (keys %$allclusters) {
@@ -98,7 +97,8 @@ sub store_and_dataflow_clusterset {
         push @allcluster_ids, $cluster->root_id unless $self->param('immediate_dataflow');
     }
     $self->finish_store_clusterset($clusterset);
-    $self->dataflow_clusters($clusterset, \@allcluster_ids);
+    return ($clusterset, [@allcluster_ids]);
+#    $self->dataflow_clusters($clusterset, \@allcluster_ids);
 }
 
 
@@ -180,7 +180,7 @@ sub add_cluster {
     }
 
     # Stores the cluster
-    $self->compara_dba->get_GeneTreeNodeAdaptor->store($clusterset_leaf);
+    $self->compara_dba->get_GeneTreeNodeAdaptor->store_nodes_rec($clusterset_leaf);
     $cluster->store_tag('gene_count', $cluster_root->get_child_count);
     print STDERR "cluster root_id=", $cluster->root_id, " in clusterset '", $clusterset->clusterset_id, "' with ", $cluster_root->get_child_count, " leaves\n" if $self->debug;
     
@@ -250,6 +250,15 @@ sub dataflow_clusters {
         $self->dataflow_output_id({ 'gene_tree_id' => $tree_id, }, 2);
     }
     $self->dataflow_output_id({ 'clusterset_id' => $clusterset->clusterset_id }, 1);
+}
+
+sub create_additional_clustersets {
+    my ($self) =  @_;
+    if (defined $self->param('additional_clustersets')) {
+        foreach my $clusterset_id (@{$self->param('additional_clustersets')}) {
+            $self->create_clusterset($clusterset_id);
+        }
+    }
 }
 
 1;

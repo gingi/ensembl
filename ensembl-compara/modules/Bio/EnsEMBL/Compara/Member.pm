@@ -195,7 +195,6 @@ sub new_from_transcript {
   my $seq_string;
 
   my ($transcript, $genome_db, $translate, $description) = rearrange([qw(TRANSCRIPT GENOME_DB TRANSLATE DESCRIPTION)], @args);
-  #my ($transcript, $genome_db, $translate) = @args;
 
   unless(defined($transcript) and $transcript->isa('Bio::EnsEMBL::Transcript')) {
     throw(
@@ -569,7 +568,7 @@ sub sequence {
   Args       : none
   Example    : my $sequence_exon_cased = $member->sequence_exon_cased;
 
-  Description: Get/set the sequence string of this peptide member with
+  Description: Get/set the sequence string of this member with
                alternating upper and lower case corresponding to the translateable exons.
   Returntype : string
   Exceptions : none
@@ -635,7 +634,7 @@ sub sequence_exon_bounded {
   }
 
   if(!defined($self->{'_sequence_exon_bounded'})) {
-    $self->{'_sequence_exon_bounded'} = $self->adaptor->db->get_SequenceAdaptor->fetch_sequence_exon_bounded_by_member_id($self->member_id);
+    $self->{'_sequence_exon_bounded'} = $self->adaptor->db->get_SequenceAdaptor->fetch_other_sequence_by_member_id_type($self->member_id, 'exon_bounded');
   }
 
   if(!defined($self->{'_sequence_exon_bounded'})) {
@@ -698,7 +697,7 @@ sub sequence_cds {
   }
 
   if(!defined($self->{'_sequence_cds'})) {
-    $self->{'_sequence_cds'} = $self->adaptor->db->get_SequenceAdaptor->fetch_sequence_cds_by_member_id($self->member_id);
+    $self->{'_sequence_cds'} = $self->adaptor->db->get_SequenceAdaptor->fetch_other_sequence_by_member_id_type($self->member_id, 'cds');
   }
 
   if(!defined($self->{'_sequence_cds'})) {
@@ -754,6 +753,20 @@ sub get_exon_bounded_sequence {
     return $seq_string;
 }
 
+sub get_other_sequence {
+  my $self = shift;
+  my $seq_type = shift;
+
+  my $key = "_sequence_other_$seq_type";
+
+  if(!defined($self->{$key})) {
+    $self->{$key} = $self->adaptor->db->get_SequenceAdaptor->fetch_other_sequence_by_member_id_type($self->member_id, $seq_type);
+  }
+
+  return $self->{$key};
+}
+
+
 =head2 seq_length
 
   Example    : my $seq_length = $member->seq_length;
@@ -799,7 +812,7 @@ sub sequence_id {
 
   Arg [1]    : int $gene_member_id
   Example    : my $gene_member_id = $member->gene_member_id;
-  Description: Gene_member_id of this protein member
+  Description: Gene_member_id of this member
   Returntype : int
   Exceptions : none
   Caller     : general
@@ -816,8 +829,8 @@ sub gene_member_id {
 =head2 bioseq
 
   Args       : none
-  Example    : my $primaryseq = $member->primaryseq;
-  Description: returns sequence this member as a Bio::Seq object
+  Example    : my $bioperl_seq = $member->bioseq;
+  Description: returns sequence of this member as a Bio::Seq object
   Returntype : Bio::Seq object
   Exceptions : none
   Caller     : general
@@ -838,9 +851,9 @@ sub bioseq {
     $seqname = $self->source_name . ":" . $self->stable_id;
   }
   my $seq = Bio::Seq->new(-seq        => $self->sequence(),
-                          -primary_id => "member_id_".$self->dbID,
-                          -display_id => "member_id_".$self->dbID,
-                          -desc       => $seqname ."|". $self->description(),
+                          -primary_id => $self->dbID,
+                          -display_id => $seqname,
+                          -desc       => $self->description(),
                          );
   return $seq;
 }
@@ -849,7 +862,7 @@ sub bioseq {
 
   Arg[1]     : Bio::EnsEMBL::Compara::Member $geneMember (optional)
   Example    : my $gene_member = $member->gene_member;
-  Description: returns gene member object for this protein member
+  Description: returns gene member object for this sequence member
   Returntype : Bio::EnsEMBL::Compara::Member object
   Exceptions : if arg[0] is not a Bio::EnsEMBL::Compara::Member object
   Caller     : MemberAdaptor(set), general
@@ -868,15 +881,14 @@ sub gene_member {
   if(!defined($self->{'_gene_member'}) and
      defined($self->adaptor) and $self->dbID)
   {
-    $self->{'_gene_member'} = $self->adaptor->db->get_MemberAdaptor->fetch_gene_for_peptide_member_id($self->dbID);
+    $self->{'_gene_member'} = $self->adaptor->db->get_MemberAdaptor->fetch_by_dbID($self->gene_member_id);
   }
   return $self->{'_gene_member'};
 }
 
 =head2 print_member
 
-  Arg[1]     : string to be prrinted instead of "\n"
-  Example    : $member->print_member("BRH");
+  Example    : $member->print_member;
   Description: used for debugging, prints out key descriptive elements
                of member
   Returntype : none
@@ -889,12 +901,9 @@ sub print_member
 
 {
   my $self = shift;
-  my $postfix = shift;
 
-  printf("   %s %s(%d)\t%s : %d-%d",$self->source_name, $self->stable_id,
+  printf("   %s %s(%d)\t%s : %d-%d\n",$self->source_name, $self->stable_id,
          $self->dbID,$self->chr_name,$self->chr_start, $self->chr_end);
-  if($postfix) { print(" $postfix"); }
-  else { print("\n"); }
 }
 
 
@@ -974,7 +983,7 @@ sub get_Transcript {
                by connecting to ensembl genome core database
                REQUIRES properly setup Registry conf file or
                manually setting genome_db->db_adaptor for each genome.
-  Returntype : Bio::EnsEMBL::Gene or undef
+  Returntype : Bio::EnsEMBL::Translation or undef
   Exceptions : none
   Caller     : general
 
@@ -1079,8 +1088,8 @@ sub get_canonical_transcript_Member {
 
   Args       : none
   Example    : $pepMembers = $gene_member->get_all_peptide_Members
-  Description: return listref of all peptide members of this gene_member
-  Returntype : array ref of Bio::EnsEMBL::Compara::Member 
+  Description: return listref of all peptide members of this gene member
+  Returntype : array ref of Bio::EnsEMBL::Compara::Member
   Exceptions : throw if not an ENSEMBLGENE
   Caller     : general
 
@@ -1089,7 +1098,7 @@ sub get_canonical_transcript_Member {
 sub get_all_peptide_Members {
     my $self = shift;
 
-    throw("adaptor undefined, can access database") unless($self->adaptor);
+    throw("adaptor undefined, cannot access database") unless($self->adaptor);
     throw("not an ENSEMBLGENE member") if($self->source_name ne 'ENSEMBLGENE'); 
 
     my $able_adaptor = UNIVERSAL::can($self->adaptor, 'fetch_all_peptides_for_gene_member_id')

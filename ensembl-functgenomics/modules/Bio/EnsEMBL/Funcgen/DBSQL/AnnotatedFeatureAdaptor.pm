@@ -121,8 +121,8 @@ sub _columns {
 sub _objs_from_sth {
 	my ($self, $sth, $mapper, $dest_slice) = @_;
 
-	my $sa = $self->db->dnadb->get_SliceAdaptor;
-	my $fset_adaptor = $self->db->get_FeatureSetAdaptor();	
+	my $sa           = $self->db->dnadb->get_SliceAdaptor;
+	my $fset_adaptor = $self->db->get_FeatureSetAdaptor;	
 
 	my ($seq_region_id, @features, %fset_hash, 
       %slice_hash, %sr_name_hash, %sr_cs_hash);
@@ -168,13 +168,9 @@ sub _objs_from_sth {
 
 	
  FEATURE: while ( $sth->fetch ) {
-	  #Need to build a slice adaptor cache here?
-	  #Would only ever want to do this if we enable mapping between assemblies??
-	  #Or if we supported the mapping between cs systems for a given schema_build, which would have to be handled by the core api
-	  
-	  #get core seq_region_id
-	  #This fails if we are using a 'comparable' CoordSystem as we don't have a cache
-	  #for the new DB. Wasn't this fixed with the tmp seq_region_cache?
+    #get core seq_region_id
+	  #This was failing if we are using a 'comparable' CoordSystem as we don't have a cache
+	  #for the new DB. Fixed with the tmp seq_region_cache
 	  $seq_region_id = $self->get_core_seq_region_id($efg_seq_region_id);
 		
 	  if (! $seq_region_id) {

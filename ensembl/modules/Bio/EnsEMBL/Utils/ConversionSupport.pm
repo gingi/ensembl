@@ -65,7 +65,6 @@ use Cwd qw(abs_path);
 use DBI;
 use Data::Dumper;
 use Fcntl qw(:flock SEEK_END);
-use File::Temp qw(tempfile);
 
 my $species_c = 1; #counter to be used for each database connection made
 
@@ -303,6 +302,41 @@ sub get_loutre_params {
 	      loutreuser
 	      loutrepass
 	      loutredbname
+	    );
+  }
+}
+
+=head2 get_annotrack_params
+
+  Arg         : (optional) return a list to parse or not
+  Example     : $support->parse_extra_options($support->get_annotrack_params('parse'))
+  Description : Returns a list of parameters used to connect to annotrack
+  Return type : Array - list of common parameters
+  Exceptions  : none
+  Caller      : general
+
+=cut
+
+sub get_annotrack_params {
+  my ($self,$p) = @_;
+  if ($p) {
+    return qw(
+              annotrackhost=s
+	      annotrackport=s
+	      annotrackuser=s
+	      annotrackpass=s
+	      annotrackdbname=s
+              ignoreannotrack
+	    );
+  }
+  else {
+    return qw(
+	      annotrackhost
+	      annotrackport
+	      annotrackuser
+	      annotrackpass
+	      annotrackdbname
+              ignoreannotrack
 	    );
   }
 }
@@ -795,9 +829,10 @@ sub get_dbconnection {
 #  warn $dsn;
 
   my $dbh;
+  my $user = $self->param("${prefix}user");
+  my $pass = $self->param("${prefix}pass");
   eval{
-    $dbh = DBI->connect($dsn, $self->param("${prefix}user"),
-      $self->param("${prefix}pass"), {'RaiseError' => 1, 'PrintError' => 0});
+    $dbh = DBI->connect($dsn, $user, $pass, {'RaiseError' => 1, 'PrintError' => 0});
   };
 
   if (!$dbh || $@ || !$dbh->ping) {
@@ -1133,20 +1168,35 @@ sub split_chromosomes_by_size {
   my $cs_version = shift;
   my $include_non_reference = 1; #get non reference slices
   my $slice_adaptor = $self->dba->get_SliceAdaptor;
-  my $top_slices;
+  my ($top_slices, $wanted_slices, $missed_slices);
   if ($self->param('chromosomes')) {
     foreach my $chr ($self->param('chromosomes')) {
       push @{ $top_slices }, $slice_adaptor->fetch_by_region('chromosome', $chr);
     }
-  } else {
+  }
+  else {
     $top_slices = $slice_adaptor->fetch_all('chromosome',$cs_version,$include_non_reference,$dup);
   }
 
   # filter out patches, if present
-  $top_slices = [ grep { $_->is_reference or $self->is_haplotype($_,$self->dba)  } @$top_slices ];
+  $wanted_slices = [ grep { $_->is_reference or $self->is_haplotype($_,$self->dba) } @$top_slices ];
+
+  # make a note of which ones are excluded
+  $missed_slices = [ grep { ! $_->is_reference and ! $self->is_haplotype($_,$self->dba) } @$top_slices ];
+
+  #warn non PATCH toplevels slice that are excluded (could be haplotypes if an earlier stage has failed)
+  foreach (@{$missed_slices || []}) {
+    my $sr_name = $_->seq_region_name;
+    if ($self->is_patch($_)) {
+      $self->log("Excluding $sr_name\n");
+    }
+    else {
+      $self->log_warning("Excluding $sr_name, are you sure ?\n");
+    }
+  }
 
   my ($big_chr, $small_chr, $min_big_chr, $min_small_chr);
-  foreach my $slice (@{ $top_slices }) {
+  foreach my $slice (@{ $wanted_slices }) {
     next if ($slice->length eq 10000); #hack for chrY pseudoslice
     if ($slice->length < $cutoff) {
       if (! $min_small_chr or ($min_small_chr > $slice->length)) {
@@ -1166,6 +1216,32 @@ sub split_chromosomes_by_size {
   $chr_slices->{int($min_small_chr/150)} = $small_chr if $min_small_chr;
   return $chr_slices;
 }
+
+=head2 is_patch
+
+  Arg[1]      : B::E::Slice
+  Example     : if ($support->is_patch($slice)) { ...
+  Description : Looks at seq_region attributes to decide if a slice is a patch or not
+                If PATCH seq_region_attrib is not there check to see if name suggests it is a PATCH
+  Return type : true/false
+
+=cut
+
+sub is_patch {
+  my ($self,$slice) = @_;
+  my @patch_attrib_types = qw(patch_fix patch_novel); #seq_region_attribs used to define a patch
+  foreach my $attrib_type (@patch_attrib_types) {
+    if (@{$slice->get_all_Attributes($attrib_type)}) {
+      return 1;
+    }
+  }
+  if ($slice->seq_region_name =~ /PATCH/) {
+    $self->log_warning($slice->seq_region_name . " has a PATCH name does not have a patch seq_region_attrib, please check if it was present in loutre\n");
+    return 1;
+  }
+  return 0;
+}
+
 
 =head2 log
 
@@ -1206,7 +1282,7 @@ sub lock_log {
   my ($self) = @_;
   
   my $fh = $self->{'_log_filehandle'};
-  return if -t $fh or -p $fh; # Shouldn't lock such things   
+  return if -t $fh or -p $fh; # Shouldn't lock such things
   flock($self->{'_log_filehandle'},LOCK_EX) || return 0;
   seek($self->{'_log_filehandle'},0,SEEK_END); # fail ok, prob not reg file
   return 1;
@@ -2015,82 +2091,5 @@ sub remove_duplicate_attribs {
   $dbh->do(qq(drop table nondup_${table}_attrib));
 }
 
-=head2 get_alignment
-
-  Arg[1]      : first sequence
-  Arg[2]      : second sequence
-  Arg[3]      : "DNA" or "PEP"
-  Example     : $support->get_alignment($seq_a,$seq_b,"DNA");
-  Description : uses matcher/psw from EMBOSS and WISE2 respectively to
-                produce an alignment. EMBOSS/WISE2 need to be in the
-                environment variables $EMBOSS_PATH and $WISE2_PATH if
-                they are not in their customary places in /localsw.
-  Return type : string containing alignment in "human" readable format.
-  Caller      : general
-  Status      : at risk.
-
-=cut
-
-sub get_alignment {
-  my ($self,$a,$b,$type) = @_;
-
-  # XXX don't hardwire. Is there a better way to discover the EMBOSS path?
-  my @paths = ($ENV{'EMBOSS_PATH'},$ENV{'WISE2_PATH'},
-               "/localsw/bin/emboss","/localsw/bin/wise2");
-  my $exe;
-  $exe = "matcher" if $type eq 'DNA';
-  $exe = "psw"     if $type eq 'PEP';
-  $self->error("Bad type '$type': should be 'DNA' or 'PEP'\n") unless $exe;
-  my $path;
-  foreach my $p (@paths) {
-    if(-e "$p/bin/$exe") {
-      $path = $p;
-      last;
-    }
-  }
-  unless($path) {
-    $self->error("No '$exe' in \$WISE_PATH, \$EMBOSS_PATH or /localsw");
-  }
-  my @tmps;
-  foreach my $t (($a,$b,undef,undef)) {
-    my ($h,$f) = tempfile(UNLINK => 1);
-    print $h $t if(defined $t);
-    close $h;
-    push @tmps,$f;
-  }
-  my $cmd;
-  if($type eq 'DNA') {
-    $cmd = sprintf(qq(%s/bin/%s -asequence %s -bsequence %s -outfile %s),
-                      $path,$exe,@tmps[0..2]);
-  } else { # PEP
-    $cmd = sprintf(qq(%s/bin/%s -dymem explicit -m %s/wisecfg/blosum62.bla
-                      %s %s -n %s -w %s > %s),
-                      $path,$exe,$path,@tmps[0..1],22,61,$tmps[2]);
-  }
-  $cmd =~ s/\s+/ /g;
-  $cmd .= " 2>$tmps[3]";
-  #warn "Executing $cmd\n";
-  system $cmd;
-  my $exit = $?;
-  my $out;
-  open(RESULT,"<",$tmps[2]) || $self->error("Cannot read result");
-  while(<RESULT>) {
-    next if /^#/ or m!//!;
-    $out .= $_;
-  }
-  close RESULT;
-  my $spew;
-  if(open(ERROR,"<",$tmps[3])) {
-    while(<ERROR>) { $spew .= $_; }
-    close ERROR;
-  }
-  if($exit) {
-    die "Command '$cmd' exited abnormally: exit code $exit\n".
-        "On STDERR:\n$spew\n";
-  }
-  unlink $_ for(@tmps);
-  return $out; 
-}
 
 1;
-

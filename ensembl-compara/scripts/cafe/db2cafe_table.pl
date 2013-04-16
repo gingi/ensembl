@@ -16,7 +16,7 @@ my $help;
 my $host = "127.0.0.1";
 my $port = "2914";
 my $user = "ensadmin";
-my $pass = "ensembl";
+my $pass = $ENV{'ENSADMIN_PSW'};
 my $dbname = "lg4_ensembl_compara_64";
 my $url;
 my $mlss = 40076;
@@ -111,7 +111,7 @@ my @species_names = map {(split /_/, $_->name)[0]} @sps_set;
 
 # Get the number of members per family
 my $all_trees = $tree_adaptor->fetch_all(-tree_type => 'tree', -method_link_species_set_id => $mlss, -clusterset_id => 'default');
-my $sth = $tree_adaptor->prepare('SELECT genome_db_id FROM gene_tree_node JOIN gene_tree_member USING (node_id) JOIN member USING (member_id) WHERE root_id = ?');
+my $sth = $tree_adaptor->prepare('SELECT genome_db_id FROM gene_tree_node JOIN member USING (member_id) WHERE root_id = ?');
 print "FAMILYDESC\tFAMILY\t", join("\t", @species_names), "\n";
 for my $tree (@$all_trees) {
   my $root_id = $tree->root_id();

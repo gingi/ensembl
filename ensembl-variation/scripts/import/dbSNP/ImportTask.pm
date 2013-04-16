@@ -11,8 +11,9 @@ use Progress;
 use DBI qw(:sql_types);
 use Fcntl qw( LOCK_SH LOCK_EX );
 use Digest::MD5 qw ( md5_hex );
-use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp);
+use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp );
 use Bio::EnsEMBL::Variation::Utils::dbSNP qw(get_alleles_from_pattern);
+use Bio::EnsEMBL::Variation::Utils::Sequence qw(revcomp_tandem);
 
 
 our %QUICK_COMP = ( "A" => "T",
@@ -228,8 +229,9 @@ sub allele_table {
 
       my $sep_alleles = get_alleles_from_pattern($line->[2]);    ## Reported allele pattern [ eg A/T ]
       foreach my $sep_allele (@$sep_alleles){
-	  if ( $line->[3] ==1 &&  $line->[2] !~/^\(\w+\)$/ ){ ## don't try to compliment named variants 
-	      defined $QUICK_COMP{$sep_allele} ? $sep_allele = $QUICK_COMP{$sep_allele} : reverse_comp(\$sep_allele);
+	  if ($line->[3] ==1 ){
+	      $line->[2] =~/^\(\w+\)/ ?	 $sep_allele = revcomp_tandem($sep_allele):	      
+		  defined $QUICK_COMP{$sep_allele} ? $sep_allele = $QUICK_COMP{$sep_allele} : reverse_comp(\$sep_allele);
 	  }
           ## don't add a line without frequency information if record with frequency already entered for this ss & pop & allele
           next if defined  $done{$line->[0]}{$line->[1]}{$sep_allele} ;
@@ -339,7 +341,7 @@ sub calculate_gtype {
   my $stmt = qq{
     SELECT 
       si.subsnp_id,
-      sind.ind_id, 
+      si.submitted_ind_id, 
       ug.allele_id_1,
       ug.allele_id_2,
       CASE WHEN
@@ -350,9 +352,7 @@ sub calculate_gtype {
 	0
       END,
       ga.rev_flag,
-      LEN(ug.gty_str) AS pattern_length,
-      b.handle,
-      si.submitted_ind_id
+      LEN(ug.gty_str) AS pattern_length     
     FROM   
       $subind_table si JOIN 
       $shared_db..GtyAllele ga ON (
@@ -363,8 +363,7 @@ sub calculate_gtype {
       ) JOIN
       SubmittedIndividual sind ON (
 	sind.submitted_ind_id = si.submitted_ind_id
-      ) JOIN Batch b ON ( b.batch_id = si.batch_id)
-       
+      )        
     WHERE
       si.submitted_ind_id BETWEEN ? AND ? AND
       ga.chr_num = 1
@@ -389,12 +388,11 @@ sub calculate_gtype {
   # Prepared statement to get the sample_id from a ind_id
   $stmt = qq{
     SELECT
-      s.sample_id
+      t.sample_id
     FROM
-      sample s
+      tmp_ind t
     WHERE
-      s.individual_id = ?
-    LIMIT 1
+      t.submitted_ind_id = ?
   };
   my $sample_sth = $dbVar->dbc()->prepare($stmt);
   
@@ -416,6 +414,7 @@ sub calculate_gtype {
 
  ## hack to add individuals missing from main import
   my %all_individuals;
+=head not needed anymore?
   my $individual_type_id;
   if ($dbm->dbCore()->species() =~ /homo|pan|anoph/i) {  $individual_type_id = 3; }
   elsif ($dbm->dbCore()->species() =~ /mus/i) {          $individual_type_id = 1; }
@@ -468,7 +467,7 @@ sub calculate_gtype {
              		                        ]);
   
 
-
+=cut
 
 
   #ÊHash to hold the alleles in memory
@@ -517,15 +516,13 @@ sub calculate_gtype {
   #ÊNow, loop over the import data and print it to the tempfile so we can import the data. Replace the allele_id with the corresponding allele on-the-fly
   while (my $data = $subind_sth->fetchrow_arrayref()) {
     my $subsnp_id = $data->[0];
-    my $ind_id = "MISS";
-    if(defined $data->[1]){ $ind_id = $data->[1] ;}
+    my $ind_sub_id  = $data->[1];
     my $allele_1 = $data->[2];
     my $allele_2 = $data->[3];
     my $sub_strand = $data->[4];
     my $rev_alleles = $data->[5];
     my $pattern_length = $data->[6];
-    my $handle         = $data->[7];
-    my $ind_sub_id     = $data->[8];
+  
     # If pattern length is less than 3, skip this genotype
     next if ($pattern_length < 3);
     # If ind_id is null (there is a case where this happens because one individual in SubmittedIndividual is missing from Individual (131)), skip this genotype.
@@ -564,6 +561,7 @@ sub calculate_gtype {
       }
     }
     #ÊLook up the sample id in the database if necessary
+=head
     if(!exists $all_individuals{$ind_id}{$ind_sub_id} ){
 	if (exists $samples{$ind_id}){
 	    $all_individuals{$ind_id}{$ind_sub_id} = $samples{$ind_id};
@@ -621,20 +619,21 @@ sub calculate_gtype {
 	}
 
 	else{
-	    
-	    $sample_sth->execute($ind_id);
-	    my $sample_id;
-	    $sample_sth->bind_columns(\$sample_id);
-	    $sample_sth->fetch();
-	     if (!defined($sample_id)){  ### check for further drop out??
-		 warn "Skipping genotypes due to lack of sample id ind_id:$ind_id & ss$subsnp_id\n";
-		 next;
-	     } 
-	    $samples{$ind_id} = $sample_id;
-	    $all_individuals{$ind_id}{$ind_sub_id} = $sample_id;
-	    $new_samples = 1;
+=cut
+    if(!exists $samples{$ind_sub_id} ){
 
-	}
+	$sample_sth->execute($ind_sub_id);
+	my $sample_id;
+	$sample_sth->bind_columns(\$sample_id);
+	$sample_sth->fetch();
+	if (!defined($sample_id)){  ### check for further drop out??
+	    warn "Skipping genotypes due to lack of sample (submitted_ind_id:$ind_sub_id) & ss$subsnp_id\n";
+	    next;
+	} 
+	$samples{$ind_sub_id} = $sample_id;
+#	    $all_individuals{$ind_id}{$ind_sub_id} = $sample_id;
+	$new_samples = 1;
+	
     }
     $allele_1 = $alleles{$allele_1}->[$reverse];
     $allele_2 = $alleles{$allele_2}->[$reverse];
@@ -648,7 +647,7 @@ sub calculate_gtype {
     next if ($allele_1 eq 'N' && $allele_2 eq 'N');
     
     #my $row = join("\t",($variation_ids{$subsnp_id}->[0],$subsnp_id,$samples{$ind_id},$allele_1,$allele_2));
-    my $row = join("\t",($variation_ids{$subsnp_id}->[0],$subsnp_id,$all_individuals{$ind_id}{$ind_sub_id},$allele_1,$allele_2));
+    my $row = join("\t",($variation_ids{$subsnp_id}->[0],$subsnp_id,$samples{$ind_sub_id},$allele_1,$allele_2));
     my $md5 = md5_hex($row);
     next if (exists($row_md5s{$md5}));
     $row_md5s{$md5}++;

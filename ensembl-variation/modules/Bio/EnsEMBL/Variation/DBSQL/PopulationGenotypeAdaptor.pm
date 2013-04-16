@@ -77,6 +77,8 @@ use Bio::EnsEMBL::Utils::Scalar qw(assert_ref);
 
 use Bio::EnsEMBL::Variation::PopulationGenotype;
 
+use Scalar::Util qw(weaken);
+
 our @ISA = ('Bio::EnsEMBL::Variation::DBSQL::BaseGenotypeAdaptor');
 
 
@@ -170,7 +172,7 @@ sub store_to_file_handle {
   Returntype : Bio::EnsEMBL::Variation::Variation::PopulationGenotype or undef
   Exceptions : throw if no dbID argument is provided
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -198,7 +200,7 @@ sub fetch_by_dbID {
   Returntype : Bio::EnsEMBL::Variation::PopulationGenotype
   Exceptions : throw on incorrect argument
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -235,7 +237,7 @@ sub fetch_all_by_Population {
   Returntype : listref Bio::EnsEMBL::Variation::PopulationGenotype 
   Exceptions : throw on bad argument
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -302,8 +304,7 @@ sub _fetch_all_by_Variation_from_Genotypes {
   
   foreach my $pop(@pop_list) {
 	
-	# HACK: only include 1KG phase 1 pops for now
-	next unless $pop->name =~ /^1000GENOMES:phase_1_/;
+	next unless $pop->_freqs_from_gts;
 	
 	foreach my $ss(keys %ss_list) {
 	  my (%counts, $total, @freqs);
@@ -330,6 +331,8 @@ sub _fetch_all_by_Variation_from_Genotypes {
 		  adaptor    => $self,
 		  subsnp     => $ss eq '' ? undef : $ss,
 		});
+
+                weaken($objs[-1]->{'variation'});
 	  }
 	}
   }
@@ -343,7 +346,7 @@ sub _fetch_all_by_Variation_from_Genotypes {
   Returntype : listref Bio::EnsEMBL::Variation::PopulationGenotype 
   Exceptions : throw on bad argument
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 

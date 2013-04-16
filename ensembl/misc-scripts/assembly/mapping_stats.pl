@@ -78,6 +78,7 @@ $support->parse_extra_options(
     'altassembly=s',
     'althost=s',
     'altport=n',
+    'altpass=s',
     'chromosomes|chr=s@',
 );
 $support->allowed_params(
@@ -88,6 +89,7 @@ $support->allowed_params(
     'althost',
     'altport',
     'chromosomes',
+    'altpass',
 );
 
 if ($support->param('help') or $support->error) {
@@ -98,7 +100,7 @@ if ($support->param('help') or $support->error) {
 $support->comma_to_list('chromosomes');
 
 # ask user to confirm parameters to proceed
-$support->confirm_params;
+# $support->confirm_params;
 
 # get log filehandle and print heading and parameters to logfile
 $support->init_log;

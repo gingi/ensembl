@@ -50,11 +50,11 @@ CREATE TABLE term (
 CREATE TABLE synonym (
   synonym_id    INT UNSIGNED NOT NULL AUTO_INCREMENT,
   term_id       INT UNSIGNED NOT NULL,
-  name          VARCHAR(255) NOT NULL,
+  name          TEXT NOT NULL,
 
   PRIMARY KEY (synonym_id),
   UNIQUE INDEX term_synonym_idx (term_id, synonym_id),
-  INDEX name_idx (name)
+  INDEX name_idx (name(50))
 );
 
 CREATE TABLE relation_type (
@@ -96,4 +96,4 @@ CREATE TABLE closure (
 -- "aux_XX_YY_map".  These are created by the "add_subset_maps.pl"
 -- scripts.  Please see the README document for further information.
 
--- $Id: tables.sql,v 1.3 2011-09-14 10:02:43 mk8 Exp $
+-- $Id: tables.sql,v 1.4 2012-10-31 12:04:48 ady Exp $

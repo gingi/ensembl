@@ -20,7 +20,6 @@ my $g_load_members = Bio::EnsEMBL::Compara::RunnableDB::ncRNAtrees::GeneStoreNCM
                                                     -analysis   => $analysis );
 $g_load_members->fetch_input(); #reads from DB
 $g_load_members->run();
-$g_load_members->output();
 $g_load_members->write_output(); #writes to DB
 
 =cut
@@ -48,7 +47,6 @@ package Bio::EnsEMBL::Compara::RunnableDB::ncRNAtrees::GeneStoreNCMembers;
 
 use strict;
 use Bio::EnsEMBL::Compara::Member;
-use Bio::EnsEMBL::Compara::Subset;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
@@ -81,8 +79,6 @@ sub fetch_input {
     my $core_db = $genome_db->db_adaptor() or die "Can't connect to genome database for id=$genome_db_id";
     $self->param('core_db', $core_db);
 
-    $self->param('to_ncrna_subset', []);
-    $self->param('to_gene_subset',  []);
 }
 
 
@@ -112,37 +108,6 @@ sub run {
     $core_db->dbc->disconnect_when_inactive(1);
 }
 
-
-=head2 write_output
-
-    Dataflow the (subset_id,member_id) pairs if the corresponding subset_ids were passed as parameters.
-    These pairs will end up in the subset_member table if everything is wired correctly.
-
-=cut
-
-sub write_output {
-    my $self = shift @_;
-
-    if(my $ncrna_subset_id = $self->param('ncrna_subset_id')) {
-
-        foreach my $member_id (@{$self->param('to_ncrna_subset')}) {
-            $self->dataflow_output_id({
-                'subset_id' => $ncrna_subset_id,
-                'member_id' => $member_id,
-            }, 3);
-        }
-    }
-
-    if(my $gene_subset_id = $self->param('gene_subset_id')) {
-
-        foreach my $member_id (@{$self->param('to_gene_subset')}) {
-            $self->dataflow_output_id({
-                'subset_id' => $gene_subset_id,
-                'member_id' => $member_id,
-            }, 4);
-        }
-    }
-}
 
 
 ######################################
@@ -208,13 +173,12 @@ sub store_ncrna_gene {
                 print(" : stored") if($self->debug);
             };
 
-            push @{$self->param('to_gene_subset')}, $gene_member->dbID;
             print("\n") if($self->debug);
             $gene_member_not_stored = 0;
         }
 
+        $ncrna_member->gene_member_id($gene_member->dbID);
         $member_adaptor->store($ncrna_member);
-        $member_adaptor->store_gene_peptide_link($gene_member->dbID, $ncrna_member->dbID);
         print(" : stored\n") if($self->debug);
 
         if(length($transcript_spliced_seq) > $max_ncrna_length) {
@@ -224,7 +188,7 @@ sub store_ncrna_gene {
     }
 
     if($longest_ncrna_member) {
-        push @{$self->param('to_ncrna_subset')}, $longest_ncrna_member->dbID;
+        $member_adaptor->_set_member_as_canonical($longest_ncrna_member);
     }
 }
 

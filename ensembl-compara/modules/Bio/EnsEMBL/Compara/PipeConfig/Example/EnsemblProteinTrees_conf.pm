@@ -61,7 +61,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.8 $
+$Revision: 1.11 $
 
 =head1 APPENDIX
 
@@ -85,7 +85,7 @@ sub default_options {
 
     # parameters that are likely to change from execution to another:
 #       'mlss_id'               => 40077,   # it is very important to check that this value is current (commented out to make it obligatory to specify)
-        'release'               => '69',
+        'release'               => '70',
         'rel_suffix'            => '',    # an empty string by default, a letter otherwise
         'work_dir'              => '/lustre/scratch109/ensembl/'.$self->o('ENV', 'USER').'/protein_trees_'.$self->o('rel_with_suffix'),
 
@@ -117,6 +117,7 @@ sub default_options {
         'quicktree_exe'             => '/software/ensembl/compara/quicktree_1.1/bin/quicktree',
         'buildhmm_exe'              => '/software/ensembl/compara/hmmer3/hmmer-3.0/src/hmmbuild',
         'codeml_exe'                => '/usr/local/ensembl/bin/codeml',
+        'ktreedist_exe'             => '/software/ensembl/compara/ktreedist/Ktreedist.pl',
 
     # HMM specific parameters
         'hmm_clustering'            => 0, ## by default run blastp clustering
@@ -194,11 +195,11 @@ sub default_options {
         #'reuse_core_sources_locs'   => [ $self->o('staging_loc1'), $self->o('staging_loc2') ],
 
         'reuse_db' => {   # usually previous release database on compara1
-           -host   => 'ens-livemirror',
+           -host   => 'compara3',
            -port   => 3306,
            -user   => 'ensro',
            -pass   => '',
-           -dbname => 'ensembl_compara_68',
+           -dbname => 'sf5_ensembl_compara_69',
         },
         #'reuse_db' => {   # current release if we are testing after production
         #    -host   => 'compara1',
@@ -227,7 +228,6 @@ sub resource_classes {
          'msa'          => {'LSF' => '-C0 -M2000000  -R"select[mem>2000]  rusage[mem=2000]"' },
          'msa_himem'    => {'LSF' => '-C0 -M8000000  -R"select[mem>8000]  rusage[mem=8000]"' },
 
-         '500Mb_long_job'    => {'LSF' => '-C0 -M500000   -R"select[mem>500]   rusage[mem=500]" -q long' },
          'urgent_hcluster'   => {'LSF' => '-C0 -M32000000 -R"select[mem>32000] rusage[mem=32000]" -q yesterday' },
     };
 }

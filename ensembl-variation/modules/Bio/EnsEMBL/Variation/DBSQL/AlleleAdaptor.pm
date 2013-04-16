@@ -153,7 +153,7 @@ sub store_to_file_handle {
 
   Description: fetch_all should not be used for Alleles.
   Exceptions : thrown on invocation
-  Status     : At risk
+  Status     : Stable
 
 =cut
 
@@ -201,7 +201,7 @@ sub fetch_all_by_subsnp_id {
   Returntype : listref of Bio::EnsEMBL::Variation::Allele
   Exceptions : throw on incorrect argument
   Caller     : general
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
@@ -233,17 +233,17 @@ sub fetch_all_by_Variation {
     
     # If a population was specified, attach the population to the allele object
     map {$_->population($population)} @{$alleles} if (defined($population));
-	
-	# add freqs from genotypes for human (1KG data)
-	push @$alleles, @{$self->_fetch_all_by_Variation_from_Genotypes($variation, $population)} if $self->db->species =~ /homo_sapiens/i;
+
+    # add freqs from genotypes for human (1KG data)
+    push @$alleles, @{$self->_fetch_all_by_Variation_from_Genotypes($variation, $population)};
 	
     # Return the alleles
     return $alleles;
 }
 
 sub _fetch_all_by_Variation_from_Genotypes {
-	my $self = shift;
-	my $variation = shift;
+    my $self = shift;
+    my $variation = shift;
     my $population = shift;
     
     # Make sure that we are passed a Variation object
@@ -279,9 +279,8 @@ sub _fetch_all_by_Variation_from_Genotypes {
 	my @objs;
 	
 	foreach my $pop(@pop_list) {
-		
-		# HACK: only include 1KG phase 1 pops for now
-		next unless $pop->name =~ /^1000GENOMES:phase_1_/;
+	
+		next unless $pop->_freqs_from_gts;
 		
 		foreach my $ss(keys %ss_list) {
 			
@@ -368,7 +367,7 @@ sub get_all_failed_descriptions {
   ReturnType  : string
   Exceptions  : thrown on incorrect argument
   Caller      : general
-  Status      : At Risk
+  Status      : Stable
 
 =cut
 
@@ -387,7 +386,7 @@ sub get_subsnp_handle {
     # Get the subsnp id and get rid of any 'ss' prefix
     my $ssid = $allele->subsnp() || "";
     $ssid =~ s/^ss//;
-    
+    return if $ssid eq "0";
     my ($stmt, $sth);
     if(defined $population ){
        $stmt = qq{

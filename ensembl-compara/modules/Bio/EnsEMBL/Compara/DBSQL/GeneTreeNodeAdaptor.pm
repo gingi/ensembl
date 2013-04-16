@@ -40,7 +40,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.24.2.1 $
+$Revision: 1.33 $
 
 =head1 APPENDIX
 
@@ -237,7 +237,7 @@ sub gene_member_id_is_in_tree {
 sub fetch_all_AlignedMember_by_root_id {
   my ($self, $root_id) = @_;
 
-  my $constraint = '(tm.member_id IS NOT NULL) AND (t.root_id = ?)';
+  my $constraint = '(t.member_id IS NOT NULL) AND (t.root_id = ?)';
   $self->bind_param_generic_fetch($root_id, SQL_INTEGER);
   return $self->generic_fetch($constraint);
 
@@ -256,7 +256,7 @@ sub fetch_all_AlignedMember_by_root_id {
 
 sub fetch_by_stable_id {
     my $self = shift;
-    deprecate('Use Bio::EnsEMBL::Compara::DBSQL::GeneTreeAdaptor::fetch_by_stable_id instead. fetch_by_stable_id() will be removed in release 70.');
+    deprecate('Use Bio::EnsEMBL::Compara::DBSQL::GeneTreeAdaptor::fetch_by_stable_id instead. fetch_by_stable_id() will be removed in release 71.');
     my $tree = $self->db->get_GeneTreeAdaptor->fetch_by_stable_id(@_);
     return $tree->root if (not defined $self->_default_member_type) or ($tree->member_type eq $self->_default_member_type);
 }
@@ -268,7 +268,7 @@ sub fetch_by_stable_id {
 # STORE methods
 ###########################
 
-sub store {
+sub store_nodes_rec {
     my ($self, $node) = @_;
 
     my $children = $node->children;
@@ -279,7 +279,7 @@ sub store {
     foreach my $child_node (@$children) {
         # Store the GeneTreeNode or the new GeneTree if different
         if ((not defined $child_node->tree) or ($child_node->root eq $node->root)) {
-            $self->store($child_node);
+            $self->store_nodes_rec($child_node);
         } else {
             $self->db->get_GeneTreeAdaptor->store($child_node->tree);
         }
@@ -309,26 +309,16 @@ sub store_node {
 
     my $root_id = $node->root->node_id;
     #print "inserting new_noe=$new_node parent_id=$parent_id, root_id=$root_id\n";
+    my $member_id = undef;
+    $member_id = $node->member_id if $node->isa('Bio::EnsEMBL::Compara::GeneTreeMember');
 
-    my $sth = $self->prepare("UPDATE gene_tree_node SET parent_id=?, root_id=?, left_index=?, right_index=?, distance_to_parent=?  WHERE node_id=?");
+    my $sth = $self->prepare("UPDATE gene_tree_node SET parent_id=?, root_id=?, left_index=?, right_index=?, distance_to_parent=?, member_id=?  WHERE node_id=?");
     #print "UPDATE gene_tree_node  (", $parent_id, ",", $root_id, ",", $node->left_index, ",", $node->right_index, ",", $node->distance_to_parent, ") for ", $node->node_id, "\n";
-    $sth->execute($parent_id, $root_id, $node->left_index, $node->right_index, $node->distance_to_parent, $node->node_id);
+    $sth->execute($parent_id, $root_id, $node->left_index, $node->right_index, $node->distance_to_parent, $member_id, $node->node_id);
     $sth->finish;
 
     $node->adaptor($self);
 
-    if($node->isa('Bio::EnsEMBL::Compara::GeneTreeMember')) {
-        if ($new_node) {
-            $sth = $self->prepare("INSERT INTO gene_tree_member (node_id, member_id, cigar_line)  VALUES (?,?,?)");
-            $sth->execute($node->node_id, $node->member_id, $node->cigar_line);
-            $sth->finish;
-        } else {
-            $sth = $self->prepare('UPDATE gene_tree_member SET cigar_line=? WHERE node_id = ?');
-            $sth->execute($node->cigar_line, $node->node_id);
-            $sth->finish;
-        }
-    }
-    
     return $node->node_id;
 }
 
@@ -358,7 +348,6 @@ sub delete_flattened_leaf {
   my $node_id = $node->node_id;
   $self->dbc->do("DELETE from gene_tree_node_tag    WHERE node_id = $node_id");
   $self->dbc->do("DELETE from gene_tree_node_attr   WHERE node_id = $node_id");
-  $self->dbc->do("DELETE from gene_tree_member WHERE node_id = $node_id");
   $self->dbc->do("DELETE from gene_tree_node   WHERE node_id = $node_id");
 }
 
@@ -372,7 +361,6 @@ sub delete_node {
             "n.parent_id = dn.parent_id WHERE n.parent_id=dn.node_id AND dn.node_id=$node_id");
   $self->dbc->do("DELETE from gene_tree_node_tag    WHERE node_id = $node_id");
   $self->dbc->do("DELETE from gene_tree_node_attr   WHERE node_id = $node_id");
-  $self->dbc->do("DELETE from gene_tree_member WHERE node_id = $node_id");
   $self->dbc->do("UPDATE gene_tree_node SET root_id = NULL WHERE node_id = $node_id");
   $self->dbc->do("DELETE from gene_tree_node   WHERE node_id = $node_id");
 }
@@ -422,25 +410,25 @@ sub _columns {
           't.right_index',
           't.distance_to_parent',
 
-          'tm.cigar_line',
+          'gam.cigar_line',
 
           Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor->_columns()
           );
 }
 
 sub _tables {
-  return (['gene_tree_node', 't'], ['gene_tree_member', 'tm'], ['member', 'm']);
+  return (['gene_tree_node', 't'], ['gene_tree_root', 'tr'], ['gene_align_member', 'gam'], ['member', 'm']);
+}
+
+sub _default_where_clause {
+    return 't.root_id = tr.root_id';
 }
 
 sub _left_join {
     return (
-        ['gene_tree_member', 't.node_id = tm.node_id'],
-        ['member', 'tm.member_id = m.member_id'],
+        ['gene_align_member', 'gam.member_id = t.member_id AND gam.gene_align_id = tr.gene_align_id'],
+        ['member', 't.member_id = m.member_id'],
     );
-}
-
-sub _get_starting_lr_index {
-    return 1;
 }
 
 
@@ -519,7 +507,7 @@ sub _default_member_type {
     no strict 'refs';
     foreach my $func_name (qw(
                                  fetch_all_children_for_node fetch_parent_for_node fetch_all_leaves_indexed
-                                 fetch_subtree_under_node fetch_subroot_by_left_right_index fetch_root_by_node
+                                 fetch_subtree_under_node fetch_root_by_node
                                  fetch_first_shared_ancestor_indexed
                             )) {
         my $full_name = "Bio::EnsEMBL::Compara::DBSQL::GeneTreeNodeAdaptor::$func_name";

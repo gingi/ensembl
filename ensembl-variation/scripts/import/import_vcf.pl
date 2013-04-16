@@ -1,24 +1,25 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2010 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
   For license details, please see
 
-    http://www.ensembl.org/info/about/code_licence.html
+    http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
   Please email comments or questions to the public Ensembl
-  developers list at <ensembl-dev@ebi.ac.uk>.
+  developers list at <dev@ensembl.org>.
 
   Questions may also be sent to the Ensembl help desk at
-  <helpdesk@ensembl.org>.
+  <helpdesk.org>.
 
 =cut
+
 
 =head1 NAME
 import_vcf.pl - imports variations from a VCF file into an Ensembl variation DB
@@ -45,6 +46,7 @@ use Time::HiRes qw(gettimeofday tv_interval);
 use ImportUtils qw(load);
 use FindBin qw( $Bin );
 use Digest::MD5 qw(md5_hex);
+use Cwd 'abs_path';
 
 use constant DISTANCE => 100_000;
 use constant MAX_SHORT => 2**16 -1;
@@ -129,9 +131,9 @@ sub configure {
 		'skip_tables=s',
 		'add_tables=s',
 		
-		'merge_vfs',
 		'only_existing',
 		'skip_n',
+		'mart_genotypes',
 		
 		'create_name',
 		'chrom_regexp=s',
@@ -148,6 +150,7 @@ sub configure {
 		'no_recover',
 		
 		'cache=s',
+		'fasta=s',
 		
 	# die if we can't parse arguments - better to get user to sort out their command line
 	# than potentially do the wrong thing
@@ -261,6 +264,8 @@ sub configure {
 	# force some back in
 	$tables->{$_} = 1 for qw/source meta_coord/;
 	
+	$tables->{individual_genotype_multiple_bp} = 1 if defined($config->{mart_genotypes});
+	
 	# special case for sample, we also want to set the other sample tables to on
 	if($tables->{sample}) {
 		$tables->{$_} = 1 for qw/population individual individual_population/;
@@ -321,6 +326,77 @@ sub configure {
 		$config->{vep}->{cache}           = 1;
 		$config->{vep}->{offline}         = 1;
 	}
+	
+	
+    if(defined($config->{fasta})) {
+        die "ERROR: Specified FASTA file/directory not found" unless -e $config->{fasta};
+        
+        eval q{ use Bio::DB::Fasta; };
+        
+        if($@) {
+            die("ERROR: Could not load required BioPerl module\n");
+        }
+        
+        # try to overwrite sequence method in Slice
+        eval q{
+            package Bio::EnsEMBL::Slice;
+            
+            # define a global variable so that we can pull in config hash
+            our $config;
+            
+            {
+                # don't want a redefine warning spat out, thanks
+                no warnings 'redefine';
+                
+                # overwrite seq method to read from FASTA DB
+                sub seq {
+                    my $self = shift;
+                    
+                    # special case for in-between (insert) coordinates
+                    return '' if($self->start() == $self->end() + 1);
+                    
+                    my $seq;
+                    
+                    if(defined($config->{fasta_db})) {
+                        $seq = $config->{fasta_db}->seq($self->seq_region_name, $self->start => $self->end);
+                        reverse_comp(\$seq) if $self->strand < 0;
+                    }
+                    
+                    else {
+                        return $self->{'seq'} if($self->{'seq'});
+                      
+                        if($self->adaptor()) {
+                          my $seqAdaptor = $self->adaptor()->db()->get_SequenceAdaptor();
+                          return ${$seqAdaptor->fetch_by_Slice_start_end_strand($self,1,undef,1)};
+                        }
+                    }
+                    
+                    # default to a string of Ns if we couldn't get sequence
+                    $seq ||= 'N' x $self->length();
+                    
+                    return $seq;
+                }
+            }
+            
+            1;
+        };
+        
+        if($@) {
+            die("ERROR: Could not redefine sequence method\n");
+        }
+        
+        # copy to Slice for offline sequence fetching
+        $Bio::EnsEMBL::Slice::config = $config->{vep};
+        
+        # spoof a coordinate system
+        $config->{vep}->{coord_system} = Bio::EnsEMBL::CoordSystem->new(
+            -NAME => 'chromosome',
+            -RANK => 1,
+        );
+        
+        debug($config, "Checking/creating FASTA index");
+        $config->{vep}->{fasta_db} = Bio::DB::Fasta->new($config->{fasta});
+    }
 	
 	# get terminal width for progress bars
 	my $width;
@@ -392,7 +468,6 @@ sub main {
 		$prev_seq_region,
 		$genotypes,
 		$var_counter,
-		$start_time,
 		@vf_buffer,
 	);
 	
@@ -420,12 +495,7 @@ sub main {
 		}
 		
 		# try and do attrib
-		if(system('perl  ../misc/create_attrib_sql.pl --config Bio::EnsEMBL::Variation::Utils::Config --no_model > /tmp/attribs.sql') == 0) {
-			sql_populate($config, '/tmp/attribs.sql');
-		}
-		else {
-			debug("WARNING: Failed to populate attrib table. Variation classses will not be set correctly");
-		}
+		attrib($config);
 	}
 	
 	# get adaptors
@@ -657,7 +727,7 @@ sub main {
 			
 			
 			# make a var name if none exists
-			if(!defined($data->{ID}) || $data->{ID} eq '.' || defined($config->{new_var_name})) {
+			if(!defined($data->{ID}) || $data->{ID} eq '.' || defined($config->{create_name})) {
 				$data->{ID} =
 					($config->{var_prefix} ? $config->{var_prefix} : 'tmp').
 					'_'.$data->{'#CHROM'}.'_'.$data->{POS};
@@ -706,7 +776,7 @@ sub main {
 			population_genotype($config, $data) if $config->{tables}->{population_genotype};
 			
 			# individual genotypes
-			individual_genotype($config, $data) if $config->{tables}->{compressed_genotype_var};
+			individual_genotype($config, $data) if $config->{tables}->{compressed_genotype_var} || defined($config->{mart_genotypes});
 			
 			# GENOTYPES BY REGION
 			#####################
@@ -970,8 +1040,11 @@ sub run_forks {
 		@chrs = @new_chrs;
 	}
 	
+	my $parent_pid = $$;
+	
 	# fork off a process to handle comms
 	my $comm_pid = fork;
+	my @forked_pids;
 	
 	if($comm_pid == 0) {
 		my $c;
@@ -983,6 +1056,11 @@ sub run_forks {
 			
 			#print unless /Processed/;
 			
+			if(/FORK/) {
+				chomp;
+				my @split = split /\s+/;
+				push @forked_pids, $split[-1];
+			}
 			if(/Processed/) {
 				$c++;
 				$in_progress{$fork} = 1;
@@ -1012,9 +1090,15 @@ sub run_forks {
 				my @split = split /\s+/;
 				$config->{skipped}->{$split[-2]} += $split[-1];
 			}
-			elsif(/WARNING/) {
-				print "\n$_";
+			elsif(/WARN/i) {
+				print;
 			}
+            # something's wrong
+            elsif(!/^\d{4}\-\d{2}\-\d{2}/ && /\S+/) {
+                # kill the other pids
+                kill(15, $_) for (@forked_pids, $parent_pid);
+                die("\nERROR: Forked process failed:\n$_\n");
+            }
 		}
 		close CHILD;
 		
@@ -1081,6 +1165,9 @@ sub run_forks {
 			}
 		}
 		elsif($pid == 0) {
+			
+			# redirect STDERR to PARENT so we can catch errors
+			*STDERR = *PARENT;
 			
 			#debug($config, "Forking chr $chr\n\n");
 			$config->{forked} = $chr;
@@ -1289,7 +1376,9 @@ sub sql_populate {
 	else {
 		debug($config, "Executing SQL in $sql_file");
 		foreach my $command(split ';', $sql) {
-			$config->{dbVar}->do($command) or die $config->{dbVar}->errstr;
+			eval {
+				$config->{dbVar}->do($command) or warn $config->{dbVar}->errstr;
+			};
 		}
 	}
 }
@@ -1322,6 +1411,77 @@ sub backup {
 	}
 }
 
+# populate attrib tables using script
+sub attrib {
+	my $config = shift;
+	
+	# check for entries
+	my $sth = $config->{dbVar}->prepare(q{
+		SELECT COUNT(*) FROM attrib
+	});
+	$sth->execute();
+	my $count;
+	$sth->bind_columns(\$count);
+	$sth->fetch;
+	$sth->finish;
+	
+	if($count) {
+		debug($config, "Looks like attrib is populated, skipping");
+		return;
+	}
+	
+	# check script exists
+	my $script = '../misc/create_attrib_sql.pl';
+	my $this_script = abs_path($0);
+	$this_script =~ s/\/[^\/]+$//;
+	$script = $this_script.'/'.$script;
+	
+	if(!-e $script) {
+		debug($config, "WARNING: Could not find create_attrib_sql.pl in ../misc/");
+		return;
+	}
+	
+	# try and do attrib
+	my $installed_version = Bio::EnsEMBL::Registry->software_version;
+	
+	# look for DBs of this version on ensembldb
+	my $dbh = DBI->connect('DBI:mysql:;host=ensembldb.ensembl.org;port=5306', 'anonymous');
+	$sth = $dbh->prepare(qq{
+		SHOW DATABASES LIKE ?
+	});
+	
+	$sth->execute('homo_sapiens_variation_'.$installed_version.'_%');
+	
+	my $db_name;
+	$sth->bind_columns(\$db_name);
+	$sth->fetch;
+	$sth->finish;
+	
+	# try prev version
+	if(!defined($db_name)) {
+		$sth->execute('homo_sapiens_variation_'.($installed_version - 1).'_%');
+		$sth->bind_columns(\$db_name);
+		$sth->fetch;
+		$sth->finish;
+		
+		if(!defined($db_name)) {
+			debug($config, "WARNING: Could not find database of version $installed_version or ".($installed_version - 1)." on ensembldb.ensembl.org; can't populate attrib tables");
+			return;
+		}
+	}
+	
+	debug($config, "Using $db_name as model for attrib tables");
+	
+	if(system(sprintf('perl %s --config Bio::EnsEMBL::Variation::Utils::Config --host ensembldb.ensembl.org --user anonymous --port 5306 --db %s > /tmp/attribs.sql', $script, $db_name))  == 0) {
+		sql_populate($config, '/tmp/attribs.sql');
+	}
+	else {
+		debug($config, "WARNING: Failed to populate attrib table. Variation classses will not be set correctly");
+	}
+	
+	return;
+}
+
 # copies seq_region entries from core DB
 sub copy_seq_region_from_core {
 	my $config = shift;
@@ -1349,6 +1509,9 @@ sub copy_seq_region_from_core {
 	});
 	
 	$vsth->execute($sr, $cs, $name) while $sth->fetch();
+	
+	$vsth->finish();
+	$sth->finish();
 }
 
 
@@ -1575,7 +1738,7 @@ sub pedigree {
 		$ped->{$ind}->{father} = $dad if defined($dad) && $dad;
 		$ped->{$ind}->{mother} = $mum if defined($mum) && $mum;
 	}
-	close FILE;
+	close IN;
 	
 	return $ped;
 }
@@ -1784,7 +1947,7 @@ sub variation_feature {
 			my $new_allele_string =
 				$existing_vf->allele_string.
 				'/'.
-				(join /\//, grep {$combined_alleles{$_} == 1} @new_alleles);
+				(join '/', grep {$combined_alleles{$_} == 1} @new_alleles);
 			
 			if(defined($config->{test})) {
 				debug($config, "(TEST) Changing allele_string for ", $existing_vf->variation_name, " from ", $existing_vf->allele_string, " to $new_allele_string");
@@ -1798,6 +1961,9 @@ sub variation_feature {
 				$sth->execute($new_allele_string, $existing_vf->dbID);
 				$sth->finish;
 			}
+			
+			# remember to update the object!
+			$existing_vf->{allele_string} = $new_allele_string;
 			
 			$config->{rows_added}->{variation_feature_allele_string_merged}++;
 		}
@@ -2249,8 +2415,16 @@ sub individual_genotype {
 			@gts = @final_objs;
 		}
 		
-		my $rows_added = $config->{individualgenotype_adaptor}->store(\@gts);
-		$config->{rows_added}->{compressed_genotype_var} += $rows_added;	
+		if($config->{tables}->{compressed_genotype_var}) {
+			my $rows_added = $config->{individualgenotype_adaptor}->store(\@gts);
+			$config->{rows_added}->{compressed_genotype_var} += $rows_added;
+		}
+		if($config->{mart_genotypes}) {
+			my $table = $data->{vf}->{allele_string} =~ /^[ACGTN](\/[ACGTN])+$/ ? 'tmp_individual_genotype_single_bp' : 'individual_genotype_multiple_bp';
+			
+			my $rows_added = $config->{individualgenotype_adaptor}->store_uncompressed(\@gts, $table);
+			$config->{rows_added}->{$table} += $rows_added;
+		}
 	}
 	
 	$config->{rows_added}->{individual_genotype} += scalar @gts;
@@ -2530,6 +2704,8 @@ Options
 --skip_tables         Comma-separated list of tables to exclude when writing to DB.
                       Takes precedence over --tables (i.e. any tables named in --tables
                       and --skip_tables will be skipped)
+--mart_genotypes      Use this flag to populate the uncompressed genotype tables. These
+                      are used only to build BioMart databases
 
 --only_existing       Only write to tables when an existing variant is found. Existing
                       can be a variation with the same name, or a variant with the same

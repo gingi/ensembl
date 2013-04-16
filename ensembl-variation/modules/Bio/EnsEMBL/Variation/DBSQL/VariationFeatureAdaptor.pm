@@ -149,7 +149,7 @@ sub store {
         (join ",", @{$vf->get_all_validation_states}) || undef,
         $vf->{slice} ? (join ",", @{$vf->consequence_type('SO')}) : 'intergenic_variant',
         $vf->{variation_set_id} || '',
-        $vf->{class_attrib_id} || $vf->adaptor->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $vf->{class_SO_term}) || 18,
+        $vf->{class_attrib_id} || $self->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $vf->{class_SO_term}) || 18,
         $vf->is_somatic,
         $vf->minor_allele,
         $vf->minor_allele_frequency,
@@ -169,7 +169,7 @@ sub store {
 
   Description: Returns a listref of all germline variation features
   Returntype : listref of VariationFeatures
-  Status     : At risk
+  Status     : Stable
 
 =cut
 
@@ -183,7 +183,7 @@ sub fetch_all {
 
   Description: Returns a listref of all somatic variation features
   Returntype : listref of VariationFeatures
-  Status     : At risk
+  Status     : Stable
 
 =cut
 
@@ -560,7 +560,7 @@ sub fetch_all_by_Slice_VariationSet{
   Arg [3]	 : $minimum_frequency (optional)
   Example    : $pop = $pop_adaptor->fetch_by_dbID(659);
 			  $slice = $slice_adaptor->fetch_by_region("chromosome", 1, 1, 1e6);
-              @vfs = @{$vf_adaptor->fetch_all_by_Slice_Population($pop,$slice)};
+              @vfs = @{$vf_adaptor->fetch_all_by_Slice_Population($slice,$pop)};
   Description: Retrieves all variation features in a slice which are stored for
 			   a specified population. If $minimum_frequency is supplied, only
 			   variations with a minor allele frequency (MAF) greater than
@@ -1114,7 +1114,7 @@ sub _objs_from_sth {
                         my $tmp_seq_region_start = $seq_region_start;
                         $seq_region_start = $dest_slice_end - $seq_region_end + 1;
                         $seq_region_end   = $dest_slice_end - $tmp_seq_region_start + 1;
-                        $seq_region_strand *= -1;
+                        #$seq_region_strand *= -1;
                     }
         
                     #throw away features off the end of the requested slice

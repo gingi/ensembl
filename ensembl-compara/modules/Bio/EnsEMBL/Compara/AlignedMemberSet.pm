@@ -24,23 +24,17 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 NAME
 
-AlignedMemberSet - A superclass for pairwise or multiple relationships, base of
-Bio::EnsEMBL::Compara::Family, Bio::EnsEMBL::Compara::Homology and
-Bio::EnsEMBL::Compara::Domain.
+Bio::EnsEMBL::Compara::AlignedMemberSet
 
 =head1 DESCRIPTION
 
-A superclass for pairwise and multiple relationships
-
-Currently the AlignedMember objects are used in the GeneTree structure
-to represent the leaves of the trees. Each leaf contains an aligned
-sequence, which is represented as an AlignedMember object.
+A superclass for pairwise or multiple sequence alignments of genes,
+base of Family, Homology and GeneTree.
 
 =head1 INHERITANCE TREE
 
   Bio::EnsEMBL::Compara::AlignedMemberSet
-
-=head1 METHODS
+  +- Bio::EnsEMBL::Compara::MemberSet
 
 =cut
 
@@ -59,6 +53,101 @@ use Bio::EnsEMBL::Compara::AlignedMember;
 
 use base ('Bio::EnsEMBL::Compara::MemberSet');
 
+##############################
+# Constructors / Destructors #
+##############################
+
+=head2 new
+
+  Example    :
+  Description:
+  Returntype : Bio::EnsEMBL::Compara::AlignedMemberSet
+  Exceptions :
+  Caller     :
+
+=cut
+
+sub new {
+    my($class,@args) = @_;
+
+    my $self = $class->SUPER::new(@args);
+
+    if (scalar @args) {
+        my ($seq_type, $aln_method, $aln_length) =
+            rearrange([qw(SEQ_TYPE ALN_METHOD ALN_LENGTH)], @args);
+
+        $seq_type && $self->seq_type($seq_type);
+        $aln_method && $self->aln_method($aln_method);
+        $aln_length && $self->aln_length($aln_length);
+    }
+
+    return $self;
+}
+
+
+#####################
+# Object attributes #
+#####################
+
+
+=head2 seq_type
+
+  Description : Getter/Setter for the seq_type field. This field contains
+                the type of sequence used for the members. If undefined,
+                the usual sequence is used. Otherwise, there must be a
+                matching sequence in the other_member_sequence table.
+  Returntype  : String
+  Example     : my $type = $tree->seq_type();
+  Caller      : General
+
+=cut
+
+sub seq_type {
+    my $self = shift;
+    $self->{'_seq_type'} = shift if(@_);
+    return $self->{'_seq_type'};
+}
+
+
+=head2 aln_length
+
+  Description : Getter/Setter for the aln_length field. This field contains
+                the length of the alignment
+  Returntype  : Integer
+  Example     : my $len = $tree->aln_length();
+  Caller      : General
+
+=cut
+
+sub aln_length {
+    my $self = shift;
+    $self->{'_aln_length'} = shift if(@_);
+    return $self->{'_aln_length'};
+}
+
+
+=head2 aln_method
+
+  Description : Getter/Setter for the aln_method field. This field should
+                represent the method used for the alignment
+  Returntype  : String
+  Example     : my $method = $tree->aln_method();
+  Caller      : General
+
+=cut
+
+sub aln_method {
+    my $self = shift;
+    $self->{'_aln_method'} = shift if(@_);
+    return $self->{'_aln_method'};
+}
+
+
+
+#######################
+# MemberSet interface #
+#######################
+
 
 =head2 member_class
 
@@ -73,34 +162,26 @@ sub member_class {
     return 'Bio::EnsEMBL::Compara::AlignedMember';
 }
 
+
+=head2 _attr_to_copy_list
+
+  Description: Returns the list of all the attributes to be copied by deep_copy()
+  Returntype : Array of String
+  Caller     : General
+
+=cut
+
+sub _attr_to_copy_list {
+    my $self = shift;
+    my @sup_attr = $self->SUPER::_attr_to_copy_list();
+    push @sup_attr, qw(_seq_type _aln_length _aln_method);
+    return @sup_attr;
+}
+
+
 ######################
 # Alignment sections #
 ######################
-
-
-sub print_sequences_to_fasta {
-    my ($self, $pep_file) = @_;
-    my $pep_counter = 0;
-    open PEP, ">$pep_file";
-    foreach my $member (@{$self->get_all_Members}) {
-        next if $member->source_name eq 'ENSEMBLGENE';
-        my $member_stable_id = $member->stable_id;
-        my $seq = $member->sequence;
-
-        print PEP ">$member_stable_id\n";
-        $seq =~ s/(.{72})/$1\n/g;
-        chomp $seq;
-        unless (defined($seq)) {
-            my $family_id = $self->dbID;
-            die "member $member_stable_id in family $family_id doesn't have a sequence";
-        }
-        print PEP $seq,"\n";
-        $pep_counter++;
-    }
-    close PEP;
-    return $pep_counter;
-}
-
 
 =head2 read_clustalw
 
@@ -168,21 +249,25 @@ sub read_clustalw {
 }
 
 sub load_cigars_from_fasta {
-    my ($self, $file) = @_;
+    my ($self, $file, $import_seq) = @_;
 
     my $alignio = Bio::AlignIO->new(-file => "$file", -format => "fasta");
 
     my $aln = $alignio->next_aln or die "Bio::AlignIO could not get next_aln() from file '$file'";
+    $self->aln_length($aln->length);
 
     #place all members in a hash on their member name
     my %member_hash;
     foreach my $member (@{$self->get_all_Members}) {
-        $member_hash{$member->stable_id} = $member;
+        $member->cigar_line(undef);
+        $member->sequence(undef) if $import_seq;
+        $member_hash{$member->member_id} = $member;
     }
 
     #assign cigar_line to each of the member attribute
     foreach my $seq ($aln->each_seq) {
         my $id = $seq->display_id;
+        $id =~ s/_.*$//;
         throw("No member for alignment portion: [$id]") unless exists $member_hash{$id};
 
         my $cigar_line = '';
@@ -192,10 +277,45 @@ sub load_cigars_from_fasta {
         }
 
         $member_hash{$id}->cigar_line($cigar_line);
+
+        if ($import_seq) {
+            my $nucl_seq = $seq->seq();
+            $nucl_seq =~ s/-//g;
+            $member_hash{$id}->sequence($nucl_seq);
+        }
     }
 }
 
 
+
+=head2 get_SimpleAlign
+
+    Arg [-UNIQ_SEQ] : (opt) boolean (default: false)
+        : whether redundant sequences should be discarded
+    Arg [-CDNA] : (opt) boolean (default: false)
+        : whether the CDS sequence should be used instead of the default sequence
+    Arg [-ID_TYPE] (opt) string (one of 'STABLE'*, 'SEQ', 'MEMBER')
+        : which identifier should be used as sequence names: the stable_id, the sequence_id, or the member_id
+    Arg [-STOP2X] (opt) boolean (default: false)
+        : whether the stop codons (character '*') should be replaced with gaps (character 'X')
+    Arg [-APPEND_TAXON_ID] (opt) boolean (default: false)
+        : whether the taxon_ids should be added to the sequence names
+    Arg [-APPEND_SP_SHORT_NAME] (opt) boolean (default: false)
+        : whether the species (in short name format) should be added to the sequence names
+    Arg [-APPEND_GENOMEDB_ID] (opt) boolean (default: false)
+        : whether the genome_db_id should be added to the sequence names
+    Arg [-EXON_CASED] (opt) boolean (default: false)
+        : whether the case of the sequence should change at each exon
+    Arg [-KEEP_GAPS] (opt) boolean (default: false)
+        : whether columns that only contain gaps should be kept in the alignment
+
+  Example    : $tree->get_SimpleAlign(-CDNA => 1);
+  Description: Returns the alignment as a BioPerl object
+  Returntype : Bio::SimpleAlign
+  Exceptions : none
+  Caller     : general
+
+=cut
 
 sub get_SimpleAlign {
 
@@ -209,11 +329,10 @@ sub get_SimpleAlign {
     my $append_sp_short_name = 0;
     my $append_genomedb_id = 0;
     my $exon_cased = 0;
-    my $alignment = 'protein';
-    my $changeSelenos = 0;
+    my $keep_gaps = 0;
     if (scalar @args) {
-        ($unique_seqs, $cdna, $id_type, $stop2x, $append_taxon_id, $append_sp_short_name, $append_genomedb_id, $exon_cased, $alignment, $changeSelenos) =
-            rearrange([qw(UNIQ_SEQ CDNA ID_TYPE STOP2X APPEND_TAXON_ID APPEND_SP_SHORT_NAME APPEND_GENOMEDB_ID EXON_CASED ALIGNMENT CHANGE_SELENO)], @args);
+        ($unique_seqs, $cdna, $id_type, $stop2x, $append_taxon_id, $append_sp_short_name, $append_genomedb_id, $exon_cased, $keep_gaps) =
+            rearrange([qw(UNIQ_SEQ CDNA ID_TYPE STOP2X APPEND_TAXON_ID APPEND_SP_SHORT_NAME APPEND_GENOMEDB_ID EXON_CASED KEEP_GAPS)], @args);
     }
 
     my $sa = Bio::SimpleAlign->new();
@@ -236,7 +355,7 @@ sub get_SimpleAlign {
             # codeml icodes
             # 0:universal code (default)
             my $class;
-            eval {$class = member->taxon->classification;};
+            eval {$class = $member->taxon->classification;};
             unless ($@) {
                 if ($class =~ /vertebrata/i) {
                     # 1:mamalian mt
@@ -250,10 +369,13 @@ sub get_SimpleAlign {
 
         my $seqstr;
         my $alphabet;
-        if ($cdna or (lc($alignment) eq 'cdna')) {
-            $seqstr = $member->cdna_alignment_string($changeSelenos);
+        if ($cdna) {
+            $seqstr = $member->cdna_alignment_string();
             $seqstr =~ s/\s+//g;
             $alphabet = 'dna';
+        } elsif ($self->seq_type) {
+            $seqstr = $member->alignment_string_generic($self->seq_type);
+            $alphabet = 'protein';
         } else {
             $seqstr = $member->alignment_string($exon_cased);
             $alphabet = 'protein';
@@ -261,7 +383,9 @@ sub get_SimpleAlign {
         next if(!$seqstr);
 
         # Sequence name
-        my $seqID = $id_type ? ($id_type eq 'SEQ' ? $member->sequence_id : $member->member_id) : $member->stable_id;
+        my $seqID = $member->stable_id;
+        $seqID = $member->sequence_id if $id_type and $id_type eq 'SEQ';
+        $seqID = $member->member_id if $id_type and $id_type eq 'MEMBER';
         $seqID .= "_" . $member->taxon_id if($append_taxon_id);
         $seqID .= "_" . $member->genome_db_id if ($append_genomedb_id);
 
@@ -273,8 +397,9 @@ sub get_SimpleAlign {
         }
 
         # Sequence length
-        my $aln_end = $member->seq_length;
-        $aln_end = $aln_end*3 if $alphabet eq 'dna';
+        my $true_seq = $seqstr;
+        $true_seq =~ s/-//g;
+        my $aln_end = length($true_seq);
 
         $seqstr =~ s/\*/X/g if ($stop2x);
         my $seq = Bio::LocatableSeq->new(
@@ -292,7 +417,7 @@ sub get_SimpleAlign {
             $sa->add_seq($seq);
         }
     }
-    $sa = $sa->remove_gaps(undef, 1) if UNIVERSAL::can($sa, 'remove_gaps');
+    $sa = $sa->remove_gaps(undef, 1) if UNIVERSAL::can($sa, 'remove_gaps') and not $keep_gaps;
     return $sa;
 }
 
@@ -465,8 +590,6 @@ sub get_4D_SimpleAlign {
     if(!$sa->can('add_seq')) {
         $bio07 = 1;
     }
-
-    my $ma = $self->adaptor->db->get_MemberAdaptor;
 
     my %member_seqstr;
     foreach my $member (@{$self->get_all_Members}) {

@@ -39,7 +39,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.68 $
+$Revision: 1.78 $
 
 =head1 APPENDIX
 
@@ -52,11 +52,13 @@ package Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::NJTREE_PHYML;
 
 use strict;
 
+use Bio::EnsEMBL::Compara::AlignedMemberSet;
+
 use Time::HiRes qw(time gettimeofday tv_interval);
 use Data::Dumper;
 use File::Glob;
 
-use base ('Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::StoreTree');
+use base ('Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::StoreTree', 'Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::TreeBest');
 
 
 sub param_defaults {
@@ -74,11 +76,6 @@ sub fetch_input {
 
     $self->param('tree_adaptor', $self->compara_dba->get_GeneTreeAdaptor);
 
-    my $treebest_exe = $self->param('treebest_exe')
-        or die "'treebest_exe' is an obligatory parameter";
-
-    die "Cannot execute '$treebest_exe'" unless(-x $treebest_exe);
-
     my $protein_tree_id     = $self->param('gene_tree_id') or die "'gene_tree_id' is an obligatory parameter";
     my $protein_tree        = $self->param('tree_adaptor')->fetch_by_dbID( $protein_tree_id )
                                         or die "Could not fetch protein_tree with gene_tree_id='$protein_tree_id'";
@@ -87,14 +84,6 @@ sub fetch_input {
 
     $self->param('protein_tree', $protein_tree);
 
-    if ($self->param('store_intermediate_trees')) {
-        my %other_trees;
-        foreach my $tree (@{$self->param('tree_adaptor')->fetch_all_linked_trees($protein_tree)}) {
-            $tree->preload();
-            $other_trees{$tree->clusterset_id} = $tree;
-        }
-        $self->param('other_trees', \%other_trees);
-    }
 }
 
 
@@ -108,7 +97,8 @@ sub run {
 sub write_output {
     my $self = shift;
 
-    $self->store_genetree($self->param('protein_tree'));
+    my @ref_support = qw(phyml_nt nj_ds phyml_aa nj_dn nj_mm);
+    $self->store_genetree($self->param('protein_tree'), \@ref_support);
 
     if ($self->param('store_intermediate_trees')) {
         foreach my $filename (glob(sprintf('%s/%s.*.nhx', $self->worker_temp_directory, $self->param('intermediate_prefix')) )) {
@@ -116,7 +106,9 @@ sub write_output {
             my $clusterset_id = $1;
             next if $clusterset_id eq 'mmerge';
             next if $clusterset_id eq 'phyml';
-            $self->store_intermediate_tree($filename, $clusterset_id);
+            print STDERR "Found file $filename for clusterset $clusterset_id\n";
+            my $newtree = $self->store_alternative_tree($self->_slurp($filename), $clusterset_id, $self->param('protein_tree'));
+            $self->dataflow_output_id({'gene_tree_id' => $newtree->root_id}, 2);
         }
     }
 
@@ -154,7 +146,7 @@ sub run_njtree_phyml {
     my $self = shift;
 
     my $protein_tree = $self->param('protein_tree');
-    my $newick_file;
+    my $newick;
 
     my $starttime = time()*1000;
     
@@ -162,12 +154,12 @@ sub run_njtree_phyml {
     if (scalar(@{$protein_tree->root->get_all_leaves}) == 2) {
 
         warn "Number of elements: 2 leaves, N/A split genes\n";
-        my @goodgenes = map {sprintf("%d_%d", $_->member_id, $self->param('use_genomedb_id') ? $_->genome_db_id : $_->taxon_id)} @{$protein_tree->root->get_all_leaves};
-        $newick_file = $self->run_treebest_sdi(@goodgenes);
+        my @goodgenes = map {$self->_name_for_prot($_)} @{$protein_tree->root->get_all_leaves};
+        $newick = $self->run_treebest_sdi_genepair(@goodgenes);
     
     } else {
 
-        my $input_aln = $self->dumpTreeMultipleAlignmentToWorkdir ( $protein_tree->root );
+        my $input_aln = $self->dumpTreeMultipleAlignmentToWorkdir($protein_tree);
         
         warn sprintf("Number of elements: %d leaves, %d split genes\n", scalar(@{$protein_tree->root->get_all_leaves}), scalar(keys %{$self->param('split_genes')}));
 
@@ -176,19 +168,17 @@ sub run_njtree_phyml {
 
         if ($genes_for_treebest == 2) {
 
-            my @goodgenes = grep {not exists $self->param('split_genes')->{$_}} (map {sprintf("%d_%d", $_->member_id, $self->param('use_genomedb_id') ? $_->genome_db_id : $_->taxon_id)} @{$protein_tree->root->get_all_leaves});
-            $newick_file = $self->run_treebest_sdi(@goodgenes);
+            my @goodgenes = grep {not exists $self->param('split_genes')->{$_}} (map {$self->_name_for_prot($_)} @{$protein_tree->root->get_all_leaves});
+            $newick = $self->run_treebest_sdi_genepair(@goodgenes);
 
         } else {
 
-            $self->compara_dba->dbc->disconnect_when_inactive(1);
-            $newick_file = $self->run_treebest_best($input_aln);
-            $self->compara_dba->dbc->disconnect_when_inactive(0);
+            $newick = $self->run_treebest_best($input_aln);
         }
     }
 
     #parse the tree into the datastucture:
-    unless ($self->parse_newick_into_tree( $newick_file, $self->param('protein_tree') )) {
+    unless ($self->parse_newick_into_tree( $newick, $self->param('protein_tree') )) {
         $self->input_job->transient_error(0);
         $self->throw('The filtered alignment is empty. Cannot build a tree');
     }
@@ -197,141 +187,38 @@ sub run_njtree_phyml {
 }
 
 
-sub run_treebest_best {
-    my ($self, $input_aln) = @_;
-
-    my $newick_file = $input_aln . "_njtree_phyml_tree.txt ";
-    my $species_tree_file = $self->get_species_tree_file();
-    while (1) {
-
-        my $cmd = $self->param('treebest_exe');
-        $cmd .= " best ";
-        if(my $max_diff_lk = $self->param('max_diff_lk')) {
-            $cmd .= " -Z $max_diff_lk";
-        }
-        $cmd .= " -f ". $species_tree_file;
-        $cmd .= " ".(defined $self->param('filt_cmdline') ? "prog-filtalign.fa" : $input_aln);
-        $cmd .= " -p ".$self->param('intermediate_prefix');
-        $cmd .= " -o " . $newick_file;
-        if ($self->param('extra_args')) {
-            $cmd .= " ".($self->param('extra_args')).' ';
-        }
-        $cmd .= " 1> $input_aln.treebest.log 2>$input_aln.treebest.err";
-
-        $cmd = sprintf($self->param('filt_cmdline'), $input_aln, 'prog-filtalign.fa')." ; $cmd" if defined $self->param('filt_cmdline');
-
-        my $full_cmd = sprintf('cd %s; %s', $self->worker_temp_directory, $cmd);
-        print STDERR "Running:\n\t$full_cmd\n" if $self->debug;
-
-        if(my $rc = system($full_cmd)) {
-            my $system_error = $!;
-
-            if(my $segfault = (($rc != -1) and ($rc & 127 == 11))) {
-                $self->throw("'$full_cmd' resulted in a segfault");
-            }
-            print STDERR "$full_cmd\n";
-            my $logfile = $self->_slurp("$input_aln.treebest.err");
-            $logfile =~ s/^Large distance.*$//mg;
-            $logfile =~ s/\n\n*/\n/g;
-            if (($logfile =~ /NNI/) || ($logfile =~ /Optimize_Br_Len_Serie/) || ($logfile =~ /Optimisation failed/) || ($logfile =~ /Brent failed/))  {
-                # Increase the tolerance max_diff_lk in the computation
-                my $max_diff_lk_value = $self->param('max_diff_lk') ?  $self->param('max_diff_lk') : 1e-5;
-                $max_diff_lk_value *= 10;
-                $self->param('max_diff_lk', $max_diff_lk_value);
-            } else {
-                $self->throw("error running njtree phyml: $system_error\n$logfile");
-            }
-        } else {
-            return $newick_file;
-        }
-    }
-
-}
-
-sub run_treebest_sdi {
-    my ($self, $gene1, $gene2) = @_;
-
-    # Input Newick file (with only 2 genes)
-    my $input_newick = $self->worker_temp_directory.'input_newick';
-    open(OUTGENETREE, ">$input_newick");
-    print OUTGENETREE sprintf('(%s,%s);', $gene1, $gene2);
-    close OUTGENETREE;
-
-
-    my $cmd = sprintf(
-        'cd %s; %s sdi -s %s %s > output_newick 2> log',
-        $self->worker_temp_directory, $self->param('treebest_exe'), $self->get_species_tree_file(), $input_newick
-    );
-
-    print "$cmd\n"  if $self->debug ;
-    if (system($cmd)) {
-        my $system_error = $!;
-        $self->throw("Error running $cmd : $system_error");
-    }
-    return $self->worker_temp_directory.'output_newick';
-
-}
-
-
-sub store_intermediate_tree {
-    my ($self, $filename, $clusterset_id) = @_;
-    print STDERR "Found file $filename for clusterset $clusterset_id\n";
-    my $clusterset = $self->param('tree_adaptor')->fetch_all(-tree_type => 'clusterset', -clusterset_id => $clusterset_id)->[0];
-    if (not defined $clusterset) {
-        $self->warning("The clusterset_id '$clusterset_id' is not defined. Cannot store the alternative tree");
-        return;
-    }
-    my $newtree = $self->fetch_or_create_other_tree($clusterset);
-    $self->parse_newick_into_tree($filename, $newtree);
-    $self->store_genetree($newtree);
-    $self->dataflow_output_id({'gene_tree_id' => $newtree->root_id}, 2);
-    $newtree->release_tree;
-}
-
-
 sub store_filtered_align {
     my ($self, $filename) = @_;
     print STDERR "Found filtered alignment: $filename\n";
-    my $alignio = Bio::AlignIO->new(-file => $filename, -format => 'fasta');
-    my $aln = $alignio->next_aln or die "Bio::AlignIO could not get next_aln() from file '$filename'";
 
     #place all members in a hash on their member name
-    my %member_hash;
-    foreach my $member (@{$self->param('protein_tree')->get_all_Members}) {
-        $member_hash{$member->member_id} = $member;
-    }
+    my $aln = Bio::EnsEMBL::Compara::AlignedMemberSet->new(-seq_type => 'filtered', -aln_method => 'clustal');
 
-    # Storing the alignment as tags
-    $self->param('protein_tree')->store_tag('filtered_alignment_length', $aln->length()/3);
-    foreach my $seq ($aln->each_seq) {
-        $seq->display_id =~ /(\d+)\_\d+/;
-        $member_hash{$1}->store_tag('filtered_alignment', $seq->seq());
-    }
-}
-
-
-sub fetch_or_create_other_tree {
-    my ($self, $clusterset) = @_;
-
-    if (not exists ${$self->param('other_trees')}{$clusterset->clusterset_id}) {
-        my $tree = $self->param('protein_tree');
-        my $newtree = $tree->deep_copy();
-        $newtree->stable_id(undef);
-        # Reformat things
-        foreach my $member (@{$newtree->get_all_Members}) {
-            $member->cigar_line(undef);
-            $member->stable_id(sprintf("%d_%d", $member->dbID, $self->param('use_genomedb_id') ? $member->genome_db_id : $member->taxon_id));
-            $member->{'_children_loaded'} = 1;
+    if ($self->param('protein_tree')->has_tag('filtered_alignment')) {
+        my $gene_align_id = $self->param('protein_tree')->get_tagvalue('filtered_alignment');
+        $aln->dbID($gene_align_id);
+        $aln->adaptor($self->compara_dba->get_AlignedMemberAdaptor);
+    } else {
+        foreach my $member (@{$self->param('protein_tree')->get_all_Members}) {
+            $aln->add_Member($member->copy());
         }
-        $self->store_tree_into_clusterset($newtree, $clusterset);
-        $newtree->store_tag('merged_tree_root_id', $tree->root_id);
-        $tree->store_tag('other_tree_root_id', $newtree->root_id, 1);
-        ${$self->param('other_trees')}{$clusterset->clusterset_id} = $newtree;
     }
 
-    return ${$self->param('other_trees')}{$clusterset->clusterset_id};
-}
+    # Same name as in the alignment
+    foreach my $member (@{$aln->get_all_Members}) {
+        $member->stable_id($self->_name_for_prot($member));
+    }
 
+    $aln->load_cigars_from_fasta($filename, 1);
+
+    my $sequence_adaptor = $self->compara_dba->get_SequenceAdaptor;
+    foreach my $member (@{$aln->get_all_Members}) {
+        $sequence_adaptor->store_other_sequence($member, $member->sequence, 'filtered') if $member->sequence;
+    }
+
+    $self->compara_dba->get_AlignedMemberAdaptor->store($aln);
+    $self->param('protein_tree')->store_tag('filtered_alignment', $aln->dbID);
+}
 
 
 1;

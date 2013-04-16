@@ -2,10 +2,7 @@ use strict;
 use warnings;
 no warnings qw(uninitialized);
 
-BEGIN { $| = 1;  
-	use Test;
-	plan tests => 20;
-}
+use Test::More;
 
 use Bio::EnsEMBL::Test::MultiTestDB;
 use Bio::EnsEMBL::DBSQL::ArchiveStableIdAdaptor;
@@ -149,10 +146,11 @@ ok( $x == 0 and $y == 1 );
 #
 # 17-18 check for current version and fetch latest incarnation
 #
-ok( ! $asi->is_latest );
+ok( ! $asi->is_latest, 'Not on the latest version so is_latest is false');
 
 $asi = $asi->get_latest_incarnation;
-ok( $asi->is_latest and $asi->version == 3 );
+ok($asi->is_latest(), 'Latest incarnation must be the latest version');
+is($asi->version, 4, 'Latest version is 4');
 
 #
 # 19 associated IDs in archive
@@ -188,4 +186,5 @@ sub _print_asi {
 	 "\n\tTranslations: ".(join(", ", map { $_->stable_id } @{ $asi->get_all_translation_archive_ids })).
 	 "\n\tPeptide: ".$asi->get_peptide."\n" );
 }
-  
+ 
+done_testing();

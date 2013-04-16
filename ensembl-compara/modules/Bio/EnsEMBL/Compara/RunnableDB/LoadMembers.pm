@@ -47,7 +47,6 @@ use strict;
 use warnings;
 
 use Bio::EnsEMBL::Compara::Member;
-use Bio::EnsEMBL::Compara::Subset;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
@@ -90,29 +89,6 @@ sub fetch_input {
     unless($self->param('include_reference') or $self->param('include_nonreference')) {
         die "Either 'include_reference' or 'include_nonreference' or both have to be true";
     }
-
-    my $ref_nonref = join('+', ($self->param('include_reference') ? ('ref') : ()), ($self->param('include_nonreference') ? ('nonref') : ()));
-
-    if ($self->param('coding_exons')) {
-
-        $self->param('exonSubset', Bio::EnsEMBL::Compara::Subset->new(
-          -name=>"gdb:$genome_db_id $genome_db_name $ref_nonref coding exons") );
-
-            # This does an INSERT IGNORE or a SELECT if already exists:
-        $compara_dba->get_SubsetAdaptor->store($self->param('exonSubset'));
-
-    } else {
-
-        $self->param('pepSubset', Bio::EnsEMBL::Compara::Subset->new(
-          -name=>"gdb:$genome_db_id $genome_db_name $ref_nonref canonical translations") );
-
-        $self->param('geneSubset', Bio::EnsEMBL::Compara::Subset->new(
-          -name=>"gdb:$genome_db_id $genome_db_name $ref_nonref genes") );
-
-            # This does an INSERT IGNORE or a SELECT if already exists:
-        $compara_dba->get_SubsetAdaptor->store($self->param('pepSubset'));
-        $compara_dba->get_SubsetAdaptor->store($self->param('geneSubset'));
-    }
 }
 
 
@@ -152,9 +128,6 @@ sub write_output {
     $self->dataflow_output_id( {
         'genome_db_id'      => $self->param('genome_db_id'),
         'reuse_this'        => 0,
-        'subset_id'         => $self->param('coding_exons')
-                                ? $self->param('exonSubset')->dbID  # MercatorPecan pipeline
-                                : $self->param('pepSubset')->dbID,  # ProteinTrees pipeline
         'per_genome_suffix' => $self->param('per_genome_suffix'),
     } , 1);
 }
@@ -232,12 +205,6 @@ sub loadMembersFromCoreSlices {
   print("       ".$self->param('geneCount')." genes\n");
   print("       ".$self->param('realGeneCount')." real genes\n");
   print("       ".$self->param('transcriptCount')." transcripts\n");
-
-  if($self->param('coding_exons')) {
-      print("       ".$self->param('exonSubset')->count()." in exonSubset\n");
-  } else {
-      print("       ".$self->param('pepSubset')->count()." in pepSubset\n");
-  }
 }
 
 
@@ -324,25 +291,22 @@ sub store_gene_and_all_transcripts {
                                                                   -genome_db=>$self->param('genome_db'));
       print(" => member " . $gene_member->stable_id) if($self->param('verbose'));
 
-      my $stable_id = $gene_member->stable_id;
       $member_adaptor->store($gene_member);
       print(" : stored") if($self->param('verbose'));
 
-      $self->param('geneSubset')->add_member($gene_member);
       print("\n") if($self->param('verbose'));
       $gene_member_not_stored = 0;
     }
 
-    my $stable_id = $pep_member->stable_id;
+    $pep_member->gene_member_id($gene_member->dbID);
     $member_adaptor->store($pep_member);
     if ($self->param('store_related_pep_sequences')) {
-        $sequence_adaptor->store_sequence_cds($pep_member);
+        $sequence_adaptor->store_other_sequence($pep_member, $pep_member->sequence_cds, 'cds');
         $pep_member->sequence_cds('');
-        $sequence_adaptor->store_sequence_exon_bounded($pep_member);
+        $sequence_adaptor->store_other_sequence($pep_member, $pep_member->sequence_exon_bounded, 'exon_bounded');
         $pep_member->sequence_exon_bounded('');
     }
 
-    $member_adaptor->store_gene_peptide_link($gene_member->dbID, $pep_member->dbID);
     print(" : stored\n") if($self->param('verbose'));
 
     if(($transcript->stable_id eq $canonical_transcript_stable_id) || defined($self->param('force_unique_canonical'))) {
@@ -353,7 +317,7 @@ sub store_gene_and_all_transcripts {
 
   if(@canonicalPeptideMember) {
     my ($transcript, $member) = @canonicalPeptideMember;
-    $self->param('pepSubset')->add_member($member);
+    $member_adaptor->_set_member_as_canonical($member);
     # print("     LONGEST " . $transcript->stable_id . "\n");
   }
   return 1;
@@ -401,7 +365,7 @@ sub store_all_coding_exons {
         $exon_member->chr_strand($exon->seq_region_strand);
         $exon_member->version($exon->version);
         $exon_member->stable_id($exon->stable_id);
-        $exon_member->source_name("ENSEMBLEXON");
+        $exon_member->source_name("ENSEMBLPEP");
 
 	#Not sure what this should be but need to set it to something or else the members do not get added
 	#to the member table in the store method of MemberAdaptor
@@ -444,12 +408,10 @@ sub store_all_coding_exons {
     push @exon_members_stored, $exon_member;
 
     eval {
-	    my $stable_id = $exon_member->stable_id;
 	    #print "New member\n";
 	    $member_adaptor->store($exon_member);
 	    print(" : stored\n") if($self->param('verbose'));
     };
-    $self->param('exonSubset')->add_member($exon_member);
   }
 }
 

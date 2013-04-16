@@ -162,7 +162,6 @@ sub dumpTreeMultipleAlignment {
       $alignment_string = $leaf->alignment_string;
     } else {
       $alignment_string = $leaf->cdna_alignment_string;
-      $alignment_string =~ s/\s+//g;
     }
     for (my $i = 0; $i<length($alignment_string); $i++) {
       $aligned_seqs[$i] .= substr($alignment_string, $i, 1);
@@ -196,7 +195,7 @@ sub dumpNewickTree {
   if ($nhx) {
     print $fh $tree->nhx_format;
   } else {
-    print $fh $tree->newick_simple_format;
+    print $fh $tree->newick_format('simple');
   }
   print $fh "\n//\n\n";
 }

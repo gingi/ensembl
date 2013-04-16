@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -74,10 +74,14 @@ use vars qw(@ISA @EXPORT_OK);
     &get_all_validation_states
     &get_validation_code
     &add_validation_state
+    &revcomp_tandem
+    %EVIDENCE_VALUES
 );
 
 # List of validation states. Order must match that of set in database
 our @VALIDATION_STATES = qw(cluster freq submitter doublehit hapmap 1000Genome failed precious);
+
+our %EVIDENCE_VALUES  = qw(Multiple_observations 1 Frequency 2 HapMap 2 1000Genomes 2 Cited 3);
 
 =head2 ambiguity_code
 
@@ -96,6 +100,7 @@ our @VALIDATION_STATES = qw(cluster freq submitter doublehit hapmap 1000Genome f
 
 sub ambiguity_code {
     my $alleles = shift;
+	
     my %duplicates; #hash containing all alleles to remove duplicates
 	
 	foreach my $a(split /[\|\/\\]/, $alleles) {
@@ -881,5 +886,52 @@ sub get_all_validation_states {
 sub get_validation_code {
     return array_to_bitval(shift,\@VALIDATION_STATES);
 }
+
+
+
+=head2 revcomp_tandem
+
+  Arg [1]    : string eg. "(AC)17/(AC)19"
+  Example    : $rc_string = revcomp_tandem("(AC)17/(AC)19");
+  Description: reverse compliments tandem repeat descriptions 
+  Returntype : string eg. "(GT)17/(GT)19"
+  Exceptions : none
+  Caller     : Variation::Pipeline::VariantQC::VariantQC
+  Status     : At Risk
+
+=cut
+
+sub revcomp_tandem{
+
+    
+  my $allele_string = shift;
+
+  my $new_allele_string;
+
+  my @parts = split/\//, $allele_string;
+  
+  foreach my $part (@parts){
+  
+    if( $part =~/\d+$/){
+
+      my ($seq, $num ) = split/\)/,$part;
+      $seq =~ s/\(//g;     
+      reverse_comp(\$seq);
+
+      $new_allele_string .= "(" . $seq .")" . $num . "/";
+    }
+    else{
+      reverse_comp(\$part);
+
+      $new_allele_string .= $part. "/";;
+    }
+  }
+  $new_allele_string =~ s/\/$//;
+  
+  return $new_allele_string ;
+}
+
+
+
 
 1;

@@ -1,12 +1,7 @@
 use strict;
 use warnings;
 
-
-BEGIN { $| = 1;
-	use Test;
-	plan tests => 17;
-}
-
+use Test::More;
 use Bio::EnsEMBL::Test::TestUtils;
 
 use Bio::EnsEMBL::ProteinFeature;
@@ -29,6 +24,7 @@ my $p_value = '1.52';
 my $score   = 50;
 my $species = 'Homo_sapiens';
 my $hspecies = 'Mus_musculus';
+my $hdes = "Hit description";
 
 my $idesc = 'interpro description';
 my $interpro_ac = 'interpro accession';
@@ -48,6 +44,7 @@ my $f = Bio::EnsEMBL::ProteinFeature->new
    -SCORE       => $score,
    -SPECIES     => $species,
    -HSPECIES    => $hspecies,
+   -HDESCRIPTION=> $hdes,
    -IDESC       => $idesc,
    -INTERPRO_AC => $interpro_ac);
 
@@ -67,6 +64,7 @@ ok($f->p_value == $p_value);
 ok($f->score == $score);
 ok($f->species eq $species);
 ok($f->hspecies eq $hspecies);
+ok($f->hdescription eq $hdes);
 
 ok($f->idesc eq $idesc);
 ok($f->interpro_ac eq $interpro_ac);
@@ -81,5 +79,5 @@ ok(test_getter_setter($f, 'idesc', 'interpro desc1'));
 ok(test_getter_setter($f, 'interpro_ac',   'interpro ac1'));
 
 
-
+done_testing();
 

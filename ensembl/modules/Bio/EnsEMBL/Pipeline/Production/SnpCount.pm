@@ -6,9 +6,6 @@ use warnings;
 use base qw/Bio::EnsEMBL::Pipeline::Production::StatsGenerator/;
 
 
-use Bio::EnsEMBL::Attribute;
-
-
 
 sub get_feature_count {
   my ($self, $slice, $key) = @_;
@@ -60,6 +57,12 @@ sub get_attrib_codes {
     WHERE name = 'SNP count' };
   my %attrib_codes = %{ $prod_helper->execute_into_hash(-SQL => $sql) };
   return %attrib_codes;
+}
+
+# Blank as I don't think there are any alt attrib codes for this ATMO
+sub get_alt_attrib_codes {
+  my ($self) = @_;
+  return;
 }
 
 
