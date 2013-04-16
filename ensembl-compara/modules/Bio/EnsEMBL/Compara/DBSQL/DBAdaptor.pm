@@ -42,11 +42,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mm14 $
+$Author: mp12 $
 
 =head VERSION
 
-$Revision: 1.90 $
+$Revision: 1.91 $
 
 =head1 APPENDIX
 
@@ -178,7 +178,7 @@ sub get_available_adaptors {
         'GeneTreeNode'          => 'Bio::EnsEMBL::Compara::DBSQL::GeneTreeNodeAdaptor',
         'ProteinTree'           => 'Bio::EnsEMBL::Compara::DBSQL::ProteinTreeAdaptor',
         'NCTree'                => 'Bio::EnsEMBL::Compara::DBSQL::NCTreeAdaptor',
-        'CAFETree'              => 'Bio::EnsEMBL::Compara::DBSQL::CAFETreeAdaptor',
+        'CAFEGeneFamily'        => 'Bio::EnsEMBL::Compara::DBSQL::CAFEGeneFamilyAdaptor',
 
             # obsolete:
         'Domain'                => 'Bio::EnsEMBL::Compara::DBSQL::DomainAdaptor',

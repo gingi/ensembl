@@ -149,14 +149,57 @@ sub new_fast {
 }
 
 
-sub method {
-    my $self = shift @_;
+=head2 method
+ 
+  Arg [1]    : (opt.) Bio::EnsEMBL::Compara::Method object
+  Example    : my $method_object = $method_link_species_set->method();
+  Example    : $method_link_species_set->method( $method_object );
+  Description: get/set for attribute method
+  Returntype : Bio::EnsEMBL::Compara::Method
+  Exceptions : none
+  Caller     : general
+ 
+=cut
 
-    if(@_) {
-        $self->{'method'} = shift @_;
+sub method {
+    my ($self, $method) = @_;
+
+    if($method) {
+        if(ref($method) eq 'HASH') {
+            $method = Bio::EnsEMBL::Compara::Method->new( %$method ) or die "Could not automagically create a Method";
+        }
+
+        $self->{'method'} = $method;
     }
 
     return $self->{'method'};
+}
+
+
+=head2 species_set_obj
+
+  Arg [1]    : (opt.) Bio::EnsEMBL::Compara::SpeciesSet species_set object
+  Example    : my $species_set_obj = $mlss->species_set_obj();
+  Example    : $mlss->species_set_obj( $species_set_obj );
+  Description: getter/setter for species_set_obj attribute
+  Returntype : Bio::EnsEMBL::Compara::SpeciesSet
+  Exceptions : none
+  Caller     : general
+
+=cut
+
+sub species_set_obj {
+    my ($self, $species_set_obj) = @_;
+
+    if($species_set_obj) {
+        if(ref($species_set_obj) eq 'HASH') {
+            $species_set_obj = Bio::EnsEMBL::Compara::SpeciesSet->new( %$species_set_obj ) or die "Could not automagically create a SpeciesSet";
+        }
+
+        $self->{'species_set'} = $species_set_obj;
+    }
+
+    return $self->{'species_set'};
 }
 
 
@@ -176,7 +219,7 @@ sub method {
 sub method_link_id {
     my $self = shift @_;
 
-    deprecate("MLSS->method_link_id() is DEPRECATED, please use MLSS->method->dbID()");
+    deprecate("MLSS->method_link_id() is DEPRECATED, please use MLSS->method->dbID(). method_link_id() will be removed in release 70.");
 
     if(@_) {
         if($self->method) {
@@ -216,7 +259,7 @@ sub method_link_id {
 sub method_link_type {
     my $self = shift @_;
 
-    deprecate("MLSS->method_link_type() is DEPRECATED, please use MLSS->method->type()");
+    deprecate("MLSS->method_link_type() is DEPRECATED, please use MLSS->method->type(). method_link_type() will be removed in release 70.");
 
     if(@_) {
         if($self->method) {
@@ -256,7 +299,7 @@ sub method_link_type {
 sub method_link_class {
     my $self = shift @_;
 
-    deprecate("MLSS->method_link_class() is DEPRECATED, please use MLSS->method->class()");
+    deprecate("MLSS->method_link_class() is DEPRECATED, please use MLSS->method->class(). method_link_class() will be removed in release 70.");
 
     if(@_) {
         if($self->method) {
@@ -277,29 +320,6 @@ sub method_link_class {
     }
 
     return $self->method->class();
-}
-
-
-=head2 species_set_obj
-
-  Arg [1]    : (opt.) Bio::EnsEMBL::Compara::SpeciesSet species_set object
-  Example    : my $species_set_obj = $mlss->species_set_obj();
-  Example    : $mlss->species_set_obj( $species_set_obj );
-  Description: getter/setter for species_set_obj attribute
-  Returntype : Bio::EnsEMBL::Compara::SpeciesSet
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub species_set_obj {
-    my $self = shift @_;
-
-    if(@_) {
-        $self->{'species_set'} = shift @_;
-    }
-
-    return $self->{'species_set'};
 }
 
 
@@ -346,7 +366,7 @@ sub _set_genome_dbs {
 sub species_set_id {
     my $self = shift @_;
 
-    deprecate("MLSS->species_set_id() is DEPRECATED, please use MLSS->species_set_obj->dbID()");
+    deprecate("MLSS->species_set_id() is DEPRECATED, please use MLSS->species_set_obj->dbID(). species_set_id() will be removed in release 70.");
 
     if(my $species_set_obj = $self->species_set_obj) {
         return $species_set_obj->dbID( @_ );
@@ -374,7 +394,7 @@ sub species_set_id {
 sub species_set {
     my ($self, $arg) = @_;
 
-    deprecate("MLSS->species_set() is DEPRECATED, please use MLSS->species_set_obj->genome_dbs()");
+    deprecate("MLSS->species_set() is DEPRECATED, please use MLSS->species_set_obj->genome_dbs(). species_set() will be removed in release 70.");
 
     if($arg) {
         if(UNIVERSAL::isa($arg, 'Bio::EnsEMBL::Compara::SpeciesSet')) {

@@ -26,8 +26,8 @@ This Analysis/RunnableDB is designed to take a ProteinTree as input
 This must already have a multiple alignment run on it. It uses that alignment
 as input create a HMMER HMM profile
 
-input_id/parameters format eg: "{'protein_tree_id'=>1234}"
-    protein_tree_id : use 'id' to fetch a cluster from the ProteinTree
+input_id/parameters format eg: "{'gene_tree_id'=>1234}"
+    gene_tree_id : use 'id' to fetch a cluster from the ProteinTree
 
 =head1 SYNOPSIS
 
@@ -53,7 +53,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.11 $
+$Revision: 1.16 $
 
 =head1 APPENDIX
 
@@ -88,11 +88,10 @@ sub param_defaults {
 sub fetch_input {
     my $self = shift @_;
 
-    $self->check_if_exit_cleanly;
-
-    my $protein_tree_id     = $self->param('protein_tree_id') or die "'protein_tree_id' is an obligatory parameter";
+    my $protein_tree_id     = $self->param('gene_tree_id') or die "'gene_tree_id' is an obligatory parameter";
     my $protein_tree        = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID( $protein_tree_id )
-                                        or die "Could not fetch protein_tree with protein_tree_id='$protein_tree_id'";
+                                        or die "Could not fetch protein_tree with gene_tree_id='$protein_tree_id'";
+    $protein_tree->preload;
     $self->param('protein_tree', $protein_tree);
 
     my $hmm_type = $self->param('cdna') ? 'dna' : 'aa';
@@ -153,8 +152,6 @@ sub fetch_input {
 sub run {
     my $self = shift @_;
 
-    $self->check_if_exit_cleanly;
-
     unless($self->param('done')) {
         $self->run_buildhmm;
     }
@@ -175,24 +172,22 @@ sub run {
 sub write_output {
     my $self = shift @_;
 
-    $self->check_if_exit_cleanly;
-
     unless($self->param('done')) {
         $self->store_hmmprofile;
     }
 }
 
 
-sub DESTROY {
+sub post_cleanup {
   my $self = shift;
 
   if($self->param('protein_tree')) {
-    printf("BuildHMM::DESTROY  releasing tree\n") if($self->debug);
+    printf("BuildHMM::post_cleanup  releasing tree\n") if($self->debug);
     $self->param('protein_tree')->release_tree;
     $self->param('protein_tree', undef);
   }
 
-  $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+  $self->SUPER::post_cleanup if $self->can("SUPER::post_cleanup");
 }
 
 

@@ -43,12 +43,12 @@ sub dumpTreeMultipleAlignmentToWorkdir {
   if ($self->param('check_split_genes')) {
     my %split_genes;
     my $sth = $self->compara_dba->dbc->prepare('SELECT DISTINCT gene_split_id FROM split_genes JOIN gene_tree_member USING (member_id) JOIN gene_tree_node USING (node_id) WHERE root_id = ?');
-    $sth->execute($self->param('protein_tree_id'));
+    $sth->execute($self->param('gene_tree_id'));
     my $gene_splits = $sth->fetchall_arrayref();
     $sth->finish;
     $sth = $self->compara_dba->dbc->prepare('SELECT node_id FROM split_genes JOIN gene_tree_member USING (member_id) JOIN gene_tree_node USING (node_id) WHERE root_id = ? AND gene_split_id = ?');
     foreach my $gene_split (@$gene_splits) {
-      $sth->execute($self->param('protein_tree_id'), $gene_split->[0]);
+      $sth->execute($self->param('gene_tree_id'), $gene_split->[0]);
       my $partial_genes = $sth->fetchall_arrayref;
       my $node1 = shift @$partial_genes;
       my $protein1 = $gene_tree->find_leaf_by_node_id($node1->[0]);
@@ -231,6 +231,7 @@ sub parse_newick_into_tree {
   my $newroot = Bio::EnsEMBL::Compara::Graph::NewickParser::parse_newick_into_tree($newick, "Bio::EnsEMBL::Compara::GeneTreeNode");
   print  "Tree loaded from file:\n";
   $newroot->print_tree(20) if($self->debug > 1);
+  return undef if $newroot->name eq '_null_';
 
   my $split_genes = $self->param('split_genes');
 
@@ -249,7 +250,7 @@ sub parse_newick_into_tree {
         $newnode->add_child($othernode);
         $newnode->add_child($node);
         $newnode->add_tag('gene_split', 1);
-        $newnode->print_tree(10);
+        $newnode->print_tree(10) if $self->debug;
     }
   }
   print  "Tree after split_genes insertions:\n";
@@ -269,21 +270,20 @@ sub parse_newick_into_tree {
     $leaf->member_id($member_id);
     $leaf->cigar_line($old_leaf->cigar_line);
     $leaf->node_id($old_leaf->node_id);
+    $leaf->adaptor($old_leaf->adaptor);
     $leaf->add_tag('name', $member_id);
+    $leaf->{'_children_loaded'} = 1;
   }
   print  "Tree with GeneTreeNode objects:\n";
   $newroot->print_tree(20) if($self->debug > 1);
 
-  foreach my $node (@{$tree->root->children}) {
-    $node->disavow_parent;
-    $node->release_tree;
-  }
-
-  foreach my $newsubroot (@{$newroot->children}) {
-    $tree->root->add_child($newsubroot, $newsubroot->distance_to_parent);
-  }
-
-  #TODO copy root tags
+  $newroot->node_id($tree->root_id);
+  $tree->root->parent->add_child($newroot) if $tree->root->parent;
+  $newroot->distance_to_parent($tree->root->distance_to_parent);
+  $newroot->adaptor($tree->root->adaptor);
+  $newroot->tree($tree);
+  $tree->root->release_tree;
+  $tree->{'_root'} = $newroot;
 
   $tree->root->print_tree if($self->debug);
   # check here on the leaf to test if they all are GeneTreeMembers as
@@ -291,6 +291,7 @@ sub parse_newick_into_tree {
   foreach my $leaf (@{$tree->root->get_all_leaves}) {
     assert_ref($leaf, 'Bio::EnsEMBL::Compara::GeneTreeMember');
   }
+  return $tree;
 }
 
 sub store_tree_tags {

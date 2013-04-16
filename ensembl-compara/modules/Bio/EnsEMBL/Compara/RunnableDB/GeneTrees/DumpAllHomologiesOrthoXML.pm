@@ -29,10 +29,6 @@ It requires one parameter:
  - compara_db: connection parameters to the Compara database
 
 The following parameters are optional:
- - tree_type: [string] restriction on which trees should be dumped (see the
-              corresponding field in the gene_tree_root table)
- - possible_ortho: [boolean] (default 0) whether or not low confidence
-                   duplications should be treated as speciations
  - file: [string] output file to dump (otherwise: standard output)
 
 =head1 SYNOPSIS
@@ -50,7 +46,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.2 $
+$Revision: 1.2.6.2 $
 
 =head1 APPENDIX
 
@@ -97,7 +93,7 @@ sub run {
     print $HANDLE "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n";
     print $HANDLE "<orthoXML xmlns=\"http://orthoXML.org/2011/\" origin=\"Ensembl Compara\" version=\"0.3\" originVersion=\"$version\">\n";
 
-    my $sql = 'SELECT member.taxon_id, name, member_id, stable_id, assembly, genebuild,source_name FROM gene_tree_member JOIN member USING (member_id) JOIN genome_db USING (genome_db_id) ORDER BY taxon_id, member_id';
+    my $sql = 'SELECT member.taxon_id, name, member_id, stable_id, assembly, genebuild,source_name FROM gene_tree_member JOIN member USING (member_id) JOIN genome_db USING (genome_db_id) GROUP BY taxon_id, member_id';
     my $sth = $self->compara_dba->dbc->prepare($sql, {mysql_use_result=>1});
     $sth->execute;
     my $last;
@@ -112,7 +108,7 @@ sub run {
     print $HANDLE "</genes></database></species>\n" if defined $last;
     print $HANDLE "<groups>\n";
 
-    $sql = "SELECT homology_id, member_id, homology.description FROM homology_member JOIN homology USING (homology_id) JOIN method_link_species_set USING (method_link_species_set_id) WHERE method_link_id=".$self->param('ortholog_method_link_id');
+    $sql = "SELECT homology_id, peptide_member_id, homology.description FROM homology_member JOIN homology USING (homology_id) JOIN method_link_species_set USING (method_link_species_set_id) WHERE method_link_id=".$self->param('ortholog_method_link_id');
     if (defined $self->param('id_range')) {
         my $range = $self->param_substitute($self->param('id_range'));
         $range =~ s/-/ AND /;
@@ -124,10 +120,10 @@ sub run {
     my %seen;
     while(my $rowhash = $sth->fetchrow_hashref) {
         if (exists $seen{${$rowhash}{homology_id}}) {
-            print $HANDLE "<orthologGroup id=\"", ${$rowhash}{homology_id}, "\"><property name=\"homology_description\" value=\"", ${$rowhash}{description}, "\" /><geneRef id=\"", ${$rowhash}{member_id}, "\" /><geneRef id=\"", $seen{${$rowhash}{homology_id}}, "\" /></orthologGroup>\n";
+            print $HANDLE "<orthologGroup id=\"", ${$rowhash}{homology_id}, "\"><property name=\"homology_description\" value=\"", ${$rowhash}{description}, "\" /><geneRef id=\"", ${$rowhash}{peptide_member_id}, "\" /><geneRef id=\"", $seen{${$rowhash}{homology_id}}, "\" /></orthologGroup>\n";
             delete $seen{${$rowhash}{homology_id}};
         } else {
-            $seen{${$rowhash}{homology_id}} = ${$rowhash}{member_id};
+            $seen{${$rowhash}{homology_id}} = ${$rowhash}{peptide_member_id};
         }
     }
     

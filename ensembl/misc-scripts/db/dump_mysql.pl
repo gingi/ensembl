@@ -14,7 +14,7 @@ use IO::Compress::Gzip qw/gzip $GzipError/;
 use Pod::Usage;
 use Sys::Hostname;
 
-my $rcsid = '$Revision: 1.21 $';
+my $rcsid = '$Revision: 1.22 $';
 our ($VERSION) = $rcsid =~ /(\d+\.\d+)/;
 
 my $PIGZ_BINARY = 'pigz';
@@ -709,7 +709,7 @@ of the databases you are dumping. Once specified the program will only
 consider databases with the version number in there (specifically the 
 occurance of C<%\_VERSION%>). C<--release> can also be used.
 
-=item B<--host | --host | -h>
+=item B<--host | --hostname | -h>
 
 Host name of the database to connect to. Cannot be used with <--defaults>.
 

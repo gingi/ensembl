@@ -178,6 +178,45 @@ sub modern_genomic_align_block_id {
   return $self->{_modern_genomic_align_block_id};
 }
 
+=head2 get_modern_GenomicAlignBlock
+
+  Example     : $modern_genomic_align_block = $object->modern_genomic_align_block();
+  Description : Getter of the modern GenomicAlignBlock object 
+  Returntype  : Bio::EnsEMBL::Compara::GenomicAlignBlock object
+  Exceptions  : none
+  Caller      : general
+  Status      : At risk
+
+=cut
+
+sub get_modern_GenomicAlignBlock {
+  my $self = shift;
+  
+  # Try to get data from other sources...
+  if (!defined($self->{'modern_genomic_align_block'})) {
+
+      #Try to retrieve from the first GenomicAlign object
+      $self->{'modern_genomic_align_block'} = $self->get_all_leaves->[0]->genomic_align_group->get_all_GenomicAligns->[0]->genomic_align_block;
+
+      #Try to retrieve from the modern_genomic_align_block_id 
+      if ((!defined $self->{'modern_genomic_align_block'}) && (defined($self->modern_genomic_align_block_id) and defined($self->adaptor))) {
+          my $genomic_align_block_adaptor = $self->adaptor->db->get_GenomicAlignBlockAdaptor;
+          $self->{'modern_genomic_align_block'} = $genomic_align_block_adaptor->fetch_by_dbID($self->modern_genomic_align_block_id);
+      }
+      if ($self->{'modern_genomic_align_block'}) {
+          #Set the original_strand to be the same as the current original_strand
+          $self->{'modern_genomic_align_block'}->original_strand($self->original_strand);
+      } else {
+          warning("Fail to get data from other sources in Bio::EnsEMBL::Compara::GenomicAlignTree->get_modern_GenomicAlignBlock".
+                      " You either have to specify more information (see perldoc for".
+                  " Bio::EnsEMBL::Compara::GenomicAlignTree)");
+          return undef;
+      }
+  }
+  return $self->{'modern_genomic_align_block'};
+
+}
+
 
 =head2 genomic_align_group
 
@@ -788,7 +827,7 @@ sub print {
     $mark = "* ";
   }
   print STDERR "  " x $level, $mark,
-      "[", $self->node_id, "/", ($self->get_original_strand?"+":"-"), "] ",
+      "[", $self->node_id, "/", ($self->original_strand?"+":"-"), "] ",
       $self->genomic_align_group->genome_db->name,":",
       $self->genomic_align_group->dnafrag->name,":",
       $self->genomic_align_group->dnafrag_start,":",
@@ -855,11 +894,10 @@ sub get_all_nodes_from_leaves_to_this {
 sub get_all_leaves {
   my $self = shift;
 
-  my $leaves = {};
+  my $leaves = [];
   $self->_recursive_get_all_leaves($leaves);
-  my @leaf_list = values(%{$leaves});
 
-  return \@leaf_list;
+  return $leaves;
 }
 
 
@@ -922,7 +960,7 @@ sub _name_for_sorting {
         $self->genomic_align_group->genome_db->name,
         $self->genomic_align_group->dnafrag->name,
         ($self->genomic_align_group->dbID or
-          $self->genomic_align_group->{original_dbID} or 0),
+          $self->genomic_align_group->{_original_dbID} or 0),
         $self->genomic_align_group->dnafrag_start);
   } else {
     $name = join(" - ", sort map {sprintf("%s.%s.%020d",
@@ -950,10 +988,10 @@ sub _name_for_sorting {
 sub reverse_complement {
     my ($self) = @_;
     
-    if (defined($self->{_original_strand})) {
-	$self->{_original_strand} = 1 - $self->{_original_strand};
+    if (defined($self->original_strand)) {
+	$self->original_strand(1 - $self->original_strand);
     } else {
-	$self->{_original_strand} = 0;
+	$self->original_strand(0);
     }
 
     foreach my $this_node (@{$self->get_all_nodes}) {

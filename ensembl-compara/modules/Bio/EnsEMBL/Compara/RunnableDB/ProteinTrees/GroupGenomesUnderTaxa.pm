@@ -38,8 +38,7 @@ sub fetch_input {
                         or die "'mlss_id' is an obligatory parameter";
 
     my $mlss        = $self->compara_dba()->get_MethodLinkSpeciesSetAdaptor->fetch_by_dbID($mlss_id) or die "Could not fetch mlss with dbID=$mlss_id";
-    my $species_set = $mlss->species_set;
-    my $genome_dbs  = (ref($species_set) eq 'ARRAY') ? $species_set : $species_set->genome_dbs();
+    my $genome_dbs  = $mlss->species_set_obj->genome_dbs();
 
     my $filter_high_coverage = $self->param('filter_high_coverage');
 
@@ -51,7 +50,7 @@ sub fetch_input {
                     or die "Could not connect to core database adaptor";
 
             my $coverage_depth = $core_adaptor->get_MetaContainer()->list_value_by_key('assembly.coverage_depth')->[0]
-                    or die "'assembly.coverage_depth' is not defined in core database's meta table". $core_adaptor->dbname; 
+                    or die "'assembly.coverage_depth' is not defined in core database's meta table". $core_adaptor->dbc->dbname; 
 
             if( ($coverage_depth eq 'high') or ($coverage_depth eq '6X')) {
                 push @selected_gdb_ids, $genome_db->dbID();
@@ -85,7 +84,9 @@ sub write_output {      # dataflow the results
 
     my $species_sets = $self->param('species_sets');
 
-    $self->dataflow_output_id( { 'species_sets' => $species_sets }, 2);
+    foreach my $ss (@$species_sets) {
+        $self->dataflow_output_id( { 'species_set' => $ss }, 2);
+    }
 }
 
 

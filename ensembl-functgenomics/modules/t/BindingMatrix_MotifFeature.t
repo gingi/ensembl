@@ -53,9 +53,9 @@ my $analysis   = $analysis_a->fetch_by_logic_name('Jaspar');
 ok ($ftype);
 
 my $matrix = Bio::EnsEMBL::Funcgen::BindingMatrix->new(
-													   -name         => 'CTCF',
+													   -name         => 'MA0139.1',
 													   -analysis     => $analysis,
-													   -feature_type => $ftype,
+                             -feature_type => $ftype,
 													   -description  => 'Jaspar Matrix',
 													   -frequencies  => $ctcf_mat
 													  );

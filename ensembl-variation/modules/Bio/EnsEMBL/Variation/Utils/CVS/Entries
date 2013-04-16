@@ -1,11 +1,11 @@
-/BaseVepFilterPlugin.pm/1.8/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-68
-/BaseVepPlugin.pm/1.17/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-68
-/ComparaUtils.pm/1.4/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-68
-/Config.pm/1.28/Tue Apr 16 20:37:21 2013//Tbranch-ensembl-68
-/Constants.pm/1.20/Tue Apr 16 20:37:21 2013//Tbranch-ensembl-68
-/EnsEMBL2GFF3.pm/1.28/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-68
-/Sequence.pm/1.36/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-68
-/VEP.pm/1.61.2.11/Tue Apr 16 20:37:21 2013//Tbranch-ensembl-68
-/VariationEffect.pm/1.41.2.1/Tue Apr 16 20:37:21 2013//Tbranch-ensembl-68
-/dbSNP.pm/1.8/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-68
+/BaseVepFilterPlugin.pm/1.8/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
+/BaseVepPlugin.pm/1.17/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
+/ComparaUtils.pm/1.4/Tue Apr 16 20:36:54 2013//Tbranch-ensembl-69
+/Config.pm/1.31.2.1/Tue Apr 16 20:39:12 2013//Tbranch-ensembl-69
+/Constants.pm/1.20.6.1/Tue Apr 16 20:39:12 2013//Tbranch-ensembl-69
+/EnsEMBL2GFF3.pm/1.28/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-69
+/Sequence.pm/1.36.10.1/Tue Apr 16 20:39:12 2013//Tbranch-ensembl-69
+/VEP.pm/1.71.2.6/Tue Apr 16 20:39:12 2013//Tbranch-ensembl-69
+/VariationEffect.pm/1.42/Tue Apr 16 20:39:12 2013//Tbranch-ensembl-69
+/dbSNP.pm/1.9/Tue Apr 16 20:39:12 2013//Tbranch-ensembl-69
 D

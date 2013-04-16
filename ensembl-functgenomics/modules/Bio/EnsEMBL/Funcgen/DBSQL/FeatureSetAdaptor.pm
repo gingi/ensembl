@@ -4,7 +4,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Copyright (c) 1999-2012 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -146,7 +146,7 @@ sub fetch_all_by_FeatureType {
     my ($self, $ftype, $status) = @_;
     
 	my $params = {constraints => {feature_types => [$ftype]}};
-	$params->{constraints}{state} = $status if $status;
+	$params->{constraints}{status} = $status if $status;
 	#No need to reset tables for these
 	return $self->generic_fetch($self->compose_constraint_query($params));	
 }
@@ -183,7 +183,7 @@ sub fetch_all_by_type {
   Arg [2]    : Bio::EnsEMBL::Funcgen::CellType (optional) or a HASH parameters 
                containing contraint config e.g.
 
-                   $feature_set_adaptor->fetch_all_displayable_by_type
+                   $feature_set_adaptor->fetch_all_by_feature_class
                                            ('annotated', 
                                              {'constraints' => 
                                                {
@@ -194,7 +194,7 @@ sub fetch_all_by_type {
                                                } 
                                              });
 
-  Example    : my @fsets = $fs_adaptopr->fetch_all_by_feature_class('annotated');
+  Example    : my @fsets = @{$fs_adaptopr->fetch_all_by_feature_class('annotated')};
   Description: Retrieves FeatureSet objects from the database based on feature_set type.
   Returntype : ARRAYREF of Bio::EnsEMBL::Funcgen::FeatureSet objects
   Exceptions : Throws if type not defined
@@ -209,22 +209,20 @@ sub fetch_all_by_feature_class {
   throw('Must provide a feature_set type') if(! defined $type);	
   my $sql = "fs.type = '".$type."'";
   
-  if(defined $params){ 	#Some redundancy over $ctype arg and $params cell_type
+  if (defined $params) {        #Some redundancy over $ctype arg and $params cell_type
 
-	if( ref($params) eq 'Bio::EnsEMBL::Funcgen::CellType'){
-	  $params = {constraints => {cell_types => [$params]}};
-	}
-	elsif(ref($params) ne 'HASH'){
-	  throw('Argument must be a Bio::EnsEMBL::Funcgen::CellType or a params HASH');
-	}
+    if ( ref($params) eq 'Bio::EnsEMBL::Funcgen::CellType') {
+      $params = {constraints => {cell_types => [$params]}};
+    } elsif (ref($params) ne 'HASH') {
+      throw('Argument must be a Bio::EnsEMBL::Funcgen::CellType or a params HASH');
+    }
   }
 
 
-  if($status){
+  if ($status) {
     $params->{constraints}{status} = $status;
   }
   
-
   #Deal with params constraints
   my $constraint = $self->compose_constraint_query($params);
   $sql .=  " AND $constraint " if $constraint;
@@ -232,11 +230,7 @@ sub fetch_all_by_feature_class {
 
   #Get result and reset true tables
   my $result = (defined $sql) ? $self->generic_fetch($sql) : [];
-  #@{$tables{feature_set}} = @{$true_tables{feature_set}};
   $self->reset_true_tables;
-
-  
-
 
   return $result;
 }
@@ -545,24 +539,6 @@ sub store {
 	return \@fsets;
 }
 
-=head2 list_dbIDs
-
-  Args       : None
-  Example    : my @array_ids = @{$oaa->list_dbIDs()};
-  Description: Gets an array of internal IDs for all OligoArray objects in the
-               current database.
-  Returntype : List of ints
-  Exceptions : None
-  Caller     : ?
-  Status     : Medium Risk
-
-=cut
-
-sub list_dbIDs {
-    my ($self) = @_;
-	
-    return $self->_list_dbIDs('feature_set');
-}
 
 
 =head2 fetch_focus_set_config_by_FeatureSet
@@ -811,6 +787,8 @@ sub _constrain_evidence_types {
 }
 
 
+# These two are duplicated in ResultSetAdaptor
+# Move to a new SetAdaptor? (not appropriate for DataSets)
 
 sub _constrain_cell_types {
   my ($self, $cts) = @_;
@@ -822,39 +800,6 @@ sub _constrain_cell_types {
   #{} = no futher contraint config
   return ($constraint, {});
 }
-
-
-#Generic, move to BaseAdaptor?
-
-sub _constrain_status {
-  my ($self, $state) = @_;
-  
-  my $constraint_conf = { tables => [['status', 's']]};  #,['status_name', 'sn']),
-    
-    #This can't use IN without duplicating the result
-    #Would need to add a default_final_clause to group
-
-    #my @sn_ids;
-    #if( (ref($states) ne 'ARRAY') ||
-    #scalar(@$states) == 0 ){
-    #throw('Must pass an arrayref of status_names');
-	  #}
-    #foreach my $sn(@$states){
-	  ##This will throw if status not valid, but still may be absent
-	  #	push @sn_ids, $self->_get_status_name_id($sn);
-	  #  }
-      
-	  
-      
-  my @tables = $self->_tables;
-  my ($table_name, $syn) = @{$tables[0]};
-	  
-      my $constraint = " $syn.${table_name}_id=s.table_id AND ".
-        "s.table_name='$table_name' AND s.status_name_id=".$self->_get_status_name_id($state);
-      #"s.table_name='$table_name' AND s.status_name_id IN (".join(', ', @sn_ids.')';
-
-      return ($constraint, $constraint_conf);
-   }
 
 
 sub _constrain_feature_types {

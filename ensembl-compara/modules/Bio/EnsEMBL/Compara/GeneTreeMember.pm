@@ -44,7 +44,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.5 $
+$Revision: 1.6 $
 
 =head1 APPENDIX
 
@@ -121,7 +121,7 @@ sub string_node {
 
 
 
-=head2 name (overrides default method in Bio::EnsEMBL::Compara::Graph::CGObject)
+=head2 name (overrides default method in Bio::EnsEMBL::Compara::Graph::Node)
 
   Arg [1]     : none
   Example     : $aligned_member->name();

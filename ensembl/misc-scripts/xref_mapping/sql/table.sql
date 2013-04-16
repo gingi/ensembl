@@ -227,6 +227,25 @@ CREATE TABLE coordinate_xref (
 ) COLLATE=latin1_swedish_ci ENGINE=InnoDB;
 
 ################################################################################
+
+-- Table for checksum-based Xrefs, based
+-- on the input format from UniProt/UniParc. This is MyISAM because
+-- we do a LOAD DATA INFILE & the InnoDB engine does not handle this too
+-- well (especially since there is no need for transactions for this table)
+
+CREATE TABLE checksum_xref (
+  checksum_xref_id  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  source_id         INT UNSIGNED NOT NULL,
+  accession         CHAR(14) NOT NULL,
+  checksum          CHAR(32) NOT NULL,
+
+  PRIMARY KEY (checksum_xref_id),
+  INDEX checksum_idx(checksum(10))
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
+
+
+################################################################################
+
 ################################################################################
 
 -- new tables for new mapper code
@@ -287,10 +306,10 @@ CREATE TABLE havana_status (
 
 ) COLLATE=latin1_swedish_ci ENGINE=InnoDB;
 
-#
-# Try to keep the status in the correct order
-#   it will make it easier to see what is happening
-#
+
+-- Try to keep the status in the correct order
+--   it will make it easier to see what is happening
+
 
 CREATE TABLE process_status (
   id            INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -310,6 +329,29 @@ CREATE TABLE process_status (
 ) COLLATE=latin1_swedish_ci ENGINE=InnoDB;
 
 
+-- This table is populated in DisplayXrefs.pm and is used to set the best xrefs as 
+-- display xrefs for genes and transcripts
+
+
+
+CREATE TABLE display_xref_priority(
+    ensembl_object_type	VARCHAR(100),
+    source_id INT UNSIGNED NOT NULL,
+    priority  SMALLINT UNSIGNED NOT NULL,
+
+    PRIMARY KEY (ensembl_object_type, source_id)
+) COLLATE=latin1_swedish_ci ENGINE=InnoDB;
+
+
+-- This table is populated in DisplayXrefs.pm and is used to set
+-- gene descriptions
+
+CREATE TABLE gene_desc_priority(
+    source_id	   INT UNSIGNED NOT NULL,
+    priority       SMALLINT UNSIGNED NOT NULL,
+
+    PRIMARY KEY (source_id)
+) COLLATE=latin1_swedish_ci ENGINE=InnoDB;
                      
 
 ################################################################################

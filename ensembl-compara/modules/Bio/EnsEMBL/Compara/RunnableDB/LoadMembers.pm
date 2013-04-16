@@ -127,11 +127,12 @@ sub run {
 
     my $unfiltered_slices = $core_dba->get_SliceAdaptor->fetch_all('toplevel', $self->param('include_nonreference') ? (undef, 1, undef, 1) : ());
     die "Could not fetch any toplevel slices from ".$core_dba->dbc->dbname() unless(scalar(@$unfiltered_slices));
+
     my $slices = $self->param('include_reference')
                     ? $unfiltered_slices
                     : [ grep { not $_->is_reference() } @$unfiltered_slices ];
 
-    my $final_slices = ( ! $self->param('include_patches') ) ?
+  my $final_slices = ( ! $self->param('include_patches') ) ?
                        [ grep { $_->assembly_exception_type() !~ /PATCH/ } @$slices ]
                        : [ @$slices ];
 
@@ -144,7 +145,6 @@ sub run {
         $self->warning("No suitable toplevel slices found in ".$core_dba->dbc->dbname());
     }
 }
-
 
 sub write_output {
     my $self = shift @_;

@@ -77,10 +77,10 @@ use base ('Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::StoreTree');
 sub fetch_input {
   my( $self) = @_;
 
-  my $nc_tree = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($self->param('nc_tree_id'));
+  my $nc_tree = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($self->param('gene_tree_id'));
   if (scalar @{$nc_tree->get_all_leaves()} < 4) {
       # We don't have enough data to create the trees
-      my $msg = sprintf "Tree cluster %d has <4 genes\n", $self->param('nc_tree_id');
+      my $msg = sprintf "Tree cluster %d has <4 genes\n", $self->param('gene_tree_id');
       print STDERR $msg if ($self->debug());
       $self->input_job->incomplete(0);
       die $msg;
@@ -139,16 +139,16 @@ sub write_output {
                             );
 }
 
-sub DESTROY {
+sub post_cleanup {
   my $self = shift;
 
   if($self->param('nc_tree')) {
-    printf("NctreeBestMMerge::DESTROY  releasing tree\n") if($self->debug);
+    printf("NctreeBestMMerge::post_cleanup  releasing tree\n") if($self->debug);
     $self->param('nc_tree')->release_tree;
     $self->param('nc_tree', undef);
   }
 
-  $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+  $self->SUPER::post_cleanup if $self->can("SUPER::post_cleanup");
 }
 
 

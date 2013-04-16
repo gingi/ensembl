@@ -24,7 +24,7 @@ sub default_options {
       
       release => software_version(),
 
-      types => [qw/embl genbank/],
+      types => [],
       
       ### Defaults 
       
@@ -67,10 +67,9 @@ sub pipeline_analyses {
       
       {
         -logic_name => 'DumpTypeFactory',
-        -module     => 'Bio::EnsEMBL::Hive::RunnableDB::JobFactory',
+        -module     => 'Bio::EnsEMBL::Pipeline::Flatfile::DumpTypeFactory',
         -parameters => {
-          column_names => ['type'],
-          inputlist => $self->o('types'),
+          types => $self->o('types'),
           input_id => { species => '#species#', type => '#type#' },
           fan_branch_code => 2
         },
@@ -129,8 +128,9 @@ sub beekeeper_extra_cmdline_options {
 sub resource_classes {
     my $self = shift;
     return {
+      %{$self->SUPER::resource_classes()},
       #Max memory consumed in a previous run was 1354MB. This gives us some breathing room
-      1 => { -desc => 'dump', 'LSF' => '-q normal -M1600000 -R"select[mem>1600] rusage[mem=1600]"'},
+      dump => { 'LSF' => '-q normal -M1600000 -R"select[mem>1600] rusage[mem=1600]"'},
     }
 }
 

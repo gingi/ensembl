@@ -29,21 +29,21 @@
 Bio::EnsEMBL::Variation::BaseStructuralVariation - Ensembl representation of a structural variant.
 
 =head1 SYNOPSIS
-
+    # A Study object
+    $study = $study_adaptor->fetch_by_name('estd59');
+    
     # Structural variation representing a CNV
     $sv = Bio::EnsEMBL::Variation::StructuralVariation->new
-       (-variation_name => 'esv25480',
-				-class_so_term => 'structural_variant',
+       (-variation_name => 'esv234231',
+				-class_so_term => ''copy_number_variation',
 				-source => 'DGVa',
 				-source_description => 'Database of Genomic Variants Archive',
-				-study_name => 'estd20',
-				-study_description => 'Conrad 2009 "Origins and functional impact of copy number variation in the human genome." PMID:19812545 [remapped from build NCBI36]',
-				-study_url => 'ftp://ftp.ebi.ac.uk/pub/databases/dgva/estd20_Conrad_et_al_2009',
-				-external_reference => 'pubmed/19812545');
+				-is_evidence => 0,
+				-is_somatic => 0);
 
     ...
 
-    print $sv->name(), ":", $sv->var_class();
+    print $sv->variation_name(), ":", $sv->var_class();
 
 =head1 DESCRIPTION
 
@@ -64,7 +64,7 @@ use warnings;
 package Bio::EnsEMBL::Variation::BaseStructuralVariation;
 
 use Bio::EnsEMBL::Storable;
-use Bio::EnsEMBL::Utils::Exception qw(throw warning deprecate);
+use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 use Bio::EnsEMBL::Utils::Argument  qw(rearrange);
 use Bio::EnsEMBL::Variation::Utils::Constants qw(%VARIATION_CLASSES); 
 use Bio::EnsEMBL::Variation::Failable;
@@ -80,41 +80,43 @@ our @ISA = ('Bio::EnsEMBL::Storable','Bio::EnsEMBL::Variation::Failable');
 
   Arg [-VARIATION_NAME] :
     string - the name of the structural variant.
-		
-	Arg [-CLASS_SO_TERM] :
-		string - the sequence ontology term defining the class of the structural variant.
-		
+    
+  Arg [-CLASS_SO_TERM] :
+    string - the sequence ontology term defining the class of the structural variant.
+    
   Arg [-SOURCE] :
     string - the name of the source where the structural variant comes from
-	
+  
   Arg [-SOURCE_DESCRIPTION] :
-	  string - description of the source
+    string - description of the source
 
   Arg [-TYPE] :
      string - the class of structural variant e.g. 'copy_number_variation'
-	
-	Arg [-STUDY] :
+  
+  Arg [-STUDY] :
     object ref - the study object describing where the structural variant comes from.
-	
-	Arg [-VALIDATION_STATUS] :
-	  string - the status of the structural variant (e.g. validated, not validated, ...)
-	
-	Arg [-IS_EVIDENCE] :
-	  int - flag to inform whether the structural variant is a supporting evidence (1) or not (0).
-		
-	Arg [-IS_SOMATIC] :
-	  int - flag to inform whether the structural variant is a somatic (1) or germline (0).
-		
+  
+  Arg [-VALIDATION_STATUS] :
+    string - the status of the structural variant (e.g. validated, not validated, ...)
+  
+  Arg [-IS_EVIDENCE] :
+    int - flag to inform whether the structural variant is a supporting evidence (1) or not (0).
+    
+  Arg [-IS_SOMATIC] :
+    int - flag to inform whether the structural variant is a somatic (1) or germline (0).
+    
   Example for a structural variation:
     $sv = Bio::EnsEMBL::Variation::StructuralVariation->new
        (-variation_name => 'esv25480',
-		    -class_so_term => 'copy_number_variation',
-		    -source => 'DGVa',
-		    -source_description => 'Database of Genomic Variants Archive',
-		
+				-class_so_term => ''copy_number_variation',
+				-source => 'DGVa',
+				-source_description => 'Database of Genomic Variants Archive',
+				-is_evidence => 0,
+				-is_somatic => 0);
+    
   Description: Constructor. Instantiates a new structural variant object.
   Returntype : Bio::EnsEMBL::Variation::StructuralVariation or 
-	             Bio::EnsEMBL::Variation::SupportingStructuralVariation
+               Bio::EnsEMBL::Variation::SupportingStructuralVariation
   Exceptions : none
   Caller     : general
   Status     : At Risk
@@ -126,44 +128,44 @@ sub new {
   my $class = ref($caller) || $caller;
   
   my (
-		$dbID,
-		$adaptor,
+    $dbID,
+    $adaptor,
     $var_name,
     $source, 
     $source_version, 
     $source_description, 
     $class_so_term,
     $study,
-		$validation_status,
-		$is_evidence,
-		$is_somatic
+    $validation_status,
+    $is_evidence,
+    $is_somatic
   ) = rearrange([qw(
-					dbID
-					ADAPTOR
+          dbID
+          ADAPTOR
           VARIATION_NAME
           SOURCE 
           SOURCE_VERSION
           SOURCE_DESCRIPTION 
           CLASS_SO_TERM
           STUDY
-					VALIDATION_STATES
-					IS_EVIDENCE
-					IS_SOMATIC
+          VALIDATION_STATES
+          IS_EVIDENCE
+          IS_SOMATIC
     )], @_);
-		
-	my $self = bless {
-		'dbID'               => $dbID,
-		'adaptor'            => $adaptor,
-  	'variation_name'     => $var_name,
-  	'source'             => $source,
-  	'source_version'     => $source_version,
-  	'source_description' => $source_description,
-  	'class_SO_term'      => $class_so_term,
-  	'study'              => $study,
-		'validation_status'  => $validation_status,
-		'is_evidence'        => $is_evidence || 0,
-		'is_somatic'         => $is_somatic || 0,
-	};
+    
+  my $self = bless {
+    'dbID'               => $dbID,
+    'adaptor'            => $adaptor,
+    'variation_name'     => $var_name,
+    'source'             => $source,
+    'source_version'     => $source_version,
+    'source_description' => $source_description,
+    'class_SO_term'      => $class_so_term,
+    'study'              => $study,
+    'validation_status'  => $validation_status,
+    'is_evidence'        => $is_evidence || 0,
+    'is_somatic'         => $is_somatic || 0,
+  };
   return $self;
 }
 
@@ -228,9 +230,9 @@ sub variation_name{
 =cut
 
 sub var_class {
-	my $self = shift;
+  my $self = shift;
     
-	unless ($self->{class_display_term}) {
+  unless ($self->{class_display_term}) {
         my $display_term = $VARIATION_CLASSES{$self->{class_SO_term}}->{display_term};
 
         warn "No display term for SO term: ".$self->{class_SO_term} unless $display_term;
@@ -238,7 +240,7 @@ sub var_class {
         $self->{class_display_term} = $display_term || $self->{class_SO_term};
     }
 
-	return $self->{class_display_term};
+  return $self->{class_display_term};
 }
 
 
@@ -255,9 +257,9 @@ sub var_class {
 =cut
 
 sub class_SO_term {
-	my $self = shift;
+  my $self = shift;
 
-	return $self->{class_SO_term};
+  return $self->{class_SO_term};
 }
 
 
@@ -347,7 +349,7 @@ sub get_all_validation_states {
   Arg [1]    : int $flag (optional)
   Example    : $is_evidence = $obj->is_evidence()
   Description: Getter/Setter of a flag to inform whether the structural variant is a 
-	             supporting evidence (1) or not (0).
+               supporting evidence (1) or not (0).
   Returntype : int
   Exceptions : none
   Caller     : general
@@ -399,95 +401,6 @@ sub study {
 }
 
 
-=head2 study_name
-
-  Arg [1]    : string $study (optional)
-               The new value to set the study attribute to
-  Example    : $study = $sv->study()
-  Description: Getter/Setter for the study attribute
-  Returntype : string
-  Exceptions : none
-  Caller     : general
-  Status     : Deprecated
-
-=cut
-
-sub study_name {
-  my $self = shift;
-	deprecate('Use the method "study" instead (returns a Bio::EnsEMBL::Variation::Study object).');
-	return undef if (!$self->study);
-  return $self->study->name = shift if(@_);
-  return $self->study->name;
-}
-
-
-
-=head2 study_description
-
-  Arg [1]    : string $study_description (optional)
-               The new value to set the study_description attribute to
-  Example    : $study_description = $sv->study_description()
-  Description: Getter/Setter for the study_description attribute
-  Returntype : string
-  Exceptions : none
-  Caller     : general
-  Status     : Deprecated
-
-=cut
-
-sub study_description {
-  my $self = shift;
-	deprecate('Use the method "study" instead (returns a Bio::EnsEMBL::Variation::Study object).');
-	return undef if (!$self->study);
-  return $self->study->description = shift if(@_);
-  return $self->study->description;
-}
-
-=head2 study_url
-
-  Arg [1]    : string $newval (optional)
-               The new value to set the study_url attribute to
-  Example    : $paper = $obj->study_url()
-  Description: Getter/Setter for the study_url attribute.This is the link to the website where the data are stored.
-  Returntype : string
-  Exceptions : none
-  Caller     : general
-  Status     : Deprecated
-
-=cut
-
-sub study_url{
-  my $self = shift;
-	deprecate('Use the method "study" instead (returns a Bio::EnsEMBL::Variation::Study object).');
-	return undef if (!$self->study);
-  return $self->study->url = shift if(@_);
-  return $self->study->url;
-}
-
-
-=head2 external_reference
-
-  Arg [1]    : string $newval (optional)
-               The new value to set the external reference attribute to
-  Example    : $paper = $obj->external_reference()
-  Description: Getter/Setter for the external reference attribute. This is the
-               pubmed/id or project name associated with this study.
-  Returntype : string
-  Exceptions : none
-  Caller     : general
-  Status     : Deprecated
-
-=cut
-
-sub external_reference{
-  my $self = shift;
-	deprecate('Use the method "study" instead (returns a Bio::EnsEMBL::Variation::Study object).');
-	return undef if (!$self->study);
-  return $self->study->external_reference = shift if(@_);
-  return $self->study->external_reference;
-}
-
-
 =head2 get_all_StructuralVariationFeatures
 
   Args        : None
@@ -505,14 +418,14 @@ sub get_all_StructuralVariationFeatures{
   
   if(defined $self->{'adaptor'}) {
   
-  	# get structural variation feature adaptor
-  	my $svf_adaptor = $self->{'adaptor'}->db()->get_StructuralVariationFeatureAdaptor();
+    # get structural variation feature adaptor
+    my $svf_adaptor = $self->{'adaptor'}->db()->get_StructuralVariationFeatureAdaptor();
   
-  	return $svf_adaptor->fetch_all_by_StructuralVariation($self);
+    return $svf_adaptor->fetch_all_by_StructuralVariation($self);
   }
   else {
-  	warn("No variation database attached");
-  	return [];
+    warn("No variation database attached");
+    return [];
   }
 }
 
@@ -534,14 +447,14 @@ sub get_all_StructuralVariationAnnotations{
   
   if(defined $self->{'adaptor'}) {
   
-  	# get structural variation annotation adaptor
-  	my $sva_adaptor = $self->{'adaptor'}->db()->get_StructuralVariationAnnotationAdaptor();
+    # get structural variation annotation adaptor
+    my $sva_adaptor = $self->{'adaptor'}->db()->get_StructuralVariationAnnotationAdaptor();
   
-  	return $sva_adaptor->fetch_all_by_StructuralVariation($self);
+    return $sva_adaptor->fetch_all_by_StructuralVariation($self);
   }
   else {
-  	warn("No variation database attached");
-  	return [];
+    warn("No variation database attached");
+    return [];
   }
 }
 
@@ -555,13 +468,13 @@ sub get_all_StructuralVariationAnnotations{
 =cut
 
 sub summary_as_hash {
-	my $self = shift;
-	my %summary;
-	$summary{'display_id'} = $self->display_id;
-	$summary{'study_name'} = $self->study_name;
-	$summary{'study_description'} = $self->study_description;
-	$summary{'class'} = $self->var_class;
-	return \%summary;
+  my $self = shift;
+  my %summary;
+  $summary{'display_id'} = $self->display_id;
+  $summary{'study_name'} = $self->study_name;
+  $summary{'study_description'} = $self->study_description;
+  $summary{'class'} = $self->var_class;
+  return \%summary;
 
 }
 

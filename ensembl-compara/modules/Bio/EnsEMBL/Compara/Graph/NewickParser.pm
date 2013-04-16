@@ -36,7 +36,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.12 $
+$Revision: 1.14 $
 
 =head1 APPENDIX
 
@@ -72,7 +72,7 @@ sub parse_newick_into_tree
 
   my $count=1;
   my $debug = 0;
-  print("$newick\n") if($debug);
+  print STDERR "NEWICK:$newick\n" if($debug);
   my $token = next_token(\$newick, "(;");
   my $lastset = undef;
   my $node = undef;
@@ -87,6 +87,8 @@ sub parse_newick_into_tree
       case 1 { #new node
         $node = new Bio::EnsEMBL::Compara::NestedSet;
 	  if (defined $class) {
+          # Make sure that the class is loaded
+          eval "require $class";
 		  bless $node, $class;
 	  }
         $node->node_id($count++);
@@ -194,6 +196,8 @@ sub parse_newick_into_tree
       }
     }
   }
+  # Tags of the root node are lost otherwise
+  $root->{_tags} = $node->{_tags} unless $root eq $node;
   return $root;
 }
 

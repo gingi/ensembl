@@ -67,8 +67,8 @@ ok( $db_entry_count == $xref_count );
 # 4,5 correct number of GoXrefs and IdentityXrefs
 #
 note( "GoXrefs and IdentityXrefs: ".$goxref_count . " " . $ident_count);
-ok( $goxref_count == 48 );
-ok( $ident_count == 32 );
+is( $goxref_count, 48, 'Checking number of GOs' );
+is( $ident_count, 32, 'Checking number of IdentityXrefs' );
 
 my $analysis_adap = $db->get_AnalysisAdaptor();
 my $analysis = $analysis_adap->fetch_by_logic_name("RepeatMask");
@@ -200,9 +200,11 @@ $xref = Bio::EnsEMBL::DBEntry->new
 
 {
   local $ENV{RUNTESTS_HARNESS} = 1;
+  local $ENV{RUNTESTS_HARNESS_NORESTORE} = 1;
   
   # db connection must be severed for threads to access DB    
   $dbEntryAdaptor->dbc->disconnect_if_idle();
+  $multi->get_DBAdaptor('empty'); # seem to have to do this to stop thread whinging under some perls
   use threads;
   
   my $parallel_store = sub{
@@ -221,8 +223,9 @@ $xref = Bio::EnsEMBL::DBEntry->new
   note("Threaded xrefs: ".$xref_ids[0]." ".$xref_ids[1]." ".$xref_ids[2]);
   
   # Test 10 - Verify that only one xref has been inserted under parallel inserts
-  ok($xref_ids[0] == 1000009 && $xref_ids[1] == $xref_ids[0] && $xref_ids[2] == $xref_ids[0]);
-
+  is($xref_ids[0], 1000009, 'Thread 1 ID assertion');
+  is($xref_ids[1], $xref_ids[0], 'Thread 2 ID is the same as thread 1');
+  is($xref_ids[2], $xref_ids[0], 'Thread 3 ID is the same as thread 1');
 }
 
 # Test 11 - Exception testing on ->store()
@@ -486,6 +489,8 @@ ok(@{$xrefs} == 23);  #test 60
 
 my $db_name = $dbEntryAdaptor->get_db_name_from_external_db_id(4100);
 ok($db_name eq 'UniGene');
+
+$multi->restore();
 
 # Test multiple inserts for empty descriptions
 {

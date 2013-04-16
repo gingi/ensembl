@@ -48,6 +48,16 @@ Bio::EnsEMBL::Variation::DBSQL::TranscriptVariationAdaptor
         print $tv->transcript->stable_id, "\n";
         print $tv->translation_start, '-', $tv->translation_end, "\n";
     }
+
+    # fetch all TranscriptVariations related to a Translation
+    for my $tv (@( $tva->fetch_all_by_translation_id('ENSP00000447797'))) {
+        print $tv->hgvs_protein, "\n";
+    }
+
+    # fetch all TranscriptVariations related to a Translation with given SO terms
+    for my $tv (@( $tva->fetch_all_by_translation_id_SO_terms('ENSP00000447797', ['missense_variant']))) {
+        print $tv->hgvs_protein, "\n";
+    }
     
 =head1 DESCRIPTION
 

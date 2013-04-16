@@ -1219,7 +1219,7 @@ sub get_all_LD_Populations{
 	my $ld_pops = $pa->fetch_all_LD_Populations;
 	return [] unless $ld_pops;
 	
-	my $sth = $self->adaptor->db->prepare(qq{
+	my $sth = $self->adaptor->dbc->prepare(qq{
 	  SELECT ip.population_sample_id, c.seq_region_start, c.genotypes
 	  FROM compressed_genotype_region c, individual_population ip
 	  WHERE c.sample_id = ip.individual_sample_id
@@ -1642,9 +1642,11 @@ sub hgvs_genomic{
     
   
     ##### get short flank sequence for duplication checking & adjusted variation coordinates
-    my ($ref_seq, $ref_start, $ref_end) = _get_flank_seq($tr_vf);;
-    
-    foreach my $allele ( split(/\//,$tr_vf->allele_string()) ) {
+    my ($ref_seq, $ref_start, $ref_end) = _get_flank_seq($tr_vf);
+
+    my @all_alleles = split(/\//,$tr_vf->allele_string());    
+    shift @all_alleles;  ## remove reference allele - not useful for HGVS
+    foreach my $allele ( @all_alleles ) {
 	
 	## If a particular allele was requested, ignore others
 	next if  (defined($use_allele) && $allele ne $use_allele);
@@ -1686,7 +1688,7 @@ sub hgvs_genomic{
 						   $ref_end,
 						   $chr_start,             ## start wrt seq region slice is on (eg. chrom)
 						   $chr_end,   
-						   "");
+						   $self->variation_name()); ## for error message 
       
 
 	# Skip if e.g. allele is identical to the reference slice
@@ -1731,5 +1733,29 @@ sub summary_as_hash {
   $summary_ref->{'alt_alleles'} = \@allele_list;
   return $summary_ref;
 }
+
+=head2 flank_match
+
+  Arg [1]    : int $newval (optional)
+               The new value to set the flank_match attribute to
+  Example    : $flank_match = $obj->flank_match()
+  Description: Getter/Setter for the flank_match attribute.
+               Return values:
+               1 = submitted flank has perfect match to genomic reference (allowing for neighbouring variants)
+               0 = imperfect match
+  Returntype : int
+  Exceptions : none
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub flank_match{
+  my $self = shift;
+  return $self->{'flank_match'} = shift if(@_);
+  return $self->{'flank_match'};
+}
+
+
 
 1;

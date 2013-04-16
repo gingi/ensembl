@@ -60,6 +60,13 @@ select NULL, "web_config",  concat("source#", name, " variants", "#variation_fea
 from source
 where name like 'LSDB%';
 
+# add clinical set (phenotype)
+insert into meta(species_id, meta_key, meta_value)
+select NULL, "web_config",  concat("set#", vs.name, "#variation_set_", a.value, "#phenotype")
+from variation_set vs, attrib a
+where vs.short_name_attrib_id = a.attrib_id
+and a.value like 'precious%';
+
 # add individual genotype sets
 insert into meta(species_id, meta_key, meta_value)
 select NULL, "web_config",  concat("set#", vs.name, "#variation_set_", a.value, "#ind_genomes")
@@ -85,3 +92,32 @@ where name like 'Affy%'
 or name like 'Illumina%'
 or name like 'Uniprot%'
 order by name asc;
+
+# add structural variation sets
+insert into meta(species_id, meta_key, meta_value)
+values
+(NULL, 'web_config', "sv_set#1000 Genomes - Low coverage#sv_set_1kg_lc");
+
+insert into meta(species_id, meta_key, meta_value)
+values
+(NULL, 'web_config', "sv_set#1000 Genomes - High coverage - Trios#sv_set_1kg_hct");
+
+insert into meta(species_id, meta_key, meta_value)
+values
+(NULL, 'web_config', "sv_set#1000 Genomes - All#sv_set_1kg");
+
+insert into meta(species_id, meta_key, meta_value)
+values
+(NULL, 'web_config', "sv_set#1000 Genomes - EUR#sv_set_1kg_eur");
+
+insert into meta(species_id, meta_key, meta_value)
+values
+(NULL, 'web_config', "sv_set#1000 Genomes - ASN#sv_set_1kg_asn");
+
+insert into meta(species_id, meta_key, meta_value)
+values
+(NULL, 'web_config', "sv_set#1000 Genomes - AMR#sv_set_1kg_amr");
+
+insert into meta(species_id, meta_key, meta_value)
+values
+(NULL, 'web_config', "sv_set#1000 Genomes - AFR#sv_set_1kg_afr");

@@ -67,27 +67,20 @@ sub configure_defaults {
 sub configure_runnable {
   my $self = shift;
 
+  my $fake_analysis     = Bio::EnsEMBL::Analysis->new;
+
   my (@db_chunk) = @{$self->param('db_DnaFragChunkSet')->get_all_DnaFragChunks};
 
   #
   # get the sequences and create the runnable
   #
   my $query_DnaFragChunkSet = $self->param('query_DnaFragChunkSet');
-  my $qyChunkFile;
-  if($query_DnaFragChunkSet->count == 1) {
-    my ($qy_chunk) = @{$query_DnaFragChunkSet->get_all_DnaFragChunks};
-    $qyChunkFile = $self->dumpChunkToWorkdir($qy_chunk);
-  } else {
-    $qyChunkFile = $self->dumpChunkSetToWorkdir($query_DnaFragChunkSet);
-  }
+  my $qyChunkFile = $self->dumpChunkSetToWorkdir($query_DnaFragChunkSet);
 
   my @db_chunk_files;
-  #if ($self->db_DnaFragChunkSet->count > 1) {
-    #throw("lastz can not use more than 1 sequence in the database/target file.\n" .
-    #      "You may have specified a group_set_size in the target_dna_collection.\n" .
-    #      "In the case of lastz this should only be used for query_dna_collection");
-  #}
+  my $db_dna_collection = $self->param('db_DnaFragChunkSet')->dna_collection;
   foreach my $db_chunk (@{$self->param('db_DnaFragChunkSet')->get_all_DnaFragChunks}) {
+      $db_chunk->masking_options($db_dna_collection->masking_options);
     push @db_chunk_files, $self->dumpChunkToWorkdir($db_chunk);
   }
 
@@ -124,7 +117,7 @@ sub configure_runnable {
             -database   => $qyChunkFile,
             -options    => $options,
             -program    => $program,
-            -analysis   => $self->analysis,
+            -analysis   => $fake_analysis,
             );
     
     if($self->debug >1) {

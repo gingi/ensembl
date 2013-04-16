@@ -36,11 +36,12 @@ use strict;
 use warnings;
 
 use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp expand);
+#use Bio::EnsEMBL::Variation::Utils::QC qw( read_allele_code get_allele_code);
 use base qw(Bio::EnsEMBL::Variation::Pipeline::BaseVariationProcess);
-
+use Bio::EnsEMBL::Variation::Utils::dbSNP qw(get_alleles_from_pattern);
 
 our $DEBUG   = 1;
-
+ 
 our %AMBIG_REGEXP_HASH = (
     'M' =>  '[AC]',
     'R' =>  '[AG]',
@@ -55,6 +56,12 @@ our %AMBIG_REGEXP_HASH = (
     'X' =>  '[ACGT]',
     'N' =>  '[ACGT]'
     );
+
+our %QUICK_COMP = ( "A" => "T",
+                    "T" => "A",
+                    "C" => "G",
+                    "G" => "C"
+    ); 
 
 
 
@@ -86,6 +93,7 @@ sub run {
   my %fail_variant;   # hash of arrays of failed variation_ids
   my %fail_allele;    # hash of arrays of arrays failed variation_ids & alleles
   my %flip;           # hash of variation ids which have their strand changed in this process
+  my %allele_string;  # hash of expected allele for each variation_id strings saved for allele checking
 
 
   my $var_dba = $self->get_species_adaptor('variation');
@@ -95,23 +103,19 @@ sub run {
   my $slice_ad = $core_dba->get_SliceAdaptor;
 
 
-  ## export current variation_feature data, adding allele_string if required 
-  my $to_check;
-  if($self->required_param('do_allele_string') == 1){
-    $to_check = export_data_adding_allele_string($var_dba, $first, $last);
-  }
-  else{
-    $to_check = export_data_with_allele_string($var_dba, $first, $last);
-  }
+  ## export current variation_feature data
+  my $to_check = export_data_adding_allele_string($var_dba, $first, $last);
+  
 
 
   foreach my $var (@{$to_check}){
   
+    die "No allele string for $var->{name}\n" unless defined $var->{allele}; ## kill whole batch before any db updates
 
-    ## Type 1 - fail variant if  >1 mapping seen
+    ## Type 19 - fail variant if  >1 mapping seen
   
    if($var->{map} >1){       
-      push @{$fail_variant{1}}, $var->{v_id};
+      push @{$fail_variant{19}}, $var->{v_id};
     }
 
 
@@ -144,7 +148,7 @@ sub run {
     foreach my $ill_al( @{$illegal_alleles} ){
       push @{$fail_allele{13}},  [$var->{v_id}, $ill_al];   ## unflipped allele failed throughout
     }
-    next;
+    next;  ## don't attempt to order variation_feature.allele_string or compliment
   }
 
 
@@ -168,7 +172,7 @@ sub run {
     }
 
   }
-  ## Further checks only run for variants with <3 map locations [Why not single]
+  ## Further checks only run for variants with 1 genomic location
   
   next if  $var->{map} > 1;
 
@@ -231,7 +235,10 @@ sub run {
     else{
       ##  Type 2 - flag variants as fails if neither allele matches the reference
       push @{$fail_variant{2}}, $var->{v_id} ;
-    }    
+    } 
+   ## save for allele checker
+   $allele_string{$var->{v_id}} = $var->{allele};
+    die "No allele string for $var->{name}\n" unless defined $var->{allele}; ## kill whole batch before any db updates
   }
   
 
@@ -248,7 +255,8 @@ sub run {
 
    
   ## allele-specific checks - run on updated variation_feature table
-  run_allele_checks($self, \%flip, \%fail_allele);  
+  run_allele_checks($self, \%flip, \%fail_allele, \%allele_string);  
+
   
 }
 
@@ -261,9 +269,10 @@ sub run {
 =cut
 sub run_allele_checks {
 
-   my $self   = shift;
-   my $flip   = shift; 
-   my $fail   = shift;
+   my $self           = shift;
+   my $flip           = shift; 
+   my $fail           = shift;
+   my $allele_string  = shift;
 
    ### start and end variation_id supplied
    my $first = $self->required_param('start_id'); 
@@ -277,22 +286,16 @@ sub run_allele_checks {
 
    my ($var_data, $allele_codes);
    ## export current allele & variation_feature data - alleles flipped where needed
-   if( $self->required_param('schema') eq 'old'){ 
-     $var_data = export_allele_data($var_dba, $first, $last, $flip);
-   }
-   else{
-     $var_data = export_allele_data_new_schema($var_dba, $first, $last, $flip);
-   }
-
+   $var_data = export_allele_data($var_dba, $first, $last, $flip );
    
    foreach my $var( keys %$var_data){
 
      ## cope with unmapped variants with alleles or named alleles, but don't check them
-     next unless (defined $var_data->{$var}->{vf_allele} &&  $var_data->{$var}->{vf_allele} =~/\w+/); ## neaten
+     next unless (defined $allele_string->{$var} && $allele_string->{$var} =~/\w+/); ## neaten
 
      ## isolate expected alleles 
      my %expected_alleles;
-     my @expected_alleles = split/\//, $var_data->{$var}->{vf_allele};
+     my @expected_alleles = split/\//, $allele_string->{$var};
      foreach my $exp(@expected_alleles){ 
        $expected_alleles{$exp} = 1;
      }
@@ -303,7 +306,7 @@ sub run_allele_checks {
 
        my $check_allele = $submitted_data->[6];
       
-       ## $submitted_data content: [ al.allele_id, al.subsnp_id, al.allele[code_id],  al.frequency, al.sample_id, al.count, al.allele ]
+       ## $submitted_data content: [ al.allele_id, al.subsnp_id, al.allele[code_id],  al.frequency, al.sample_id, al.count, al.allele, al.frequency_submitter_handle ]
 
        unless( exists $expected_alleles{$check_allele} && $expected_alleles{$check_allele} ==1 ){ ## check expected on allele not allele_code
 
@@ -317,80 +320,16 @@ sub run_allele_checks {
        }
      }
    }
-   ## write allele records to new table flipping strands as needed
-   write_allele($var_dba, $var_data, $self->required_param('schema'));
+   ## write allele records to new table 
+   $self->write_allele($var_dba, $var_data);
 
    ### fail full experimental result for sample & subsnp_id
    write_allele_fails($var_dba , $fail, \%fail_all, $var_data,$self->required_param('schema') );
-}
 
 
-=head2 export_data_with_allele_string
-
-  Extract variant data for checking taking allele_string from variation_feature.allele_string table 
-
-=cut
-sub export_data_with_allele_string{
-
-   my ($var_dba, $first, $last) = @_;
-   
-   my @to_check;
-
-   my $data_ext_sth = $var_dba->dbc->prepare(qq[SELECT v.variation_id,
-                                                       v.name,
-                                                       vf.variation_feature_id,
-                                                       vf.seq_region_id,
-                                                       vf.seq_region_start,
-                                                       vf.seq_region_end,
-                                                       vf.seq_region_strand,
-                                                       vf.allele_string,
-                                                       tmw.count,
-                                                       vf.source_id,
-                                                       vf.consequence_types,
-                                                       vf.variation_set_id,
-                                                       vf.somatic,
-                                                       vf.class_attrib_id,
-                                                       sr.name 
-                                              FROM
-                                                  variation v, 
-                                                  variation_feature vf,
-                                                  seq_region sr,
-                                                  tmp_map_weight_working tmw
-                                              WHERE
-                                                  v.variation_id between ? and ?
-                                                  and vf.variation_id = v.variation_id 
-                                                  and vf.variation_id = tmw.variation_id  
-                                                  and vf.seq_region_id = sr.seq_region_id
-                                                ]);       
-  
-  $data_ext_sth->execute($first, $last)|| die "ERROR extracting variation feature info\n";
-  
-  my $data = $data_ext_sth->fetchall_arrayref();
-  foreach my $l(@{$data}){
-    my %save;
-
-    $save{v_id}           = $l->[0];
-    $save{name}           = $l->[1];
-    $save{vf_id}          = $l->[2];
-    $save{seqreg_id}      = $l->[3];
-    $save{start}          = $l->[4];
-    $save{end}            = $l->[5];
-    $save{strand}         = $l->[6];
-    $save{allele}         = $l->[7];
-    $save{map}            = $l->[8];
-    $save{source_id}      = $l->[9];
-    $save{consequence_types} = $l->[10];
-    $save{variation_set_id}  = $l->[11];
-    $save{somatic}           = $l->[12];
-    $save{class_attrib_id}   = $l->[13];
-    $save{seqreg_name}       = $l->[14];
-
-    push @to_check,\%save;;
-  }
-
-  return (\@to_check);  
 
 }
+
 
 =head2 export_data_adding_allele_string
 
@@ -404,8 +343,8 @@ sub export_data_adding_allele_string{
   
   my @to_check;
 
-  my $variant_ext_sth = $var_dba->dbc->prepare(qq[SELECT v.variation_id,
-                                                      v.name,
+  my $variant_ext_sth = $var_dba->dbc->prepare(qq[SELECT vf.variation_id,
+                                                      vf.variation_name,
                                                       vf.variation_feature_id,
                                                       vf.seq_region_id,
                                                       vf.seq_region_start,
@@ -417,40 +356,21 @@ sub export_data_adding_allele_string{
                                                       vf.variation_set_id,
                                                       vf.somatic,
                                                       vf.class_attrib_id,
-                                                      sr.name 
-                                             FROM
-                                                 variation v, 
-                                                 variation_feature vf,
-                                                 seq_region sr,
-                                                 tmp_map_weight_working tmw
-                                             WHERE
-                                                 v.variation_id between ? and ?
-                                                 and vf.variation_id = v.variation_id 
-                                                 and vf.variation_id = tmw.variation_id  
-                                                 and vf.seq_region_id = sr.seq_region_id
-                                               ]);       
+                                                      sr.name,
+                                                      vf.alignment_quality,
+                                                      als.allele_string
+                                                 FROM variation_feature vf,
+                                                      seq_region sr,
+                                                      tmp_map_weight_working tmw,
+                                                      allele_string als 
+                                                 WHERE  vf.variation_id between ? and ? 
+                                                 AND vf.variation_id = tmw.variation_id  
+                                                 AND vf.seq_region_id = sr.seq_region_id
+                                                 AND vf.variation_id = als.variation_id  
+                                                 ]);       
  
 
-  my $allele_ext_sth = $var_dba->dbc->prepare(qq[SELECT a.variation_id,
-                                                        a.allele   
-                                                FROM   allele_string a 
-                                                WHERE  a.variation_id between ? and ?
-                                               ]);       
-
-
-  ### get allele information
-
-  my %alleles;
-  
-  $allele_ext_sth->execute($first, $last)|| die "ERROR extracting allele feature info\n";
-
-  my $allele_data = $allele_ext_sth->fetchall_arrayref();
-
-  foreach my $l(@{$allele_data}){
-    push @{$alleles{$l->[0]}},  $l->[1];  
-  }
-  
-  ### get variant information
+ 
   
   $variant_ext_sth->execute($first, $last)|| die "ERROR extracting variation feature info\n";
   
@@ -474,14 +394,15 @@ sub export_data_adding_allele_string{
     $save{somatic}          = $l->[11];
 
     $save{seqreg_name}      = $l->[13];
-  
-    if( defined $alleles{$l->[0]}->[0]){
-      $save{allele}           = join '/', @{$alleles{$l->[0]}};
-    }     
+    $save{align_qual}       = $l->[14];
+
+    if($l->[15] =~ /^(\(.*\))\d+\/\d+/){## handle tandem
+      my $expanded_alleles = get_alleles_from_pattern($l->[15]); 
+      $save{allele} = join"/",@{$expanded_alleles};
+    }
     else{
-      $save{allele}           = "";
-      warn "No alleles available for variant $l->[1]";
-    } 
+      $save{allele}         = $l->[15];
+    }
 
     push @to_check,\%save;;
   }
@@ -508,7 +429,6 @@ sub export_allele_data{
    ### Look up expected allele string from new variation_feature table with flipped allele strings
    my $data_ext_sth = $var_dba->dbc->prepare(qq[SELECT v.variation_id,
                                                        v.name,
-                                                       vf.allele_string,
                                                        al.allele_id,
                                                        al.subsnp_id,
                                                        al.allele,
@@ -516,11 +436,10 @@ sub export_allele_data{
                                                        al.sample_id,
                                                        al.count,
                                                        al.allele,
-                                                       vf.variation_feature_id       
-                                              FROM  variation v join allele al on(v.variation_id = al.variation_id )
-                                                  left outer join variation_feature_working vf on (vf.variation_id = v.variation_id )
-                                              WHERE
-                                                  v.variation_id between ? and ?
+                                                       al.frequency_submitter_handle
+                                               FROM  variation v, allele al
+                                               WHERE   v.variation_id between ? and ?
+                                               AND    v.variation_id  = al.variation_id 
                                                 ]);       
   
    $data_ext_sth->execute($first, $last)|| die "ERROR extracting variation feature info\n";
@@ -528,20 +447,17 @@ sub export_allele_data{
    my $data = $data_ext_sth->fetchall_arrayref();
    
    foreach my $l(@{$data}){
-   ## distinct on query causes database tmp to fill - handling hackily instead [only extracting variation_feature_id  for this purpose]
-     next if $done{"$l->[3]\_$l->[10]"} ;
-     $done{"$l->[3]\_$l->[10]"} = 1;
+  
+    
      $save{$l->[0]}{name}         = $l->[1];
-     $save{$l->[0]}{vf_allele}    = $l->[2];
       
      if($flip->{$l->[0]}){
-
        ## update allele for flips
-       reverse_comp(\$l->[5]);
-       reverse_comp(\$l->[9]);   
+       defined $QUICK_COMP{$l->[4]} ? $l->[4] = $QUICK_COMP{$l->[4]} : reverse_comp(\$l->[4]);
+       $l->[8] =   $l->[4]; # for hacky compatibility with new schema update
      }
 
-  push @{$save{$l->[0]}{allele_data}}, [$l->[3], $l->[4], $l->[5], $l->[6], $l->[7], $l->[8], $l->[9] ];
+  push @{$save{$l->[0]}{allele_data}}, [$l->[2], $l->[3], $l->[4], $l->[5], $l->[6], $l->[7], $l->[8], $l->[9] ];
 
   }
 
@@ -549,85 +465,13 @@ sub export_allele_data{
 
 }
 
-=head2 export_allele_data_new_schema
-
-  Extract allele data and variation_feature allele string where available
-  Compliments alleles if variant has unique map location and is on reverse strand
-
-  Uses new variation schema 
-
-=cut
-sub export_allele_data_new_schema{
-
-  my ($var_dba, $first, $last, $flip, $schema) = @_;
-  
-  my %save;
-
-  
-  # hack to use with old schema
-  my %allele_codes;  ## save as looked up - should be quicker than holding all unusual alleles 
-
-  #my $allele_code_ext_sth  = $var_dba->dbc->prepare(qq[ select allele_code_id from allele_code  where allele = ? ]);       
-  
-  #my $allele_code_ins_sth  = $var_dba->dbc->prepare(qq[ insert into allele_code (allele) values (?) ]);
-      
-  my %done;
-  ### Look up expected allele string from new variation_feature table with flipped allele strings
-  my $data_ext_sth = $var_dba->dbc->prepare(qq[SELECT v.variation_id,
-                                                      v.name,
-                                                      vf.allele_string,
-                                                      al.allele_id,
-                                                      al.subsnp_id,
-                                                      al.allele_code_id,
-                                                      al.frequency,
-                                                      al.sample_id,
-                                                      al.count,
-                                                      alc.allele,
-                                                      vf.variation_feature_id       
-                                             FROM  variation v join allele al on(v.variation_id = al.variation_id )
-                                                   join allele_code alc on (al.allele_code_id = alc.allele_code_id )
-                                                   left outer join variation_feature_working vf on (vf.variation_id = v.variation_id )
-                                             WHERE
-                                                 v.variation_id between ? and ?
-                                               ]);       
-  
-  $data_ext_sth->execute($first, $last)|| die "ERROR extracting allele info\n";
-  
-  my $data = $data_ext_sth->fetchall_arrayref();
-  
-  foreach my $l(@{$data}){
-    ## distinct on query causes database tmp to fill - handling hackily instead [only extracting variation_feature_id  for this purpose]
-    next if $done{"$l->[3]\_$l->[10]"} ;
-    $done{"$l->[3]\_$l->[10]"} = 1;
-    $save{$l->[0]}{name}         = $l->[1];
-    $save{$l->[0]}{vf_allele}    = $l->[2];
-        
-    if($flip->{$l->[0]}){
-
-        ## update allele for flips
-        reverse_comp(\$l->[9]);
-        unless ($allele_codes{$l->[9]}){
-             $allele_codes{$l->[9]} = get_allele_code($var_dba, $l->[9] );
-        }
-        ## updated allele code for flip
-        $l->[5] = $allele_codes{$l->[9]} ;
-    }
-
-    push @{$save{$l->[0]}{allele_data}}, [$l->[3], $l->[4], $l->[5], $l->[6], $l->[7], $l->[8], $l->[9] ];
-
-    }
-
-  return (\%save);  
-
-}
-
-
 =head2 get_reference_base
 
-  Extract sequence from genomic reference at variant coordinates 
-  to check against supplied coordinates    
+  Extract sequence from genomic reference at variant coordinates
+  to check against supplied coordinates
 
 =cut
+
 sub get_reference_base{
 
    my ($var, $slice_ad) = @_;
@@ -675,7 +519,7 @@ sub check_illegal_characters{
     my @fail;
     my @al = split/\//, $allele;
     foreach my $al(@al){ 
-      if ($al =~ m /[^ACGTU\-$AMBIGUITIES]/i){
+      if ($al =~ m /[^ACGTU\-$AMBIGUITIES]|\)\)$/i){
         push @fail, $al;
       }
     }
@@ -765,7 +609,7 @@ sub write_variant_fails{
   my $var_dba   = shift; 
   my $fail_list = shift;
 
-  my $fail_ins_sth = $var_dba->dbc->prepare(qq[insert into failed_variation_working
+  my $fail_ins_sth = $var_dba->dbc->prepare(qq[insert  into failed_variation_working
                                                (variation_id, failed_description_id)
                                                values (?,?)
                                                ]);       
@@ -801,27 +645,20 @@ sub write_allele_fails{
 
 
   my $allele_id_ext_sth ;
-  ## find allele id to fail - cope with different schemas
-  if($schema =~ /old/){
-    $allele_id_ext_sth  = $var_dba->dbc->prepare(qq[select allele_id 
-                                                   from allele_working
-                                                   where allele =?
-                                                   and allele_working.variation_id =?
-                                                   ]);
-  }
-  else{
-    $allele_id_ext_sth  = $var_dba->dbc->prepare(qq[select allele_id 
+  ## find allele id to fail
+  
+    $allele_id_ext_sth  = $var_dba->dbc->prepare(qq[select allele_working.allele_id 
                                                    from allele_working, allele_code
                                                    where allele_code.allele =?
                                                    and allele_code.allele_code_id = allele_working.allele_code_id
                                                    and allele_working.variation_id =?
                                                    ]);
-  }
+  
  
                                                    
 
   ## those failing as a submitted set with frequencies
-  my $allele_set_id_ext_sth = $var_dba->dbc->prepare(qq[select allele_id 
+  my $allele_set_id_ext_sth = $var_dba->dbc->prepare(qq[select allele_working.allele_id 
                                                        from  allele_working
                                                        where allele_working.variation_id =?
                                                        and allele_working.subsnp_id =?
@@ -830,7 +667,7 @@ sub write_allele_fails{
 
 
 
-  my $fail_ins_sth   = $var_dba->dbc->prepare(qq[insert into failed_allele_working
+  my $fail_ins_sth   = $var_dba->dbc->prepare(qq[insert  into failed_allele_working
                                                 (allele_id, failed_description_id)
                                                 values (?,?)
                                                 ]);       
@@ -895,15 +732,17 @@ sub insert_variation_features{
   my $var_dba  = shift;
   my $to_check = shift;
 
-  my $varfeat_ins_sth = $var_dba->dbc->prepare(qq[insert into variation_feature_working
+  my $varfeat_ins_sth = $var_dba->dbc->prepare(qq[insert  into variation_feature_working
                                                 (variation_id, variation_name, seq_region_id,  seq_region_start, seq_region_end, seq_region_strand,  
-                                                 allele_string, map_weight,  source_id, consequence_types variation_set_id, somatic, class_attrib_id)
-                                                 values (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                                 allele_string, map_weight,  source_id, consequence_types, 
+                                                 variation_set_id, somatic, class_attrib_id, alignment_quality)
+                                                 values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                                                 ]);       
   
   
   foreach my $data (@{$to_check}){ 
-  
+
+    die "No allele string for $data->{name}\n" unless defined  $data->{allele};
     $varfeat_ins_sth->execute($data->{v_id},
                             $data->{name},
                             $data->{seqreg_id},
@@ -916,110 +755,92 @@ sub insert_variation_features{
                             $data->{consequence_types},
                             $data->{variation_set_id},
                             $data->{somatic},
-                            $data->{class_attrib_id})|| die "ERROR importing variation feature info\n";
+                            $data->{class_attrib_id},
+                            $data->{align_qual}  )|| die "ERROR importing variation feature info\n";
 
 
   }
 }
 
 
+=head2 write_variant_flips
 
+  Populate a tmp table with a list of variants whose data will be flipped
+
+=cut
 sub write_variant_flips{
     
   my $var_dba = shift;
   my $flip    = shift;
-  
-  #my $flip_update_sth = $var_dba->dbc->prepare(qq[ update variation
-  #                                                set flipped = 1
-  #                                                where variation_id = ?
-  #                                                ]);       
+        
 
-  my $flip_ins_sth = $var_dba->dbc->prepare(qq[ insert into variation_to_reverse_working
+  my $flip_ins_sth = $var_dba->dbc->prepare(qq[ insert  into variation_to_reverse_working
                                                (variation_id) values ( ?)
                                               ]);       
   
-
   foreach my $var (keys %{$flip} ){ 
 
     #### updating VARIATION table at end - no change to imported data unless all OK
-    #$flip_update_sth->execute($var)|| die "ERROR updating variation flip status\n";   ## doing this at the end in bulk  
     $flip_ins_sth->execute($var)||    die "ERROR adding variation flip status\n";    
 
   }
 }
 
-=head2 insert_variation_features
 
-  Create new version of allele table with alleles complimented where neccessary
+=head2 write_allele
+
+  Create new & old version of allele table with alleles complimented where neccessary
+  Expects old format (allele not allele code) input
 
 =cut
 sub write_allele{
-    ### write data to new allele table flipping where needed; best way to recover partial updates caused by fails
-    
-  my ($var_dba, $var_data, $schema) = @_;
+
+  my $self      = shift;
+  my $var_dba   = shift;
+  my $var_data  = shift;
+
   my %done;
 
-  my $allele_ins_sth ;
-  if($schema =~ /old/){
-    $allele_ins_sth     = $var_dba->dbc->prepare(qq[ insert into allele_working
-                                                   (variation_id, subsnp_id, allele, frequency, sample_id, count)
-                                                   values (?, ?, ?, ?, ?,? )
+  my $code = read_allele_code($var_dba);
+
+  my $allele_old_ins_sth = $var_dba->dbc->prepare(qq[ insert  into MTMP_allele_working
+                                                    (variation_id, subsnp_id, allele, frequency, sample_id, count)
+                                                    values (?, ?, ?, ?, ?,? )
+                                                     ]);
+ 
+  my $allele_new_ins_sth = $var_dba->dbc->prepare(qq[ insert  into allele_working
+                                                     (variation_id, subsnp_id, allele_code_id, frequency, sample_id, count, frequency_submitter_handle)
+                                                     values (?, ?, ?, ?, ?, ?, ? )
                                                     ]);
+    
+
+  foreach my $var (keys %$var_data){ ## look up missing allele codes before grabbing lock on table to update
+    foreach my $allele (@{$var_data->{$var}->{allele_data}}){  ## array of data from 1 row in table
+      ## allele data in coded format - insert if not available
+      unless($code->{$allele->[2]}){
+          $code->{$allele->[2]} = get_allele_code($var_dba, $allele->[2]);
+      }
+    }
   }
-  else{
-    $allele_ins_sth     = $var_dba->dbc->prepare(qq[ insert into allele_working
-                                                   (variation_id, subsnp_id, allele_code_id, frequency, sample_id, count)
-                                                   values (?, ?, ?, ?, ?,? )
-                                                    ]);
-  }
-  
+
   foreach my $var (keys %$var_data){
 
     foreach my $allele (@{$var_data->{$var}->{allele_data}}){  ## array of data from 1 row in table
-      next if exists $done{$allele->[0]} ; #&& $done{$allele->[0]} ==1;  ## filtering on old pk
+
+      next if exists $done{$allele->[0]} ; ## filtering on old pk
       $done{$allele->[0]} = 1;
 
-      $allele_ins_sth->execute( $var, $allele->[1], $allele->[2], $allele->[3], $allele->[4], $allele->[5]) || die "ERROR inserting allele info\n";
+      ## keep allele data in un-coded format for Mart
+       unless($self->required_param('species') =~/Homo|Human/i){
+          $allele_old_ins_sth->execute( $var, $allele->[1], $allele->[2], $allele->[3], $allele->[4], $allele->[5]) || die "ERROR inserting allele info\n";
+     }
+
+      $allele_new_ins_sth->execute( $var, $allele->[1], $code->{$allele->[2]}, $allele->[3], $allele->[4], $allele->[5], $allele->[7]) || die "ERROR inserting allele info\n";
+      #### DANGER - not restricting these to have the same PK
     }
   }
 }
 
-
-sub get_allele_code{
-
-  my ($var_dba, $current_al) = @_;
-
-  my $allele_code;
-
-  my $allele_code_ext_sth  =  $var_dba->dbc->prepare(qq [select allele_code_id from allele_code where allele =?]);
-  my $allele_code_ins_sth  =  $var_dba->dbc->prepare(qq [insert into allele_code (allele) values (?) ]);
-
-
-  $allele_code_ext_sth->execute($current_al) || die "Failed to look up allele code for $current_al\n";;
-
-  my $al_code = $allele_code_ext_sth->fetchall_arrayref();
-  if(defined $al_code->[0]->[0]){
-    $allele_code = $al_code->[0]->[0];
-  }
-  else{
-    ## insert new allele code - may be needed due to complimenting long odd things
-    warn "Entering allele $current_al\n";
-
-    $allele_code_ins_sth->execute($current_al) || die "Failed to enter allele code for $current_al\n";
-
-    $allele_code_ext_sth->execute($current_al) || die "Failed to look up allele code for $current_al\n";;
-
-    my $al_code = $allele_code_ext_sth->fetchall_arrayref();
-
-    if(defined $al_code->[0]->[0]){
-        $allele_code = $al_code->[0]->[0];
-    }
-    else{
-        die "New allele code insertion failed oddly\n";
-    }
-  }
-  return $allele_code;
-}
 
 
 
@@ -1041,7 +862,7 @@ sub rev_tandem{
       $part =~ s/\d+$|\(|\)//g;
       
       reverse_comp(\$part);
-      print "doing $part\n";
+
       $new_allele_string .= "(" . $part .")" . $num . "/";
     }
     else{
@@ -1053,6 +874,63 @@ sub rev_tandem{
   
   return $new_allele_string ;
 }
+
+=head2 read_allele_code
+
+  Description: Extract all allele codes held 
+  Status     : At Risk
+=cut
+
+sub read_allele_code{
+
+
+    my $var_dba   = shift; 
+    my %allele_code;
+
+    my $code_ext_sth = $var_dba->dbc->prepare(qq[select allele_code_id, allele
+                                                 from allele_code          
+                                                 ]);       
+            
+    $code_ext_sth->execute()||die "Error extracting allele_codes\n";
+    my $list = $code_ext_sth->fetchall_arrayref();
+
+    foreach my $code (@{$list}){ 
+        $allele_code{$code->[1]} = $code->[0];
+    }
+
+    return \%allele_code ;
+}
+
+=head2 get_allele_code
+
+  Description: Extract single allele code or enter if novel 
+  Status     : At Risk
+=cut
+sub get_allele_code{
+
+
+    my $var_dba   = shift; 
+    my $allele    = shift;
+
+    my $code_ext_sth = $var_dba->dbc->prepare(qq[select allele_code_id
+                                                 from allele_code where allele =?          
+                                                 ]);       
+            
+    $code_ext_sth->execute($allele )||die "Error extracting allele_codes\n";
+    my $id = $code_ext_sth->fetchall_arrayref();
+
+    unless(defined $id->[0]->[0]){  ## enter if unknown
+
+       my $code_ins_sth = $var_dba->dbc->prepare(qq[insert ignore into allele_code (allele) values(?) ]);  # breaks with muliple processes without ignore     
+       $code_ins_sth->execute($allele)||die "Error inserting allele_codes\n";;
+
+       $code_ext_sth->execute($allele )||die "Error extracting allele_codes\n";
+       $id = $code_ext_sth->fetchall_arrayref();
+    }
+    unless(defined $id->[0]->[0]){ die "Error fetching allele code for .$allele.\n";}
+    return $id->[0]->[0] ;
+}
+
 
 ### put somewhere sensible
 sub unique {

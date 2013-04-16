@@ -4,7 +4,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Copyright (c) 1999-2012 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -24,17 +24,13 @@
 =head1 NAME
 
 Bio::EnsEMBL::DBSQL::Funcgen::ResultSetAdaptor - A database adaptor for fetching and
-storing ResultSet objects.  
+storing ResultSet objects.
 
 =head1 SYNOPSIS
 
 my $rset_adaptor = $db->get_ResultSetAdaptor();
 
-my @rsets = @{$rset_adaptor->fetch_all_ResultSets_by_Experiment()};
-#my @displayable_rsets = @{$rset_adaptor->fetch_all_displayable_ResultSets()};
-
-
-
+my @rsets = @{$rset_adaptor->fetch_all_by_Experiment()};
 
 =head1 DESCRIPTION
 
@@ -46,10 +42,11 @@ encapsulate processed signal/read data(InputSet) from a sequencing Experiment e.
 
 =cut
 
+package Bio::EnsEMBL::Funcgen::DBSQL::ResultSetAdaptor;
+
+
 use strict;
 use warnings;
-
-package Bio::EnsEMBL::Funcgen::DBSQL::ResultSetAdaptor;
 
 use Bio::EnsEMBL::Utils::Exception qw( throw warning );
 use Bio::EnsEMBL::Funcgen::ResultSet;
@@ -58,64 +55,62 @@ use Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor;
 use Bio::EnsEMBL::Funcgen::Utils::EFGUtils qw(mean median);
 use base qw(Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor); #@ISA
 
-#Generates ResultSet contains info about ResultSet content
-#and actual results for channel or for chips in contig set?
-#omit channel handling for now as we prolly won't ever display them
-#but we might use it for running analyses and recording in result_set...change to result_group or result_analyses
-#data_set!!  Then we can keep other tables names and retain ResultFeature
-#and change result_feature to result_set, this makes focus of result set more accurate and ResultFeatures are lightweight result objects.
-#do we need to accomodate different classes of data or multiple feature types in one set?  i.e. A combi experiment (Promot + Histone mod)?
-#schema can handle this...API? ignore for now but be mindful. 
-#This is subtley different to handling different experiments with different features in the same ResultSet.  
-#Combi will have same sample.
+# Table defs for use with dynamic query composition
+
+use constant TRUE_TABLES => [[ 'result_set',        'rs' ],
+                             [ 'result_set_input',  'rsi'],
+                             [ 'dbfile_registry',   'dr' ]];
+
+use constant TABLES => [[ 'result_set',        'rs' ],
+                        [ 'result_set_input',  'rsi'],
+                        [ 'dbfile_registry',   'dr' ]];
 
 
-#This needs one call to return all displayable sets, grouped by cell_line and ordered by FeatureType
-#needs to be restricted to cell line, feature type, but these fields have to be disparate from result_feature 
-#as this is only a simple linker table, and connections may not always be present
-#so cell tpye and feature type constraints have to be performed on load, then can assume that associated features and results
-# have same cell type/feature
-#so we need to group by cell_type in sql and then order by feature_type_id in sql or rearrange in code?
-#This will not know about chip sets, just that a feature set is linked to various result sets
-#There fore we need to use the chip_set_id or link back to the experimental_chip chip_set_ids
-#this would require a self join on experimental_chip
+=head2 fetch_all_by_feature_class
+
+  Arg [1]    : String - feature class i.e. 'result' or 'dna_methylation'.
+  Arg [2]    : HASH of parameters (optional) containing contraint config e.g.
+
+                   $result_set_adaptor->fetch_all_displayable_by_feature_class
+                                           ('dna_methylation', 
+                                             {'constraints' => 
+                                               {
+                                               cell_types     => [$cell_type],  #Bio::EnsEMBL::Funcgen::CellType
+                                               #projects       => ['ENCODE'],
+                                               feature_types  => [$ftype],      #Bio::EnsEMBL::Funcgen::FeatureType
+                                               status         => 'DISPLAYABLE',
+                                               } 
+                                             });
+
+  Example    : my @result_sets = @{$rs_adaptopr->fetch_all_by_feature_class('result')};
+  Description: Retrieves ResultSet objects from the database based on result_set feature_class.
+  Returntype : ARRAYREF of Bio::EnsEMBL::Funcgen::ResultSet objects
+  Exceptions : Throws if type not defined
+  Caller     : General
+  Status     : At Risk
+
+=cut
+
+sub fetch_all_by_feature_class {
+  my ($self, $fclass, $params) = @_;
+  
+  throw('Must provide a feature_set type') if(! defined $fclass);	
+  my $sql = 'rs.feature_class = "'.$fclass.'"';
+    
+  #Deal with params constraints
+  my $constraint = $self->compose_constraint_query($params);
+  $sql .=  " AND $constraint " if $constraint;
+
+
+  #Get result and reset true tables
+  my $result = (defined $sql) ? $self->generic_fetch($sql) : [];
+  $self->reset_true_tables;
+
+  return $result;
+}
 
 
 
-
-#Result_set_id is analagous to the chip_set key, altho' we may have NR instances of the same chip set with different analysis
-#if we didn't know the sets previosuly, then we would have to alter the result_set_id retrospectively i.e. change the result_set_id.#All chips in exp to be in same set until we know sets, or all in separate set?
-#Do not populate data_set until we know sets as this would cause hacky updating in data_set too.
-
-
-#how are we going to accomodate a combi exp?  Promot + Histone mods?
-#These would lose their exp set association, i.e. same exp & sample different exp method
-#we're getting close to defining the regulon here, combined results features from the same exp
-#presently want them displayed as a group but ordered appropriately
-#was previously treating each feature as a separate result set
-
-
-#for storing/making link we don't need the Slice context
-#store should check all 
-#so do we move the slice context to the object methods or make optional
-#then object method can check for slice and throw or take a Slice as an optional argument
-#this will enable generic set to be created to allow loading and linking of features to results
-#we still need to know which feature arose from which chip!!!!  Not easy to do and may span two.
-#Need to genericise this to the chip_set(or use result_set_id non unique)
-#We need to disentangle setting the feature to chip/set problem from the displayable problem.
-#change the way StatusAdaptor works to accomodate result_set_id:table_name:table_id, as this will define unique results
-#
-
-#can we extend this to creating skeleton result sets and loading raw results too?
-#
-
-#Result.pm should be lightweight by default to enable fast web display, do we need oligo_probe_id?
-
-
-#how are we going to overcome unlinked but displayable sets?
-#incomplete result_feature records will be hack to update/alter?
-#could have attach_result to feature method?
-#force association when loading features
 
 
 =head2 fetch_all_linked_by_ResultSet
@@ -161,8 +156,8 @@ sub fetch_all_linked_by_ResultSet{
   Description: Retrieves a list of Bio::EnsEMBL::Funcgen::ResultSets with the given Analysis from the Experiment
   Returntype : Listref of Bio::EnsEMBL::Funcgen::ResultSet objects
   Exceptions : Throws if Analysis is not valid and stored
-  Caller     : general
-  Status     : At Risk
+  Caller     : General
+  Status     : At risk - to be merged into fetch_all_by_Experiment
 
 =cut
 
@@ -172,26 +167,20 @@ sub fetch_all_by_Experiment_Analysis{
   if ( !($analysis && $analysis->isa("Bio::EnsEMBL::Analysis") && $analysis->dbID())) {
     throw("Need to pass a valid stored Bio::EnsEMBL::Analysis");
   }
-  
 
-  my $join = $self->get_Experiment_join_clause($exp)." AND rs.analysis_id=".$analysis->dbID();
+  my $join = $self->_get_Experiment_join_clause($exp);
 	
-  return ($join) ? $join." AND rs.analysis_id=".$analysis->dbID() : [];
+  return ($join) ?  $self->generic_fetch($join." AND rs.analysis_id=".$analysis->dbID) : [];
 }
 
-sub get_Experiment_join_clause{
+sub _get_Experiment_join_clause{
   my ($self, $exp) = @_;
 
-  if ( !($exp && $exp->isa("Bio::EnsEMBL::Funcgen::Experiment") && $exp->dbID())) {
-    throw("Need to pass a valid stored Bio::EnsEMBL::Funcgen::Experiment");
-  }
-
-
+  $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::Experiment', $exp);
   my $constraint;
-
   my @ecs = @{$exp->get_ExperimentalChips()};
 
-  if (@ecs) {
+  if (@ecs) { # We have an Array based experiment
 
     my $ec_ids = join(', ', (map $_->dbID, @ecs)); #get ' separated list of ecids
 	
@@ -206,19 +195,22 @@ sub get_Experiment_join_clause{
         ')) OR (rsi.table_name="channel" AND rsi.table_id IN ('.$chan_ids.'))))';
       #This could probably be sped up using UNION
       #But result set is too small for cost of implementation
-    } elsif ($ec_ids) {
+    } 
+    elsif ($ec_ids) {
       $constraint = 'rsi.table_name="experimental_chip" AND rsi.table_id IN ('.$ec_ids.')';
-    } elsif ($chan_ids) {
+    } 
+    elsif ($chan_ids) {
       $constraint = 'rsi.table_name="channel" AND rsi.table_id IN ('.$chan_ids.')';
     }
-  } else {                      #Assume we have an InputSet Experiment?
-    #We could possibly have an expeirment with an array and an input set
+
+  } 
+  else {     #We have an InputSet Experiment
+    #We could possibly have an experiment with an array and an input set
     #Currently nothing to stop this, but would most likely be loaded as separate experiments
     my $input_setids = join(', ', (map $_->dbID, @{$self->db->get_InputSetAdaptor->fetch_all_by_Experiment($exp)}));
-
     $constraint = 'rsi.table_name="input_set" AND rsi.table_id IN ('.$input_setids.')';
   }
-  
+
   return $constraint;
 }
 
@@ -236,14 +228,13 @@ sub get_Experiment_join_clause{
 =cut
 
 sub fetch_all_by_Experiment{
-  my ($self, $exp) = @_;
+  my ($self, $exp, $analysis) = @_;
 
   #my $constraint = "ec.experiment_id=".$exp->dbID();
   #This was much easier with the more complicated default where join
   #should we reinstate and just have a duplication of cell/feature_types?
 	
-
-  my $join = $self->get_Experiment_join_clause($exp);
+  my $join = $self->_get_Experiment_join_clause($exp);
   
   return ($join) ? $self->generic_fetch($join) : [];
 }
@@ -269,33 +260,12 @@ sub fetch_all_by_Experiment{
 sub fetch_all_by_FeatureType {
   my ($self, $ftype) = @_;
 
-  if ( !($ftype && $ftype->isa("Bio::EnsEMBL::Funcgen::FeatureType") && $ftype->dbID())) {
-    throw("Need to pass a valid stored Bio::EnsEMBL::Funcgen::FeatureType");
-  }
-	
+  $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::FeatureType', $ftype);	
   my $constraint = "rs.feature_type_id =".$ftype->dbID();
 	
   return $self->generic_fetch($constraint);
 }
- 
 
-=head2 fetch_all_by_name_Analysis
-
-  Arg [1]    : string - ResultSet name
-  Arg [2]    : Bio::EnsEMBL::Funcgen::Analysis
-  Example    : ($rset) = @{$rseta->fetch_by_name($exp->name().'_IMPORT')};
-  Description: Retrieves a ResultSet based on the name attribute
-  Returntype : Bio::EnsEMBL::Funcgen::ResultSet
-  Exceptions : Throws if no name provided
-  Caller     : General
-  Status     : At Risk - remove all, there should only be one?
-
-=cut
-
-sub fetch_all_by_name_Analysis {
-  my ($self, $name, $anal) = @_;
-  return $self->fetch_all_by_name($name, undef, undef, $anal);
-}
 
 =head2 fetch_all_by_name
 
@@ -323,22 +293,23 @@ sub fetch_all_by_name{
   $self->bind_param_generic_fetch($name, SQL_VARCHAR);
 
   if ($ftype) {
-    $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::FeatureType',$ftype);
+    $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::FeatureType', $ftype);
     $constraint .= ' AND rs.feature_type_id=?';
     $self->bind_param_generic_fetch($ftype->dbID, SQL_INTEGER);
   }
 
   if ($ctype) {
-    $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::CellType',$ctype);
+    $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::CellType',    $ctype);
     $constraint .= ' AND rs.cell_type_id=?';
     $self->bind_param_generic_fetch($ctype->dbID, SQL_INTEGER);
   }
 
   if ($anal) {
-    $self->db->is_stored_and_valid('Bio::EnsEMBL::Analysis',$anal);
+    $self->db->is_stored_and_valid('Bio::EnsEMBL::Analysis',              $anal);
     $constraint .= ' AND rs.analysis_id=?';
     $self->bind_param_generic_fetch($anal->dbID, SQL_INTEGER);
   }
+
 	
   return $self->generic_fetch($constraint);
 }
@@ -359,12 +330,8 @@ sub fetch_all_by_name{
 
 sub _tables {
   my $self = shift;
-	
-  return (
-          [ 'result_set',        'rs' ],
-          [ 'result_set_input',  'rsi'],
-          [ 'dbfile_registry',   'dr' ], 
-         );
+
+  return ( @{$self->TABLES} );
 }
 
 
@@ -377,9 +344,14 @@ sub _tables {
   Returntype : List of listrefs of strings
   Exceptions : None
   Caller     : Internal
-  Status     : At Risk
+  Status     : Stable
 
 =cut
+
+#sub _left_join {
+#  return (['dbfile_registry', '(rs.result_set_id=dr.table_id AND dr.table_name="result_set")'] , ['result_set_input','rs.result_set_id=rsi.result_set_id']);
+#}
+#Allows for absent result_set_input entries, in conjunction with omiting _default_where
 
 sub _left_join {
   return (['dbfile_registry', '(rs.result_set_id=dr.table_id AND dr.table_name="result_set")']);
@@ -395,23 +367,20 @@ sub _left_join {
   Returntype : List of strings
   Exceptions : None
   Caller     : Internal
-  Status     : Medium Risk
+  Status     : Stable
 
 =cut
 
 sub _columns {
-	my $self = shift;
-
 	return qw(
-            rs.result_set_id    rs.analysis_id
-            rsi.table_name      rsi.result_set_input_id
-            rsi.table_id        rs.name
-            rs.cell_type_id     rs.feature_type_id
-            dr.path
+            rs.result_set_id           rs.analysis_id
+            rsi.table_name             rsi.result_set_input_id
+            rsi.table_id               rs.name
+            rs.cell_type_id            rs.feature_type_id
+            rs.feature_class           dr.path
            );
-
-	
 }
+
 
 =head2 _default_where_clause
 
@@ -428,10 +397,9 @@ sub _columns {
 =cut
 
 sub _default_where_clause {
-  my $self = shift;
-	
   return 'rs.result_set_id = rsi.result_set_id';
 }
+  
 
 =head2 _final_clause
 
@@ -439,8 +407,8 @@ sub _default_where_clause {
   Example    : None
   Description: PROTECTED implementation of superclass abstract method.
                Returns an ORDER BY clause. Sorting by oligo_feature_id would be
-			   enough to eliminate duplicates, but sorting by location might
-			   make fetching features on a slice faster.
+               enough to eliminate duplicates, but sorting by location might
+               make fetching features on a slice faster.
   Returntype : String
   Exceptions : None
   Caller     : generic_fetch
@@ -451,7 +419,8 @@ sub _default_where_clause {
 
 sub _final_clause {
   #do not mess with this!
-  return ' GROUP by rsi.result_set_input_id, rsi.result_set_id ORDER BY rs.result_set_id, rs.cell_type_id, rs.feature_type_id';
+  return ' GROUP by rsi.result_set_input_id, rsi.result_set_id '.
+    'ORDER BY rs.result_set_id, rs.cell_type_id, rs.feature_type_id';
 }
 
 
@@ -472,53 +441,46 @@ sub _final_clause {
 
 sub _objs_from_sth {
   my ($self, $sth) = @_;
-  
   my (@rsets, $last_id, $rset, $dbid, $anal_id, $anal, $ftype, $ctype, $table_id, $name);
-  my ($sql, $table_name, $cc_id, $ftype_id, $ctype_id, $rf_set, $dbfile_dir);
+  my ($sql, $table_name, $cc_id, $ftype_id, $ctype_id, $rf_set, $dbfile_dir,$feat_class);
   my $a_adaptor = $self->db->get_AnalysisAdaptor();
   my $ft_adaptor = $self->db->get_FeatureTypeAdaptor();
   my $ct_adaptor = $self->db->get_CellTypeAdaptor(); 
   $sth->bind_columns(\$dbid, \$anal_id, \$table_name, \$cc_id, 
-					 \$table_id, \$name, \$ctype_id, \$ftype_id, \$dbfile_dir);
+					 \$table_id, \$name, \$ctype_id, \$ftype_id, \$feat_class, \$dbfile_dir);
   
-  
-  my $dbfile_data_root = $self->dbfile_data_root;
-
-  #Need c/ftype cache here or rely on query cache?
+    #Need c/ftype cache here or rely on query cache?
 
   while ( $sth->fetch() ) {
-
-
+    
     if(! $rset || ($rset->dbID() != $dbid)){
       
       push @rsets, $rset if $rset;
 
-      $anal  = (defined $anal_id) ? $a_adaptor->fetch_by_dbID($anal_id) : undef;
+      $anal  = (defined $anal_id)  ? $a_adaptor->fetch_by_dbID($anal_id)   : undef;
       $ftype = (defined $ftype_id) ? $ft_adaptor->fetch_by_dbID($ftype_id) : undef;
       $ctype = (defined $ctype_id) ? $ct_adaptor->fetch_by_dbID($ctype_id) : undef;
 
-    
+
       if(defined $dbfile_dir){
-        $dbfile_dir = $dbfile_data_root.'/'.$dbfile_dir;
+        $dbfile_dir = $self->build_dbfile_path($dbfile_dir);
       }
-
-
-           
+	 
       $rset = Bio::EnsEMBL::Funcgen::ResultSet->new
         (
-													-DBID         => $dbid,
-													-NAME            => $name,
-													-ANALYSIS        => $anal,
-													-TABLE_NAME      => $table_name,
-													-FEATURE_TYPE    => $ftype,
-													-CELL_TYPE       => $ctype,
-													-ADAPTOR         => $self,
-													-DBFILE_DATA_DIR => $dbfile_dir,
-												   );
+         -DBID            => $dbid,
+         -NAME            => $name,
+         -ANALYSIS        => $anal,
+         -TABLE_NAME      => $table_name,
+         -FEATURE_TYPE    => $ftype,
+         -CELL_TYPE       => $ctype,
+         -FEATURE_CLASS   => $feat_class,
+         -ADAPTOR         => $self,
+         -DBFILE_DATA_DIR => $dbfile_dir,
+        );
     }
     
-    #This assumes logical association between chip from the same exp, confer in store method?????????????????
-
+  
     if(defined $rset->feature_type()){    
       throw("ResultSet does not accomodate multiple FeatureTypes") if ($ftype_id != $rset->feature_type->dbID());
     }
@@ -541,6 +503,16 @@ sub _objs_from_sth {
 }
 
 
+#needs to move to a dbfile specific module
+
+sub build_dbfile_path{
+  my ($self, $subpath) = @_;
+
+  my $full_path = $self->dbfile_data_root.'/'.$subpath;
+  $full_path =~ s:/+:/:g;
+
+  return $full_path;
+}
 
 =head2 store
 
@@ -562,14 +534,16 @@ sub store{
   
   my (%analysis_hash);
   
-  my $sth = $self->prepare('INSERT INTO result_set (analysis_id, name, cell_type_id, feature_type_id) VALUES (?, ?, ?, ?)');
+  my $sth = $self->prepare('INSERT INTO result_set '.
+                           '(analysis_id, name, cell_type_id, feature_type_id, feature_class) '.
+                           'VALUES (?, ?, ?, ?, ?)');
   
   my $db = $self->db();
   my $analysis_adaptor = $db->get_AnalysisAdaptor();
   
  FEATURE: foreach my $rset (@rsets) {
     
-    if( ! ref $rset || ! $rset->isa('Bio::EnsEMBL::Funcgen::ResultSet') ) {
+    if ( ! (ref $rset && $rset->isa('Bio::EnsEMBL::Funcgen::ResultSet') )) {
       throw('Must be an ResultSet object to store');
     }
     
@@ -595,24 +569,22 @@ sub store{
     }
    
 
-	my $ct_id = (defined $rset->cell_type()) ? $rset->cell_type->dbID() : undef;
-	my $ft_id = (defined $rset->feature_type()) ? $rset->feature_type->dbID() : undef;
+    my $ct_id = (defined $rset->cell_type)    ? $rset->cell_type->dbID    : undef;
+    my $ft_id = (defined $rset->feature_type) ? $rset->feature_type->dbID : undef;
 
-    $sth->bind_param(1, $rset->analysis->dbID(),   SQL_INTEGER);
-    $sth->bind_param(2, $rset->name(),             SQL_VARCHAR);
-	$sth->bind_param(3, $ct_id,                    SQL_INTEGER);
-	$sth->bind_param(4, $ft_id,                    SQL_INTEGER);
-
-	
+    $sth->bind_param(1, $rset->analysis->dbID,   SQL_INTEGER);
+    $sth->bind_param(2, $rset->name,             SQL_VARCHAR);
+    $sth->bind_param(3, $ct_id,                  SQL_INTEGER);
+    $sth->bind_param(4, $ft_id,                  SQL_INTEGER);
+    $sth->bind_param(5, $rset->feature_class,    SQL_VARCHAR);
+    $sth->execute;
     
-    $sth->execute();
-    
-    $rset->dbID( $sth->{'mysql_insertid'} );
+    $rset->dbID( $sth->{mysql_insertid} );
     $rset->adaptor($self);
     
-	$self->store_states($rset);
+    $self->store_states($rset);
     $self->store_chip_channels($rset);
-	$self->store_dbfile_data_dir($rset) if $rset->dbfile_data_dir;
+    $self->store_dbfile_data_dir($rset) if $rset->dbfile_data_dir;
   }
   
   return \@rsets;
@@ -672,6 +644,8 @@ sub dbfile_data_root{
 
 =cut
 
+#This is actually not always a dir
+#leave for now until we use core API for this
 
 
 sub store_dbfile_data_dir{
@@ -707,8 +681,9 @@ sub store_dbfile_data_dir{
   elsif(! $db_dir){#STORE
 	$sql = 'INSERT INTO  dbfile_registry(table_id, table_name, path) values(?, "result_set", ?)';
 	$sth = $self->prepare($sql);
-	$sth->bind_param(1, $data_dir,   SQL_VARCHAR);
-	$sth->bind_param(2, $rset->dbID, SQL_INTEGER);
+	$sth->bind_param(1, $rset->dbID, SQL_INTEGER);
+	$sth->bind_param(2, $data_dir,   SQL_VARCHAR);
+	
 	$sth->execute;
   }
   
@@ -789,24 +764,6 @@ sub store_chip_channels{
   return $rset;
 }
 
-=head2 list_dbIDs
-
-  Args       : None
-  Example    : my @rsets_ids = @{$rsa->list_dbIDs()};
-  Description: Gets an array of internal IDs for all ProbeFeature objects in
-               the current database.
-  Returntype : List of ints
-  Exceptions : None
-  Caller     : general
-  Status     : stable
-
-=cut
-
-sub list_dbIDs {
-	my $self = shift;
-	
-	return $self->_list_dbIDs('result_set');
-}
 
 
 =head2 fetch_ResultFeatures_by_Slice_ResultSet
@@ -859,5 +816,65 @@ sub fetch_ResultFeatures_by_Slice_ResultSet{
   return $self->db->get_ResultFeatureAdaptor->fetch_all_by_Slice_ResultSet($slice, $rset, $ec_status, $with_probe);
 
 }
+
+
+
+# Dynamic query contraint methods
+# Most of these a re generic and redundant wrt FeatureSetAdaptor
+# Could be moved to a SetAdaptor
+
+
+sub _constrain_cell_types {
+  my ($self, $cts) = @_;
+
+  my @tables = $self->_tables;
+  my (undef, $syn) = @{$tables[0]};
+
+  my $constraint = " ${syn}.cell_type_id IN (".
+		join(', ', @{$self->db->are_stored_and_valid('Bio::EnsEMBL::Funcgen::CellType', $cts, 'dbID')}
+        ).')';
+  
+  #{} = no futher contraint config
+  return ($constraint, {});
+}
+
+
+sub _constrain_feature_types {
+  my ($self, $fts) = @_;
+ 
+  my @tables = $self->_tables;
+  my (undef, $syn) = @{$tables[0]};
+
+  #Don't need to bind param this as we validate
+  my $constraint = " ${syn}.feature_type_id IN (".
+		join(', ', @{$self->db->are_stored_and_valid('Bio::EnsEMBL::Funcgen::FeatureType', $fts, 'dbID')}).')';  
+  
+  #{} = not futher constraint conf
+  return ($constraint, {});
+}
+
+
+
+
+
+
+
+### DEPRECATED METHODS
+
+
+sub fetch_all_by_name_Analysis {#Deprecated in v69
+  my ($self, $name, $anal) = @_;
+
+  deprecate('To be removed in v71. Please use fetch_all_by_name');
+
+  return $self->fetch_all_by_name($name, undef, undef, $anal);
+}
+
+
+
+
+
+
+
 1;
 

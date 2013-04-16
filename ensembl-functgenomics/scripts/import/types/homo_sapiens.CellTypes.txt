@@ -5,8 +5,7 @@ AG04450	NULL	Fetal lung fibroblast	male
 AG09309	NULL	Adult human toe fibroblast	female
 AG09319	NULL	Adult human gum tissue fibroblast	female
 AG10803	NULL	Adult Human Abdominal Skin Fibroblasts	male
-BJ	NULL	Skin Fibroblast	male
-Caco	NULL	Colorectal Adenocarcinoma	male
+Caco-2	NULL	Colorectal Adenocarcinoma	male
 CD133	NULL	Human CD133+ Hematopoietic Stem Cell	NULL
 CD36	NULL	Human CD36+ Erythrocyte Precursor Cell	NULL
 CD4	NULL	Human CD4 T-Cells	NULL
@@ -70,10 +69,10 @@ Melano	NULL	Melanocytes	NULL
 MultiCell	NULL	Multiple CellTypes used in core RegulatoryFeature set	NULL
 NB4	NULL	Acute Promyelocytic Leukemia Cell Line	NULL
 NHBE	NULL	Normal Human Bronchial Epithelial Cells	NULL
-NHDF	NULL	Neonatal Human Dermal Fibroblasts	NULL
+NHDF-neo	NULL	Neonatal Human Dermal Fibroblasts	NULL
 NHEK	NULL	Normal Human Epidermal Keratinocytes	female
 NHLF	NULL	Normal Human Long Fibroblasts	NULL
-NT2	NULL	Malignant Pluripotent Embryonical Carcinoma	male
+NT2-D1	NULL	Malignant Pluripotent Testicular Embryonal Carcinoma	male
 Panc1	NULL	Pancreatic Carcinoma	NULL
 PanIslets	NULL	Human Pancreatic Islets	male
 PFSK1	NULL	Neurectodermal cell line	male
@@ -85,12 +84,13 @@ Th1	NULL	Primary Human Th1 T Cells	NULL
 Th2	NULL	Primary Human Th2 T Cells	NULL
 U2OS	NULL	Human Bone Osteosarcoma Epithelial Cell	female
 WERIRB1	NULL	Retinoblastoma	male
-RPTEC	
-ProgFib	
-HSMMtube		
-Osteobl			
-MCF10A-Er-Src	
-HPAEpiC			
-NH-A			
-Fibrobl			
-GM12878-XiMat	
+RPTEC	NULL	Renal Proximal Tubule Epithelial Cells	NULL
+ProgFib	NULL	Fibroblasts, Hutchinson-Gilford progeria syndrome	male
+HSMMtube	NULL	skeletal muscle myotubes differentiated from the HSMM cell line	NULL
+Osteobl	NULL	Osteoblasts (NHOst)	NULL
+MCF10A-Er-Src	NULL	Mammary gland, non-tumorigenic epithelial, inducible cell line	NULL
+HPAEpiC	NULL	Pulmonary alveolar epithelial cells	NULL
+NH-A	NULL	Astrocytes 	NULL
+Fibrobl	NULL	Child Fibroblast	female
+GM12878-XiMat	NULL	Lymphoblastoid, Epstein-Barr Virus, Cloned for maternal X inactivation	female
+BJ	NULL	Foreskin fibroblast	male

@@ -47,7 +47,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.19 $
+$Revision: 1.21 $
 
 =head1 APPENDIX
 
@@ -67,7 +67,6 @@ sub param_defaults {
             'sort_clusters'         => 1,
             'immediate_dataflow'    => 1,
             'member_type'           => 'protein',
-            'input_id_prefix'       => 'protein',
     };
 }
 
@@ -86,7 +85,7 @@ sub write_output {
 
     if (defined $self->param('additional_clustersets')) {
         foreach my $clusterset_id (@{$self->param('additional_clustersets')}) {
-            $self->fetch_or_create_clusterset($clusterset_id);
+            $self->create_clusterset($clusterset_id);
         }
     }
 }

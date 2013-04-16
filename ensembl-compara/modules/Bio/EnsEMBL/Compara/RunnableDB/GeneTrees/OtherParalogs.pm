@@ -45,11 +45,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mm14 $
+$Author: mp12 $
 
 =head VERSION
 
-$Revision: 1.6 $
+$Revision: 1.8 $
 
 =head1 APPENDIX
 
@@ -80,10 +80,10 @@ sub param_defaults {
 sub write_output {
     my $self = shift @_;
 
-    $self->store_homologies;
+    $self->SUPER::write_output;
     if ($self->param('dataflow_subclusters')) {
         foreach my $child (@{$self->param('children')}) {
-            $self->dataflow_output_id({'protein_tree_id' => $child->node_id}, 2);
+            $self->dataflow_output_id({'gene_tree_id' => $child->node_id}, 2);
         }
     }
 }

@@ -1,3 +1,7 @@
-/FASTA_conf.pm/1.16/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/Flatfile_conf.pm/1.7/Wed Jul 18 10:56:26 2012//Tbranch-ensembl-68
+/Core_handover_conf.pm/1.11/Tue Sep  4 10:51:54 2012//Tbranch-ensembl-69
+/EG_misc_tasks_conf.pm/1.1/Mon Sep 24 12:46:28 2012//Tbranch-ensembl-69
+/FASTA_conf.pm/1.17/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-69
+/Flatfile_conf.pm/1.9/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-69
+/Otherf_handover_conf.pm/1.4/Thu Aug  9 09:41:29 2012//Tbranch-ensembl-69
+/Variation_handover_conf.pm/1.4/Wed Aug 22 12:21:34 2012//Tbranch-ensembl-69
 D

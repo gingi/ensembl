@@ -1,10 +1,12 @@
-#!/usr/local/ensembl/bin/perl -w
+#!/usr/bin/env perl
 
 use strict;
+use warnings;
 use DBI;
 use Getopt::Long;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::GenomeDB;
+use Bio::EnsEMBL::Compara::Graph::NewickParser;
 use Bio::SimpleAlign;
 use Bio::AlignIO;
 use Bio::EnsEMBL::Compara::NestedSet;
@@ -106,8 +108,10 @@ unless(defined($self->{'comparaDBA'})) {
 } 
 
 if($self->{'tree_id'}) {
-  my $treeDBA = $self->{'comparaDBA'}->get_ProteinTreeAdaptor;
-  $self->{'root'} = $treeDBA->fetch_node_by_node_id($self->{'tree_id'});
+  my $treeDBA = $self->{'comparaDBA'}->get_GeneTreeAdaptor;
+  my $tree = $treeDBA->fetch_by_dbID($self->{'tree_id'});
+  $tree->preload();
+  $self->{'root'} = $tree->root;
 }
 
 if($self->{'stats'}) {
@@ -168,7 +172,7 @@ sub fetch_primate_ncbi_taxa {
   my $taxonDBA = $self->{'comparaDBA'}->get_NCBITaxonAdaptor;
 
   my $marmoset = $taxonDBA->fetch_node_by_taxon_id(9483);
-  my $root = $marmoset->root->retain;
+  my $root = $marmoset->root;
   $root->merge_node_via_shared_ancestor($taxonDBA->fetch_node_by_taxon_id(9544));
   $root->merge_node_via_shared_ancestor($taxonDBA->fetch_node_by_taxon_id(9490));
   $root->merge_node_via_shared_ancestor($taxonDBA->fetch_node_by_taxon_id(9516));
@@ -405,25 +409,7 @@ sub fetch_protein_tree {
   my $self = shift;
   my $node_id = shift;
 
-  my $treeDBA = $self->{'comparaDBA'}->get_ProteinTreeAdaptor;
-  my $tree;
-
-  switch(1) {
-    case 1 {
-      $tree = $treeDBA->fetch_node_by_node_id($node_id);
-      #$tree = $tree->parent if($tree->parent);
-    }
-
-    case 2 {
-      my $member = $self->{'comparaDBA'}->get_MemberAdaptor->fetch_by_source_stable_id('ENSEMBLPEP', 'ENSP00000264731');
-      my $aligned_member = $treeDBA->fetch_AlignedMember_by_member_id_root_id($member->member_id, 68537);
-      warn ''.$aligned_member."\n";
-      $aligned_member->print_member;
-      $aligned_member->gene_member->print_member;
-      $tree = $aligned_member->root;
-      $treeDBA->fetch_all_children_for_node($tree);
-    }
-  }
+  my $tree = $self->{'root'};
 
   $tree->print_tree($self->{'scale'});
   warn("%d proteins\n", scalar(@{$tree->get_all_leaves}));
@@ -431,16 +417,6 @@ sub fetch_protein_tree {
   my $newick = $tree->newick_simple_format;
   warn("$newick\n");
 
-  $tree->release;
-  return;
-
-  $tree->flatten_tree->print_tree($self->{'scale'});
-
-  my $leaves = $tree->get_all_leaves;
-  foreach my $node (@{$leaves}) {
-    $node->print_member;
-  }
-  $tree->release;
 }
 
 sub query_ncbi_name {
@@ -462,30 +438,14 @@ sub fetch_protein_tree_with_gene {
   my $self = shift;
   my $gene_stable_id = shift;
 
-  my $treeDBA = $self->{'comparaDBA'}->get_ProteinTreeAdaptor;
-  my $tree;
-
   my $member = $self->{'comparaDBA'}->get_MemberAdaptor->fetch_by_source_stable_id('ENSEMBLGENE', $gene_stable_id);
   $member->print_member;
   $member->get_canonical_Member->print_member;
-  my $aligned_member = $treeDBA->fetch_AlignedMember_by_member_id_root_id($member->get_canonical_Member->member_id);
-  warn ''.$aligned_member."\n";
-  $aligned_member->print_member;
-  $aligned_member->gene_member->print_member;
-  $tree = $aligned_member->root;
-  $treeDBA->fetch_all_children_for_node($tree);
 
+  my $treeDBA = $self->{'comparaDBA'}->get_GeneTreeAdaptor;
+  my $tree = $treeDBA->fetch_default_for_Member($member);
+  $tree->preload();
   $tree->print_tree($self->{'scale'});
-  $tree->release;
-  return;
-
-  $tree->flatten_tree->print_tree($self->{'scale'});
-
-  my $leaves = $tree->get_all_leaves;
-  foreach my $node (@{$leaves}) {
-    $node->print_member;
-  }
-  $tree->release;
 }
 
 
@@ -493,7 +453,7 @@ sub create_taxon_tree {
   my $self = shift;
 
   my $count = 1;
-  my $root = Bio::EnsEMBL::Compara::NestedSet->new->retain;
+  my $root = Bio::EnsEMBL::Compara::NestedSet->new;
   $root->node_id($count++);
   $root->name('ROOT');
   
@@ -515,13 +475,12 @@ sub create_taxon_tree {
           $parent = $root->find_node_by_name($prev_level);
         } else { $parent=$root; }
 
-        my $new_node = Bio::EnsEMBL::Compara::NestedSet->new->retain;
+        my $new_node = Bio::EnsEMBL::Compara::NestedSet->new;
         $new_node->node_id($count++);
         $new_node->name($level_name);
         
         $parent->add_child($new_node);
 	      $new_node->distance_to_parent(0.01);
-        $new_node->release;
       }
       $prev_level = $level_name;
     }
@@ -535,11 +494,6 @@ sub create_taxon_tree {
   
 #   my $fetchTree = $self->{'comparaDBA'}->get_TreeNodeAdaptor->fetch_tree_rooted_at_node_id($root->node_id);
 #   $fetchTree->print_tree($self->{'scale'});
-
-  #cleanup memory
-  warn("ABOUT TO MANUALLY release tree\n");
-  $root->release;
-  warn("DONE\n");
 }
 
 sub parse_newick {
@@ -552,9 +506,8 @@ sub parse_newick {
     $newick .= $_;
   }
 
-  my $tree = $self->{'comparaDBA'}->get_ProteinTreeAdaptor->parse_newick_into_tree($newick);
+  my $tree = Bio::EnsEMBL::Compara::Graph::NewickParser::parse_newick_into_tree($newick);
   $tree->print_tree($self->{'scale'});
-  $tree->release;
 
 }
 
@@ -562,7 +515,7 @@ sub reroot {
   my $self = shift;
   my $node_id = $self->{'new_root_id'}; 
 
-  my $treeDBA = $self->{'comparaDBA'}->get_ProteinTreeAdaptor;
+  my $treeDBA = $self->{'comparaDBA'}->get_GeneTreeNodeAdaptor;
   my $node = $treeDBA->fetch_node_by_node_id($node_id);  
   warn "tree at ". $node->root->node_id ."\n";
   my $tree = $treeDBA->fetch_node_by_node_id($node->root->node_id);  
@@ -571,11 +524,10 @@ sub reroot {
   my $new_root = $tree->find_node_by_node_id($node_id);
   return unless $new_root;
 
-  my $tmp_root = Bio::EnsEMBL::Compara::NestedSet->new->retain;
+  my $tmp_root = Bio::EnsEMBL::Compara::NestedSet->new;
   $tmp_root->merge_children($tree);
 
-  $new_root->retain->re_root;
-  $tmp_root->release;
+  $new_root->re_root;
   $tree->merge_children($new_root);
 
   $tree->build_leftright_indexing;
@@ -584,8 +536,6 @@ sub reroot {
   $treeDBA->store($tree);
   $treeDBA->delete_node($new_root);
 
-  $tree->release;
-  $new_root->release;
 }
 
 

@@ -1,11 +1,10 @@
-
 #
 # Ensembl module for Bio::EnsEMBL::Funcgen::Set
 #
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Copyright (c) 1999-2012 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -25,38 +24,43 @@
 =head1 NAME
 
 Bio::EnsEMBL::Funcgen::Set - A module to represent a base Set object.
- 
 
 =head1 SYNOPSIS
 
-use Bio::EnsEMBL::Funcgen::Set;
+  use Bio::EnsEMBL::Funcgen::Set;
 
-@INC = qw (Bio::EnsEMBL::Funcgen::Set)
+  @INC = qw (Bio::EnsEMBL::Funcgen::Set)
 
-sub new {
-  my $caller = shift;
+  sub new {
+    my $caller = shift;
 	
-  my $class = ref($caller) || $caller;
+    my $class = ref($caller) || $caller;
 	
-  my $self = $class->SUPER::new(@_);
+    my $self = $class->SUPER::new(@_);
 
   
-}
+  }
 
 =head1 DESCRIPTION
 
-A base Set object which provides access common methods available across all Funcgen Set classes.
+A base Set object which provides common methods available across Funcgen Set classes.
 
+=head1 SEE ALSO
+
+Bio::EnsEMBL::Funcgen::FeatureSet
+Bio::EnsEMBL::Funcgen::ResultSet
+Bio::EnsEMBL::Funcgen::InputSet
+Bio::EnsEMBL::Funcgen::Storable
 
 =cut
 
-use strict;
-use warnings;
 
 package Bio::EnsEMBL::Funcgen::Set;
 
+use strict;
+use warnings;
 use Bio::EnsEMBL::Utils::Argument qw( rearrange );
-use Bio::EnsEMBL::Utils::Exception qw( throw warning deprecate);
+use Bio::EnsEMBL::Utils::Exception qw( throw deprecate );
 use Bio::EnsEMBL::Funcgen::Storable;
 
 use vars qw(@ISA);
@@ -64,6 +68,17 @@ use vars qw(@ISA);
 
 
 =head2 new
+
+  MANDATORY ARGS:
+  Arg [-NAME]          : String - name for this Set.
+  Arg [-FEATURE_TYPE]  : Bio::EnsEMBL::Funcgen::FeatureType
+  Arg [-FEATURE_CLASS] : String - Class of feature e.g. result, annotated, 
+                         regulatory, segmentation, external or dna_methylation.
+  OPTIONAL ARGS:
+  Arg [-CELL_TYPE]     : Bio::EnsEMBL::Funcgen::CellType
+  Arg [-ANALYSIS]      : Bio::EnsEMBL::Analysis
+  Arg [-DBID]          : Int
+  Arg [-ADAPTOR]       : Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor e.g. Input|Result|FeatureSetAdaptor.
 
   Example    : my $self = $class->SUPER::new(@_);
   Description: Constructor for Set objects.
@@ -74,250 +89,190 @@ use vars qw(@ISA);
 
 =cut
 
+#Remove -type param this when fully implemented
+#Removed -set_type param as this is auto generated from the namespace.
+#Change set_type to mandatory and pass from ineritors?
+#is_stored (dbID) check or leave to adaptor?
+
 sub new {
   my $caller = shift;
 	
-  my $class = ref($caller) || $caller;
-	
+  my $class = ref($caller) || $caller;	
   my $self = $class->SUPER::new(@_);
+
+  my ($name, $anal, $ftype, $ctype, $fclass, $type)
+    = rearrange(['NAME', 'ANALYSIS', 'FEATURE_TYPE', 'CELL_TYPE',
+                 'FEATURE_CLASS', 'TYPE'], @_);
   
-  #TYPE was never parsed here?
-  #Only in inheritants that used it i.e. FeatureSet
+  #MANDATORY PARAMS
+  throw('Need to specify a name')     if ! defined $name;
+  $self->{feature_class} = $fclass || $type;
+  throw('Need to specify a -feature_class') if ! defined $self->{feature_class};
+  #feature_class validation should be done in inheritor constructors
+  #against hash of valid enum field values
 
-  my ($name, $anal, $ftype, $ctype, $set_type, $fclass, $type)
-    = rearrange(['NAME', 'ANALYSIS', 'FEATURE_TYPE', 'CELL_TYPE', 'SET_TYPE', 'FEATURE_CLASS', 'TYPE'], @_);
+  if(! (ref($ftype) && $ftype->isa('Bio::EnsEMBL::Funcgen::FeatureType')) ){
+    throw('You must provide a valid Bio::EnsEMBL::Funcgen::FeatureType');
+  }
   
-  throw('Need to specify a name') if ! defined $name;
-
-  $self->set_type($set_type);
-  $self->feature_class($fclass);
-  $self->feature_class($type) if $type;#Remove this when fully implemented
-  $self->{'name'} = $name;
-  $self->cell_type($ctype) if $ctype;
-  $self->feature_type($ftype) if $ftype;
-
-  if(defined $anal){
-	$self->analysis($anal);
-  }elsif($self->set_type ne 'input'){
-	#Could move this to child Sets and just set analysis here
-	#As with ftype
-	throw('Must pass a valid -analysis parameter for a '.ref($self));
+  #OPTIONAL PARAMS
+  if(defined $ctype && 
+     ref($ctype) ne 'Bio::EnsEMBL::Funcgen::CellType'){
+    throw('-CELL_TYPE param must be a valid Bio::EnsEMBL::Funcgen::CellType');
   }
 
+  #Define set_type automatically
+  my @namespace = split/\:\:/, ref($self);
+  ($self->{_set_type} = lc($namespace[$#namespace])) =~ s/set//;	
+
+  if(defined $anal){
+    
+    if(ref($anal) ne 'Bio::EnsEMBL::Analysis'){
+      throw('-ANALYSIS argument must be a valid Bio::EnsEMBL::Analysis');
+    }
+
+    $self->{analysis} = $anal;
+  }
+  elsif($self->set_type ne 'input'){
+    #Currently not mandatory for input_sets
+    #Could move this to child Sets and just set analysis here
+    #As with ftype
+     throw('Must pass a valid -analysis parameter for a '.ref($self));
+  }
+
+  #Direct assignment as we have already validated
+  $self->{name}         = $name;
+  $self->{cell_type}    = $ctype;
+  $self->{feature_type} = $ftype;
+  
   return $self;
 }
 
 
-
-
-
-
 =head2 name
 
-  Example    : my $set->name('SET1');
-  Description: Getter/Setter for the name of this Set.
-  Returntype : string
+  Example    : my $set_name = $set->name;
+  Description: Getter for the name of this Set.
+  Returntype : String
   Exceptions : None
   Caller     : General
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
-sub name {
-  my $self = shift;
+sub name { return $_[0]->{name}; }
 
-  return $self->{'name'};
-}
 
 =head2 cell_type
 
-  Example    : my $dset_ctype_name = $dset->cell_type->name();
-  Description: Getter for the cell_type for this DataSet.
+  Example    : my $ctype_name = $set->cell_type->name;
+  Description: Getter for the CellType for this Set.
   Returntype : Bio::EnsEMBL::Funcgen::CellType
-  Exceptions : throws if arg not valid
+  Exceptions : None
   Caller     : General
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
-sub cell_type {
-  my ($self, $ctype) = @_;
+sub cell_type { return $_[0]->{cell_type}; }
 
-  if(defined $ctype){
-
-	if(! (ref($ctype) eq 'Bio::EnsEMBL::Funcgen::CellType'
-		  && $ctype->dbID())){ 
-	  throw('Must pass a valid stored Bio::EnsEMBL::Funcgen::CellType');
-	}
-	$self->{'cell_type'} = $ctype;
-  }
-
-  return $self->{'cell_type'};
-}
 
 =head2 feature_type
 
-  Example    : my $dset_ftype_name = $dset->feature_type->name();
-  Description: Getter for the feature_type for this DataSet.
+  Example    : my $ftype_name = $set->feature_type->name;
+  Description: Getter for the FeatureType of this Set.
   Returntype : Bio::EnsEMBL::Funcgen::FeatureType
-  Exceptions : Throws if arg not valid
+  Exceptions : None
   Caller     : General
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
-sub feature_type {
-  my ($self, $ftype) = @_;
-   
-  if(defined $ftype){
-
-	if(! (ref($ftype) eq 'Bio::EnsEMBL::Funcgen::FeatureType'
-		  && $ftype->dbID())){ 
-	  throw('Must pass a valid stored Bio::EnsEMBL::Funcgen::FeatureType');
-	}
-	$self->{'feature_type'} = $ftype;
-  }
-
-  		  
-  return $self->{'feature_type'};
-}
+sub feature_type { return $_[0]->{feature_type}; }
 
 
 =head2 feature_class
 
-  Arg[0]     : string - feature class e.g. result, annotated, regulatory or external.
-  Example    : my $fclass = $dset->feature_class;
+  Arg[0]     : String - feature class e.g. result, annotated, regulatory, external, dna_methylation or segmentation
+  Example    : my $fclass = $set->feature_class;
   Description: Getter for the feature_type for this Set.
-  Returntype : string 
+  Returntype : String
   Exceptions : None
   Caller     : General
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
-#Supercededs type method in FeatureSet
+sub feature_class { return $_[0]->{feature_class}; }
 
-sub feature_class {
-  my ($self, $fclass) = @_;
-   
-  if(defined $fclass){
 
-	#Leave this an implement in inheritants
-	#if(! grep /^${fclass}$/, ('annotated', 'result', 'external', 'regulatory')){
-	#  throw("You have no supplied a valid feature class:\t$fclass");
-	#}
+=head2 feature_class_name
 
-	$self->{'feature_class'} = $fclass;
+  Example    : my $fclass_adaptor_method = 'get_'.$set->feature_class.'Adaptor';
+  Description: Getter for the full feature class name for this Set e.g. AnnotatedFeature, RegulatoryFeature
+  Returntype : String
+  Exceptions : None
+  Caller     : General
+  Status     : Stable
+
+=cut
+
+#Test for adaptor
+#Can't set this in new as we won't pass the adaptor
+#unless creating from _obj_from_sth
+
+sub feature_class_name{
+  my $self = shift;
+  
+  if(! defined $self->{feature_class_name} ){
+    $self->{feature_class_name} = $self->adaptor->build_feature_class_name($self->feature_class);
   }
-
-  return $self->{'feature_class'};
+  
+  return $self->{feature_class_name};
 }
 
 
 
 =head2 analysis
 
-  Example    : my $anal_name = $set->analysis->logic_name();
-  Description: Getter for the analysis attribute for this Set.
+  Example    : my $analysis_name = $set->analysis->logic_name;
+  Description: Getter for the Analysis attribute of a Set.
   Returntype : Bio::EnsEMBL::Analysis
   Exceptions : None
   Caller     : General
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
-sub analysis {
-  my $self = shift;
+#Not currently present in input_set
+#implement in input_set instead of format
 
-  if(@_){
-	throw('Must pass a valid stored Analysis') if (! (ref($_[0]) eq 'Bio::EnsEMBL::Analysis'
-													  && $_[0]->dbID()));
-	$self->{'analysis'} = shift;
-  }
-  
- 
-  return $self->{'analysis'};
-}
-
-=head2 display_label
-
-  Example    : print $set->display_label();
-  Description: Getter for the display_label attribute for this Set.
-               This is more appropriate for teh predicted_features of the set.
-               Use the individual display_labels for each raw result set.
-  Returntype : str
-  Exceptions : None
-  Caller     : General
-  Status     : At Risk
-
-=cut
-
-sub display_label {
-  my $self = shift;
-
- 
-  #Add display label in table?
-  #Can we aborc ResultSet method into this?
-
-  if(! $self->{'display_label'}){
-
-	#if($self->product_FeatureSet->feature_type->class() eq 'Regulatory Feature'){
-	#  $self->{'display_label'} = 'Regulatory Features';
-	#}
-	#else{
-
-	#This only works for annotated/regulatory_feature sets and result sets
-	#Move to other Set classes?
-
-	$self->{'display_label'} = $self->feature_type->name()." -";
-	$self->{'display_label'} .= " ".($self->cell_type->display_label() || 
-									 $self->cell_type->description()   ||
-									 $self->cell_type()->name());
-	
-
-	if($self->set_type eq 'result'){
-	  $self->{'display_label'} .= " signal";
-	}
-	else{
-	  $self->{'display_label'} .= " enriched sites";
-	}
-  }
- 
-  return $self->{'display_label'};
-}
-
+sub analysis {  return $_[0]->{analysis}; }
 
 
 =head2 set_type
 
   Example    : my $set_type = $set->set_type;
-  Description: Getter for the Set type for this Set.
-  Returntype : string e.g. result, feature, data, input
+  Description: Getter for the set type attribute of this Set e.g. result, feature, input
+  Returntype : String
   Exceptions : None
   Caller     : General
-  Status     : At Risk
+  Status     : Stable
 
 =cut
 
-sub set_type {
-  my ($self, $set_type) = @_;
-   
-  if(defined $set_type){
-	$self->{'_set_type'} = $set_type;
-  }
-  elsif(! defined $self->{'_set_type'}){
-	my @namespace = split/\:\:/, ref($self);
-	($self->{'_set_type'} = lc($namespace[$#namespace])) =~ s/set//;
-	
-  }
+sub set_type { return $_[0]->{_set_type}; }
 
-  return $self->{'_set_type'};
-}
+
+
+
+### DEPRECATED METHODS ###
+
 
 =head2 type
 
   Example    : my $type = $set->type;
-  Description: Getter for the type for this Set.
+  Description: DEPRECATED Getter for the type for this Set.
                e.g. annotated, external, regulatory for FeatureSets
                     or 
                     array, sequencing for InputSets
@@ -332,14 +287,8 @@ sub set_type {
 
 sub type {
   my $self = shift;
-   
-  deprecate("Please use feature_class instead");
-  
+  deprecate('Please use feature_class instead');
   return $self->feature_class(@_);
-
-  #$self->{'feature_class'} = shift if @_;
-  
-  #return $self->{'feature_class'};
 }
 
 

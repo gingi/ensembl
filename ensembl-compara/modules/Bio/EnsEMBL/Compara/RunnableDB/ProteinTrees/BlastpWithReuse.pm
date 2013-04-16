@@ -56,6 +56,7 @@ use strict;
 use warnings;
 
 use Bio::EnsEMBL::Utils::Exception qw(throw warning);
+use Bio::EnsEMBL::Analysis;
 use Bio::EnsEMBL::Analysis::Runnable::Blast;
 use Bio::EnsEMBL::Analysis::Tools::BPliteWrapper;
 use Bio::EnsEMBL::Analysis::Tools::FilterBPlite;
@@ -109,8 +110,7 @@ sub fetch_input {
 
     my $mlss_id         = $self->param('mlss_id') or die "'mlss_id' is an obligatory parameter";
     my $mlss            = $self->compara_dba()->get_MethodLinkSpeciesSetAdaptor->fetch_by_dbID($mlss_id) or die "Could not fetch mlss with dbID=$mlss_id";
-    my $species_set     = $mlss->species_set;
-    my $genome_db_list  = (ref($species_set) eq 'ARRAY') ? $species_set : $species_set->genome_dbs();
+    my $genome_db_list  = $mlss->species_set_obj->genome_dbs;
 
     print STDERR "Found ", scalar(@$genome_db_list), " genomes to blast this member against.\n" if ($self->debug);
     $self->param('genome_db_list', $genome_db_list);
@@ -145,6 +145,8 @@ sub run {
     die "Cannot execute '$wublastp_exe'" unless(-x $wublastp_exe);
 
     my $blast_tmp_dir     = $self->param('blast_tmp_dir');
+    
+    my $fake_analysis     = Bio::EnsEMBL::Analysis->new;
 
     my %cross_pafs = ();
 
@@ -188,7 +190,7 @@ sub run {
          -query     => $query,
          -database  => $cross_genome_dbfile,
          -program   => $wublastp_exe,
-         -analysis  => $self->analysis,
+         -analysis  => $fake_analysis,
          -options   => $blast_options,
          -parser    => $parser,
          -filter    => undef,
@@ -201,7 +203,7 @@ sub run {
       eval { $runnable->run(); };
       ## Catch errors if any
       if ($@) {
-        printf(STDERR ref($self->runnable)." threw exception:\n$@$_");
+        print STDERR ref($runnable)." threw exception:\n$@$_";
         if($@ =~ /"VOID"/) {
           print STDERR "this is OK: member_id='$member_id' doesn't have sufficient structure for a search\n";
         } else {
@@ -216,7 +218,6 @@ sub run {
           #The returned FeaturePair objects thus need to be reset to the real analysis object
       foreach my $feature (@{$runnable->output}) {
         if($feature->isa('Bio::EnsEMBL::FeaturePair')) {
-          $feature->analysis($self->analysis);
           $feature->{null_cigar} = 1 if ($self->param('null_cigar'));
         }
         push @{$cross_pafs{$genome_db->dbID}}, $feature;

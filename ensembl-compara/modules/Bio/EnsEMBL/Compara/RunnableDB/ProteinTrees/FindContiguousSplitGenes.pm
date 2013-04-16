@@ -33,7 +33,7 @@ be true:
 =head1 SYNOPSIS
 
 standaloneJob.pl Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::FindContiguousSplitGenes \
- -compara_db mysql://server/mm14_compara_homology_67 -protein_tree_id 267568
+ -compara_db mysql://server/mm14_compara_homology_67 -gene_tree_id 267568
 
 =head1 AUTHORSHIP
 
@@ -41,11 +41,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mm14 $
+$Author: mp12 $
 
 =head VERSION
 
-$Revision: 1.7 $
+$Revision: 1.11 $
 
 =head1 APPENDIX
 
@@ -79,10 +79,8 @@ sub param_defaults {
 sub fetch_input {
     my $self = shift @_;
 
-    $self->check_if_exit_cleanly;
-
-    my $protein_tree_id = $self->param('protein_tree_id') or die "'protein_tree_id' is an obligatory parameter";
-    my $protein_tree = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($protein_tree_id) or die "Could not fetch protein_tree with protein_tree_id='$protein_tree_id'";
+    my $gene_tree_id = $self->param('gene_tree_id') or die "'gene_tree_id' is an obligatory parameter";
+    my $protein_tree = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($gene_tree_id) or die "Could not fetch protein_tree with gene_tree_id='$gene_tree_id'";
     $protein_tree->print_tree(0.0001) if($self->debug);
     $protein_tree->preload();
 
@@ -94,7 +92,6 @@ sub fetch_input {
 sub run {
     my $self = shift;
 
-    $self->check_if_exit_cleanly;
     $self->check_for_split_genes
 }
 
@@ -102,21 +99,20 @@ sub run {
 sub write_output {
     my $self = shift;
 
-    $self->check_if_exit_cleanly;
     $self->store_split_genes;
 }
 
 
-sub DESTROY {
+sub post_cleanup {
     my $self = shift;
 
     if(my $protein_tree = $self->param('protein_tree')) {
-        printf("FindContiguousSplitGenes::DESTROY  releasing tree\n") if($self->debug);
+        printf("FindContiguousSplitGenes::post_cleanup  releasing tree\n") if($self->debug);
         $protein_tree->release_tree;
         $self->param('protein_tree', undef);
     }
 
-    $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+    $self->SUPER::post_cleanup if $self->can("SUPER::post_cleanup");
 }
 
 
@@ -255,7 +251,7 @@ sub store_split_genes {
     my $holding_node = $connected_split_genes->holding_node;
 
     my $sth0 = $self->compara_dba->dbc->prepare('DELETE split_genes FROM split_genes JOIN gene_tree_member USING (member_id) JOIN gene_tree_node USING (node_id) WHERE root_id = ?');
-    $sth0->execute($self->param('protein_tree_id'));
+    $sth0->execute($self->param('gene_tree_id'));
     $sth0->finish;
 
     my $sth1 = $self->compara_dba->dbc->prepare('INSERT INTO split_genes (member_id) VALUES (?)');

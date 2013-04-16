@@ -1,2 +1,5 @@
-/set_canonical_transcripts.pl/1.20/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
+/emit_canonical_encodings.pl/1.2/Wed Aug 22 15:40:22 2012//Tbranch-ensembl-69
+/reason_changes.pl/1.3/Mon Sep 24 10:34:51 2012//Tbranch-ensembl-69
+/select_canonical_transcripts.pl/1.7/Tue Aug 21 16:35:59 2012//Tbranch-ensembl-69
+/set_canonical_transcripts.pl/1.20/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-69
 D

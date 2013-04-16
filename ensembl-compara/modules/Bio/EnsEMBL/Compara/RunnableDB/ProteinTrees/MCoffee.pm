@@ -22,25 +22,9 @@ Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::MCoffee
 
 =head1 DESCRIPTION
 
-This Analysis/RunnableDB is designed to take a protein_tree cluster as input
-Run an MCOFFEE multiple alignment on it, and store the resulting alignment
-back into the protein_tree_member table.
-
-input_id/parameters format eg: "{'protein_tree_id'=>726093}"
-    protein_tree_id       : use family_id to run multiple alignment on its members
-    options               : commandline options to pass to the 'mcoffee' program
-
-=head1 SYNOPSIS
-
-my $db     = Bio::EnsEMBL::Compara::DBAdaptor->new($locator);
-my $mcoffee = Bio::EnsEMBL::Compara::RunnableDB::Mcoffee->new (
-                                                    -db      => $db,
-                                                    -input_id   => $input_id,
-                                                    -analysis   => $analysis );
-$mcoffee->fetch_input(); #reads from DB
-$mcoffee->run();
-$mcoffee->output();
-$mcoffee->write_output(); #writes to DB
+This RunnableDB implements Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::MSA
+by calling MCoffee. It needs the following parameters:
+ - mcoffee_exe
 
 =head1 AUTHORSHIP
 
@@ -52,7 +36,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.16 $
+$Revision: 1.19 $
 
 =head1 APPENDIX
 
@@ -85,32 +69,24 @@ sub param_defaults {
 # Redefined methods from the base class (MSA)
 ########################################################
 
-sub write_output {
-    my $self = shift @_;
-
-    $self->SUPER::write_output(@_);
-
-    # Alignment redo mapping.
-    my ($from_clusterset_id, $to_clusterset_id) = split(':', $self->param('redo'));
-    my $redo_tag = "MCoffee_redo_".$from_clusterset_id."_".$to_clusterset_id;
-    $self->param('protein_tree')->tree->store_tag("$redo_tag",$self->param('protein_tree_id')) if ($self->param('redo'));
-}
-
 sub parse_and_store_alignment_into_proteintree {
     my $self = shift;
 
-    $self->SUPER::parse_and_store_alignment_into_proteintree();
+    my $aln_ok = $self->SUPER::parse_and_store_alignment_into_proteintree();
+    return 0 unless $aln_ok;
 
-    return if ($self->param('single_peptide_tree'));
     my $mcoffee_scores = $self->param('mcoffee_scores');
-    return unless defined $mcoffee_scores;
+    return 0 unless defined $mcoffee_scores;
 
     #
     # Read in the scores file manually.
     #
     my %score_hash;
     my $FH = IO::File->new();
-    $FH->open($mcoffee_scores) || $self->throw("Could not open alignment scores file [$mcoffee_scores]");
+    unless ($FH->open($mcoffee_scores)) {
+        $self->warning("Could not open alignment scores file [$mcoffee_scores]");
+        return 0;
+    }
     <$FH>; #skip header
     my $i=0;
     while(<$FH>) {
@@ -140,6 +116,7 @@ sub parse_and_store_alignment_into_proteintree {
         printf("Updating the score of %s : %s\n",$member->stable_id,$score_string) if ($self->debug);
         $member->store_tag('aln_score', $score_string);
     }
+    return 1;
 }
 
 
@@ -177,10 +154,11 @@ sub get_msa_command_line {
     } elsif ($self->param('method') eq 'prank') {
         # PRANK: phylogeny-aware alignment.
         $method_string .= "prank_msa";
-    } elsif (defined($self->param('redo')) and ($self->param('method') eq 'unalign') ) {
+    } elsif ($self->param('redo_alnname') and ($self->param('method') eq 'unalign') ) {
         my $cutoff = $self->param('cutoff') || 2;
         # Unalign module
         $method_string = " -other_pg seq_reformat -in " . $self->param('redo_alnname') ." -action +aln2overaln unalign 2 30 5 15 0 1>$msa_output";
+        $self->param('mcoffee_scores', undef); #these wont have scores
     } else {
         throw ("Improper method parameter: ".$self->param('method'));
     }
@@ -228,12 +206,12 @@ sub get_msa_command_line {
     die "Cannot execute '$mcoffee_exe'" unless(-x $mcoffee_exe);
 
     $cmd = $mcoffee_exe;
-    $cmd .= ' '.$input_fasta unless ($self->param('redo'));
-    $cmd .= ' '. $self->param('options');
-    if (defined($self->param('redo')) and ($self->param('method') eq 'unalign') ) {
-        $self->param('mcoffee_scores', undef); #these wont have scores
+    if ($self->param('redo_alnname') and ($self->param('method') eq 'unalign') ) {
+        $cmd .= ' '. $self->param('options');
         $cmd .= ' '. $method_string;
     } else {
+        $cmd .= ' '.$input_fasta;
+        $cmd .= ' '. $self->param('options');
         $cmd .= " -parameters=$paramsfile";
     }
 

@@ -4,7 +4,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Copyright (c) 1999-2012 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -56,10 +56,12 @@ use Bio::EnsEMBL::Funcgen::Set;
 use vars qw(@ISA);
 @ISA = qw(Bio::EnsEMBL::Funcgen::Set);
 
-my %valid_classes = ( annotated    => undef,
-                      regulatory   => undef,
-                      external     => undef,
-                      segmentation => undef, );
+my %valid_classes = ( 
+                     annotated    => undef,
+                     regulatory   => undef,
+                     external     => undef,
+                     segmentation => undef, 
+                    );
 
 =head2 new
 
@@ -99,7 +101,7 @@ sub new {
   my $self   = $class->SUPER::new(@_);
 
   my ( $desc, $dlabel, $iset_id, $iset, $exp_id, $exp ) =
-    rearrange( [ 
+    rearrange( [
                 'DESCRIPTION',   'DISPLAY_LABEL',
                 'INPUT_SET_ID', 'INPUT_SET', 'EXPERIMENT_ID', 'EXPERIMENT'
                ],
@@ -115,27 +117,27 @@ sub new {
 
   #Mandatory params checks here (setting done in Set.pm)
   throw('Must provide a FeatureType')
-    if ( !defined $self->feature_type );
+    if ( ! defined $self->feature_type );
 
  #explicit type check here to avoid invalid types being imported as NULL
  #subsequently throwing errors on retrieval
   my $type = $self->feature_class;
 
-  if ( !( $type && exists $valid_classes{$type} ) ) {
+  if ( ! ( $type && exists $valid_classes{$type} ) ) {
     throw( 'You must define a valid FeatureSet type e.g. ' .
            join( ', ', keys %valid_classes ) );
   }
 
   #Direct assignment to prevent need for set arg test in method
 
-  $self->{'description'}   = $desc   if defined $desc;
-  $self->{'display_label'} = $dlabel if defined $dlabel;
-  $self->{'input_set_id'} = $iset_id if defined $iset_id;
+  $self->{description}   = $desc   if defined $desc;
+  $self->{display_label} = $dlabel if defined $dlabel;
+  $self->{input_set_id} = $iset_id if defined $iset_id;
 
   if ( defined $iset ) {
     #Exp obj is only passed during object storing
     #so let the adaptor do is_stored_and_valid
-    $self->{'input_set'} = $iset;
+    $self->{input_set} = $iset;
   }
 
   return $self;
@@ -174,7 +176,7 @@ sub new_fast {
 =cut
 
 sub description {
-  return $_[0]->{'description'};
+  return $_[0]->{description};
 }
 
 
@@ -193,21 +195,20 @@ sub description {
 sub display_label {
   my $self = shift;
 
-  if ( !$self->{'display_label'} ) {
+  if ( ! defined $self->{display_label} ) {
 
-    if ( $self->feature_type->class() eq 'Regulatory Feature' ) {
-      $self->{'display_label'} = $self->name;
+    if ( $self->feature_class eq 'regulatory' ) {
+      $self->{display_label} = $self->name;
     }
     else {
       #This still fails here if we don't have a class or a cell_type set
 
-      $self->{'display_label'} =
-        $self->feature_type->name() . " - " . $self->cell_type->name() .
-        " Enriched Sites";
+      $self->{display_label} =
+        $self->feature_type->name.' - '. $self->cell_type->name.' enriched sites';
     }
   }
 
-  return $self->{'display_label'};
+  return $self->{display_label};
 }
 
 
@@ -217,7 +218,7 @@ sub display_label {
 
   Example    : 
   Description: Retrieves and caches FeatureAdaptor of feature_set type 
-  Returntype : Bio::EnsEMBL::Funcgen::DBSQL::ucfirst($self->feature_class())FeatureAdaptor
+  Returntype : Bio::EnsEMBL::Funcgen::DBSQL::SetFeatureAdaptor
   Exceptions : None
   Caller     : General
   Status     : At Risk
@@ -230,15 +231,14 @@ sub get_FeatureAdaptor{
 
   if(! exists $self->{'adaptor_refs'}){
 
-	foreach my $valid_class(keys %valid_classes){
-	  my $method = 'get_'.ucfirst($valid_class).'FeatureAdaptor';
-
-	  $self->{'adaptor_refs'}{$valid_class} =  $self->adaptor->db->$method;
-	}
+    foreach my $valid_class(keys %valid_classes){
+      my $method = 'get_'.$self->adaptor->build_feature_class_name($valid_class).'Adaptor';
+      
+      $self->{'adaptor_refs'}{$valid_class} = $self->adaptor->db->$method;
+    }
   }
   
   return $self->{'adaptor_refs'}->{$self->feature_class()};
-
 }
 
 
@@ -394,7 +394,7 @@ sub get_InputSet{
   Returntype : Arrayref of Strings
   Exceptions : None
   Caller     : Webcode zmenus
-  Status     : At Risk - remove, to be done by webcode?
+  Status     : At Risk - remove, to be done by webcode? or move to InputSet and wrap from here
 
 =cut
 
@@ -408,7 +408,6 @@ sub source_label{
     my @source_labels;
 
     if ($input_set) {
-
 
       foreach my $isset(@{$input_set->get_InputSubsets}){
 
@@ -427,7 +426,10 @@ sub source_label{
       }
     }
   
- 
+    #select input_set_id, count(distinct archive_id) as cnt , group_concat(archive_id) from input_subset where archive_id is not NULL group by input_set_id having cnt >1;
+   
+
+
     $self->{source_label} = join(' ', @source_labels);
   }
 

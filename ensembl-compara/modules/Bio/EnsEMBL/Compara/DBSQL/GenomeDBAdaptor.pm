@@ -58,6 +58,11 @@ use Bio::EnsEMBL::Utils::Exception;
 use base ('Bio::EnsEMBL::Compara::DBSQL::BaseAdaptor');
 
 
+sub object_class {
+    return 'Bio::EnsEMBL::Compara::GenomeDB';
+}
+
+
 =head2 fetch_by_dbID
 
   Arg [1]    : int $dbid
@@ -153,10 +158,10 @@ sub fetch_by_taxon_id {
     my ($self, $taxon_id) = @_;
 
     throw("taxon_id argument is required") unless($taxon_id);
-
     my $found_gdb;
     foreach my $gdb (@{ $self->fetch_all }) {
-        if( ($gdb->taxon_id == $taxon_id) and $gdb->assembly_default ) {
+        #Must test for $gdb->taxon_id since ancestral_sequences do not have a taxon_id
+        if( ($gdb->taxon_id and  $gdb->taxon_id == $taxon_id) and $gdb->assembly_default ) {
             if($found_gdb) {
                 warning("Multiple matches found for taxon_id '$taxon_id', returning the first one");
             } else {
@@ -443,9 +448,9 @@ sub cache_all {
         while ($sth->fetch()) {
 
             my $gdb = Bio::EnsEMBL::Compara::GenomeDB->new_fast( {
+                'adaptor'   => $self,           # field name in sync with Bio::EnsEMBL::Storable
+                'dbID'      => $dbid,           # field name in sync with Bio::EnsEMBL::Storable
                 'name'      => $name,
-                'dbID'      => $dbid,
-                'adaptor'   => $self,
                 'assembly'  => $assembly,
                 'assembly_default' => $assembly_default,
                 'genebuild' => $genebuild,

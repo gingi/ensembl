@@ -1,12 +1,10 @@
-/DumpUpstreamGenes.pl/1.3/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
-/InsertParaloguesPrediction.pl/1.8/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
-/codeml.ctl/1.1/Wed Mar 10 17:06:16 2004//Tbranch-ensembl-68
-/codeml.ctl.hash/1.1/Fri Jan 14 16:02:21 2005//Tbranch-ensembl-68
-/comparaDirectLoadHomology.pl/1.8/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
-/detectSplitGenes.pl/1.2/Thu Aug  4 10:45:32 2005//Tbranch-ensembl-68
-/extractAllOrthologues.pl/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
-/generate_dN_dS.pl/1.5/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
-/generate_dN_dS_stats.pl/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
-/getHomologyAlignment.pl/1.7/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
-/transfer_homologies.pl/1.5/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/DumpUpstreamGenes.pl/1.4/Tue Apr 16 20:39:05 2013//Tbranch-ensembl-69
+/InsertParaloguesPrediction.pl/1.9/Tue Apr 16 20:39:05 2013//Tbranch-ensembl-69
+/codeml.ctl/1.1/Wed Mar 10 17:06:16 2004//Tbranch-ensembl-69
+/codeml.ctl.hash/1.1/Fri Jan 14 16:02:21 2005//Tbranch-ensembl-69
+/comparaDirectLoadHomology.pl/1.9/Tue Apr 16 20:39:05 2013//Tbranch-ensembl-69
+/extractAllOrthologues.pl/1.3/Tue Apr 16 20:39:05 2013//Tbranch-ensembl-69
+/generate_dN_dS_stats.pl/1.4/Tue Apr 16 20:39:05 2013//Tbranch-ensembl-69
+/getHomologyAlignment.pl/1.8/Tue Apr 16 20:39:05 2013//Tbranch-ensembl-69
+/transfer_homologies.pl/1.6/Tue Apr 16 20:39:05 2013//Tbranch-ensembl-69
 D

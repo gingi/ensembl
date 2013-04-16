@@ -2,7 +2,7 @@ D/FASTA////
 D/Flatfile////
 D/PipeConfig////
 D/Production////
-/Base.pm/1.12/Wed Jun 27 10:58:59 2012//Tbranch-ensembl-68
-/ChecksumGenerator.pm/1.1/Wed May 16 15:19:47 2012//Tbranch-ensembl-68
-/FindDirs.pm/1.1/Wed May 16 15:19:47 2012//Tbranch-ensembl-68
-/SpeciesFactory.pm/1.1/Wed May 16 15:19:47 2012//Tbranch-ensembl-68
+/Base.pm/1.13/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-69
+/ChecksumGenerator.pm/1.1/Wed May 16 15:19:47 2012//Tbranch-ensembl-69
+/FindDirs.pm/1.1/Wed May 16 15:19:47 2012//Tbranch-ensembl-69
+/SpeciesFactory.pm/1.1/Wed May 16 15:19:47 2012//Tbranch-ensembl-69

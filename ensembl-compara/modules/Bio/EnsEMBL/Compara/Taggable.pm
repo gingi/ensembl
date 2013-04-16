@@ -30,7 +30,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.10 $
+$Revision: 1.11 $
 
 =head1 APPENDIX
 
@@ -385,7 +385,7 @@ sub _load_tags {
 
     return if exists $self->{'_tags'};
     $self->{'_tags'} = {};
-    if($self->adaptor and $self->adaptor->isa("Bio::EnsEMBL::Compara::DBSQL::TagAdaptor")) {
+    if($self->can('adaptor') and $self->adaptor and $self->adaptor->isa("Bio::EnsEMBL::Compara::DBSQL::TagAdaptor")) {
         $self->adaptor->_load_tagvalues($self);
     }
 }

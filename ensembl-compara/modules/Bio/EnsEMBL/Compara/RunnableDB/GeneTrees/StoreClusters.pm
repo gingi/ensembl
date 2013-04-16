@@ -38,7 +38,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.16 $
+$Revision: 1.19 $
 
 =head1 APPENDIX
 
@@ -65,7 +65,7 @@ use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
                branch 2.
   Arg [1]    : clusterset_id of the new clusterset
   Arg [2]    : hashref of hashref with at least a 'members' key
-  Parameters : member_type, immediate_dataflow, input_id_prefix, sort_clusters
+  Parameters : member_type, immediate_dataflow, sort_clusters
   Returntype : none
   Exceptions : none
   Caller     : general
@@ -77,7 +77,7 @@ sub store_and_dataflow_clusterset {
     my $clusterset_id = shift;
     my $allclusters = shift;
     
-    my $clusterset = $self->fetch_or_create_clusterset($clusterset_id);
+    my $clusterset = $self->create_clusterset($clusterset_id);
     print STDERR "STORING AND DATAFLOWING THE CLUSTERSET\n" if ($self->debug());
     for my $cluster_name (keys %$allclusters) {
         print STDERR "$cluster_name has ", scalar @{$allclusters->{$cluster_name}{members}} , " members (leaves)\n";
@@ -102,10 +102,9 @@ sub store_and_dataflow_clusterset {
 }
 
 
-=head2 fetch_or_create_clusterset
+=head2 create_clusterset
 
-  Description: Create an empty clusterset and store it in the database if not
-                present yet. Otherwise, return the existing object
+  Description: Create an empty clusterset and store it in the database.
   Parameters : mlss_id, member_type
   Arg [1]    : clusterset_id of the new clusterset
   Returntype : GeneTree: the created clusterset
@@ -114,39 +113,23 @@ sub store_and_dataflow_clusterset {
 
 =cut
 
-sub fetch_or_create_clusterset {
+sub create_clusterset {
     my $self = shift;
     my $clusterset_id = shift;
 
     my $mlss_id = $self->param('mlss_id') or die "'mlss_id' is an obligatory parameter";
 
-    my %params = (
+    # Create the clusterset and associate mlss
+    my $clusterset = new Bio::EnsEMBL::Compara::GeneTree(
         -member_type => $self->param('member_type'),
         -tree_type => 'clusterset',
         -method_link_species_set_id => $mlss_id,
         -clusterset_id => $clusterset_id,
     );
 
-    # Tries to get it from the database
-    my $clusterset = $self->compara_dba->get_GeneTreeAdaptor->fetch_all(%params);
-    return $clusterset->[0] if scalar(@$clusterset);
-
-    $self->compara_dba->dbc->do('LOCK TABLES gene_tree_root WRITE, gene_tree_root AS gtr READ, gene_tree_node WRITE');
-
-    # In case someone has meanwhile created the clusterset
-    $clusterset = $self->compara_dba->get_GeneTreeAdaptor->fetch_all(%params);
-   
-    if (scalar(@$clusterset)) {
-        $clusterset = $clusterset->[0];
-    } else {
-        # Create the clusterset and associate mlss
-        $clusterset = new Bio::EnsEMBL::Compara::GeneTree(%params);
-        # Assumes a root node will be automatically created
-        $self->compara_dba->get_GeneTreeAdaptor->store($clusterset);
-        print STDERR "Clusterset '$clusterset_id' created with root_id=", $clusterset->root_id, "\n" if $self->debug;
-    }
-
-    $self->compara_dba->dbc->do('UNLOCK TABLES');
+    # Assumes a root node will be automatically created
+    $self->compara_dba->get_GeneTreeAdaptor->store($clusterset);
+    print STDERR "Clusterset '$clusterset_id' created with root_id=", $clusterset->root_id, "\n" if $self->debug;
     return $clusterset;
 }
 
@@ -155,7 +138,7 @@ sub fetch_or_create_clusterset {
 
   Description: Create a new cluster (a root node linked to many leafes) and
                store it in the database.
-  Parameters : member_type, immediate_dataflow, input_id_prefix
+  Parameters : member_type, immediate_dataflow 
   Arg [1]    : clusterset to attach the new cluster to
   Arg [2]    : cluster definition (hash reference with a 'members' key and other tags)
   Returntype : GeneTree: the created cluster
@@ -210,7 +193,7 @@ sub add_cluster {
 
     # Dataflows immediately or keep it for later
     if ($self->param('immediate_dataflow')) {
-        $self->dataflow_output_id({ $self->param('input_id_prefix').'_tree_id' => $cluster->root_id, }, 2);
+        $self->dataflow_output_id({ 'gene_tree_id' => $cluster->root_id, }, 2);
     }
 
     # Frees memory
@@ -248,7 +231,7 @@ sub finish_store_clusterset {
 
   Description: Creates one job per cluster into branch 2.
                Flows into branch 1 with the clusterset_id of the new clusterset
-  Parameters : input_id_prefix
+  Parameters : (none)
   Arg [1]    : clusterset
   Arg [2]    : array reference of root_id
   Returntype : none
@@ -264,7 +247,7 @@ sub dataflow_clusters {
 
     # Loop on all the clusters that haven't been dataflown yet
     foreach my $tree_id (@$root_ids) {
-        $self->dataflow_output_id({ $self->param('input_id_prefix').'_tree_id' => $tree_id, }, 2);
+        $self->dataflow_output_id({ 'gene_tree_id' => $tree_id, }, 2);
     }
     $self->dataflow_output_id({ 'clusterset_id' => $clusterset->clusterset_id }, 1);
 }

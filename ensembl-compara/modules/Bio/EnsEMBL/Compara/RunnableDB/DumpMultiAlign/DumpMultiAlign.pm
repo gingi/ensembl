@@ -51,8 +51,10 @@ sub run {
 
     #Write a temporary file to store gabs to dump
     if ($self->param('start') && $self->param('end')) {
-	$self->_write_gab_file();
-	$cmd .= " --file_of_genomic_align_block_ids " . $self->param('tmp_file');
+        my $tmp_file = $self->_write_gab_file();
+        $cmd .= " --file_of_genomic_align_block_ids " . $tmp_file;
+
+        $self->param('tmp_file', $tmp_file);
     }
 
     #substitute any hashes in analysis parameters with the correct values from analysis_job
@@ -160,7 +162,7 @@ sub _healthcheck {
 	#Store results in table. Not really necessary but good to have 
 	#visual confirmation all is well
 	my $sql = "INSERT INTO healthcheck (filename, expected,dumped) VALUES (?,?,?)";
-	my $sth = $self->analysis->adaptor->dbc->prepare($sql);
+	my $sth = $self->db->dbc->prepare($sql);
 	$sth->execute($self->param('output_file'), $self->param('num_blocks'), $num_blocks);
 	$sth->finish();
     }
@@ -173,21 +175,22 @@ sub _healthcheck {
 sub _write_gab_file {
     my ($self) = @_;
 
-    my $sql = "SELECT * FROM other_gab WHERE genomic_align_block_id BETWEEN ? AND ?";
-    my $sth = $self->analysis->adaptor->dbc->prepare($sql);
+    my $sql = "SELECT genomic_align_block_id FROM other_gab WHERE genomic_align_block_id BETWEEN ? AND ?";
+    my $sth = $self->db->dbc->prepare($sql);
     $sth->execute($self->param('start'), $self->param('end'));
     
-    my $tmp_file = "/tmp/other_gab_$$.out";
-    $self->param('tmp_file', $tmp_file);
+    my $worker_temp_directory   = $self->worker_temp_directory;
+
+    my $tmp_file = $worker_temp_directory . "other_gab_$$.out";
     
     open(FILE, ">$tmp_file") || die ("Couldn't open $tmp_file for writing"); 
-
-    while (my $row = $sth->fetchrow_arrayref) {
-	print FILE $row->[0] . "\n";
-
+    while (my $row = $sth->fetchrow) {
+	print FILE $row . "\n";
     }
     close(FILE);
     $sth->finish;
+
+    return $tmp_file;
 }
 
 1;

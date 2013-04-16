@@ -8,7 +8,6 @@ use File::Basename;
 use IPC::Open3;
 
 use XrefMapper::db;
-use XrefMapper::uniparc;
 
 
 =head2 new
@@ -47,23 +46,6 @@ sub xref{
   (defined $arg) &&
     ($self->{_xref} = $arg );
   return $self->{_xref};
-}
-
-=head2 uniparc
-
-  Arg [1]    : (optional)
-  Example    : $mapper->uniparc($new_uniparc);
-  Description: Getter / Setter for the uniparc.
-               info for the uniparc database.
-  Returntype : XrefMapper::uniparc
-  Exceptions : none
-
-=cut
-
-sub uniparc {
-  my ($self, $uniparc) = @_;
-  $self->{uniparc} = $uniparc if defined $uniparc;
-  return $self->{uniparc};
 }
 
 =head2 farm_queue
@@ -205,19 +187,15 @@ sub process_file {
   my $self = shift;
   my $file = shift;
   my $verbose = shift;
-  my $no_xref = shift;
-
   
 
   my $xref=undef;
   my $ensembl=undef;
-  my $uniparc;
   my $type;
   
   my %xref_hash=();
   my %species_hash=();
   my %farm_hash=();
-  my %uniparc_hash;
   
   open my $fh, "<", $file or croak ("\nCannot open input file '$file':\n $!\n");
   while( my $line = <$fh> ) {
@@ -237,9 +215,6 @@ sub process_file {
     elsif($key eq "farm"){
       $type = "farm";
     }
-    elsif($key eq 'uniparc'){
-      $type = 'uniparc';
-    }
     elsif($type eq "species"){ # processing species data
       $species_hash{lc($key)} = $value;
     }
@@ -248,9 +223,6 @@ sub process_file {
     }
     elsif($type eq "farm"){
       $farm_hash{lc($key)} = $value;
-    }
-    elsif($type eq 'uniparc') { # Processing uniparc settings
-      $uniparc_hash{lc($key)} = $value;
     }
   }
   close $fh or croak "Can't close file";
@@ -320,7 +292,7 @@ sub process_file {
   }
 
 
-  if(defined($xref_hash{host}) and (!defined($no_xref))){
+  if(defined($xref_hash{host}) ){
     my ($host, $user, $dbname, $pass, $port);
     $host = $xref_hash{'host'};
     $user = $xref_hash{'user'};
@@ -358,27 +330,10 @@ sub process_file {
     }
 
   }
-  elsif(!defined($no_xref)){
+  else {
     croak "No host name given for xref database\n";
   }
-  else{
-    print "No xref database is too be used\n" if ($verbose)
-  }
-  
-  #If we had UniParc information then create the settings
-  if($uniparc_hash{dbname}) {
-    my %args = (
-      -DBNAME => $uniparc_hash{dbname},
-      -USER   => $uniparc_hash{user}
-    );
-    $args{-PASS} = $uniparc_hash{password} if $uniparc_hash{password};
-      
-    $uniparc = XrefMapper::uniparc->new(%args);
-    $uniparc->method($uniparc_hash{method});
-    $mapper->uniparc($uniparc);
-  }
-  
-  
+ 
   if(defined($species_hash{'species'})){
 
     my ($host, $port, $user, $dbname, $pass);
@@ -406,19 +361,19 @@ sub process_file {
 				  -dbname => $dbname);
     
     $mapper->core($core);
-    if(!defined($no_xref)){
-      $mapper->add_meta_pair("species", $host.":".$dbname);
+    
+    $mapper->add_meta_pair("species", $host.":".$dbname);
 
-      if(defined($species_hash{'dir'})){
-	$core->dir($species_hash{'dir'});
-	if(!-d $species_hash{'dir'}){
+    if(defined($species_hash{'dir'})){
+       $core->dir($species_hash{'dir'});
+       if(!-d $species_hash{'dir'}){
 	  croak "directory ".$species_hash{'dir'}." does not exist please create this\n";
-	}
-      }    
-      else{
-	croak "No directory specified for the ensembl fasta files\n";
-      }
+       }
+    }    
+    else{
+       croak "No directory specified for the ensembl fasta files\n";
     }
+    
     $core->species($value);
 
     #connect to previous release of core db if connection details specified in xref_input (pr_host, pr_port, pr_dbname, pr_user) 
@@ -911,6 +866,15 @@ sub clean_up{
   $sql = "UPDATE xref set dumped = null";
   $sth = $self->xref->dbc->prepare($sql);
   $sth->execute(); 
+
+  $sql = "DELETE from display_xref_priority";
+  $sth = $self->xref->dbc->prepare($sql);
+  $sth->execute();
+      
+
+  $sql = "DELETE from gene_desc_priority";
+  $sth = $self->xref->dbc->prepare($sql);
+  $sth->execute();
 
 
   if (!$keep_core_data) {

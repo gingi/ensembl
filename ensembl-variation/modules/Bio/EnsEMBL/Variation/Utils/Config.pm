@@ -20,7 +20,7 @@ our $MAX_ATTRIB_CODE_LENGTH = 20;
 our @short_names = qw(1kg_hct 1kg_hct_ceu 1kg_hct_yri 1kg_hce 1kg_hce_ceu 1kg_hce_chb
                       1kg_hce_chd 1kg_hce_jpt 1kg_hce_lwk 1kg_hce_tsi 1kg_hce_yri 1kg_lc
                       1kg_lc_ceu 1kg_lc_chb_jpt 1kg_lc_yri hapmap
-                      1kg 1kg_afr 1kg_amr 1kg_asn 1kg_eur 1kg_afr 1kg_amr_com 1kg_asn_com 1kg_eur_com
+                      1kg 1kg_afr 1kg_amr 1kg_asn 1kg_eur 1kg_com 1kg_afr_com 1kg_amr_com 1kg_asn_com 1kg_eur_com
                       ind_venter ind_watson ind_gill ind_ak1 ind_irish ind_angrist
                       ind_gates_jr ind_gates_sr ind_kriek ind_quake ind_saqqaq ind_saqqaq_hc ind_sjk ind_yh
                       fail_all fail_nonref fail_ambig fail_gt_fq fail_incons_map fail_mult_map
@@ -28,6 +28,8 @@ our @short_names = qw(1kg_hct 1kg_hct_ceu 1kg_hct_yri 1kg_hce 1kg_hce_ceu 1kg_hc
                       ph_hgmd_pub ph_johnson_et_al ph_nhgri ph_omim ph_variants ph_uniprot
                       ph_cosmic ph_ega precious hapmap_ceu hapmap_hcb hapmap_jpt hapmap_yri
                       Affy_500K Affy_SNP6 Cardio-Metabo_Chip HumanOmni1-Quad Illumina_1M-duo Illumina_660Q
+                      Human610_Quad HumanHap550 HumanHap650Y HumanOmni2.5 PorcineSNP60
+                      esp_6500  
                      );
 
 our @dbsnp_clinical_significance_types = qw(
@@ -525,8 +527,8 @@ our @OVERLAP_CONSEQUENCES = (
         rank => '30',
         tier => '2',
         predicate => 'Bio::EnsEMBL::Variation::Utils::VariationEffect::within_motif_feature',
-        description => 'In regulatory region annotated by Ensembl',
-        label => 'A sequence variant located within a transcription factor binding site',
+        description => 'A sequence variant located within a transcription factor binding site',
+        label => 'TF binding site',
     },
 
 #    {

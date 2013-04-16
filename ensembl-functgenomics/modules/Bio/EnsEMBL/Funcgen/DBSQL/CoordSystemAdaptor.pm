@@ -4,7 +4,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Copyright (c) 1999-2012 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -122,20 +122,18 @@ not have a version an empty string ('') is used instead.
 
 =cut
 
-use strict;
-use warnings;
-
 package Bio::EnsEMBL::Funcgen::DBSQL::CoordSystemAdaptor;
 
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
 use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 use Bio::EnsEMBL::Funcgen::CoordSystem;
-my %cs_warnings;
 
+use strict;
+use warnings;
 use vars qw(@ISA);
 
 @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor);
-
+my %cs_warnings;
 
 =head2 new
 
@@ -440,41 +438,44 @@ sub new {
 sub fetch_by_name{
   my $self = shift;
   my $name = lc(shift);
-  my $version = lc(shift);  
-  my $sbuild = $self->db->_get_schema_build($self->db->dnadb());
+  my $version = shift;
+  my $sbuild = $self->db->_get_schema_build($self->db->dnadb);
   my ($cs, $found_cs);
   
-  throw('Mandatory argument \'name\'') if(! $name);
+  throw(q(Mandatory argument 'name') ) if ! defined $name;
 
   #Set default_version if not specified
-  if(! $version){
-	$version =  $self->db->get_CoordSystemAdaptor->fetch_by_name($name)->version();
+  if(! defined $version){
+    $version =  $self->db->dnadb->get_CoordSystemAdaptor->fetch_by_name($name)->version;
   }
+
+  $version = lc($version);
+
 
   #can we not just use
   #if(($name eq 'toplevel' || $name eq 'seqlevel') && ! $schema_build){
   #	throw('To access toplevel or seqlevel you must provide a the third schema_build argument');
   # }
 
-  warn "Using dnadb(".$sbuild.") to acquire $name" if($name =~ /level/);
+  warn "Using dnadb(${sbuild}) to acquire $name" if($name =~ /level/);
 
   if($name eq 'seqlevel') {
-	return $self->fetch_sequence_level_by_schema_build($sbuild);
+    return $self->fetch_sequence_level_by_schema_build($sbuild);
   } elsif($name eq 'toplevel') {
     return $self->fetch_top_level_by_schema_build($sbuild);
   }
 
-  if(! exists($self->{'_name_cache'}->{$name})) {
+  if(! exists($self->{_name_cache}->{$name})) {
     if($name =~ /top/) {
-      warn("Did you mean 'toplevel' coord system instead of '$name'?");
+      warn( q(Did you mean 'toplevel' coord system instead of '$name'?) );
     } elsif($name =~ /seq/) {
-      warn("Did you mean 'seqlevel' coord system instead of '$name'?");
+      warn( q(Did you mean 'seqlevel' coord system instead of '$name'?) );
     }
     return undef;
   }
 
 
-  my @coord_systems = @{$self->{'_name_cache'}->{$name}};
+  my @coord_systems = @{$self->{_name_cache}->{$name}};
  
   #Filter versions if or get the default for the schema_build or comparable
 
@@ -493,36 +494,30 @@ sub fetch_by_name{
 	#the DB for those contigs which appear in both versions and are identical.
 
     if($version) {#Assembled level
-
-	  if(lc($cs->version()) eq $version){
-		#This will pick the right CS even if the dnadb schema_build is not present
-		$found_cs = $cs;
-		last;
-	  }
-	}
-	else{#We have an unassembled/non-versioned level and can use any as there should only be 1
-	  $found_cs = $cs;
-	  last;
-	}
+      
+      if( lc($cs->version()) eq lc($version) ){
+        #This will pick the right CS even if the dnadb schema_build is not present
+        $found_cs = $cs;
+        last;
+      }
+    }
+    else{#We have an unassembled/non-versioned level and can use any as there should only be 1
+      $found_cs = $cs;
+      last;
+    }
   }
-
-  #should these throw?
+  
   if(! $found_cs){
-	if($version) {
-	  warn "No coord system found for $sbuild version '$version'";
-	  return undef;
-	}else{
-	  warn "Could not find $name CoordSystem.";
-	  return undef
-	}
+  
+    if($version) {
+      warn "No coord system found for $sbuild version '$version'";
+      return undef;
+    }
+    else{
+      warn "Could not find $name CoordSystem.";
+      return undef;
+    }
   }
-
-
-
-  #didn't find a default, just take first one
-  #my $cs =  shift @coord_systems;
-  #warning("No default version for coord_system [$name] exists. " .
-  #    "Using version [".$cs->version()."] arbitrarily");
 
   return $found_cs;
 }

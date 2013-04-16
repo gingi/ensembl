@@ -1,13 +1,14 @@
-/Base.pm/1.4/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/BlatIndexer.pm/1.8/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/ConcatFiles.pm/1.9/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/CopyDNA.pm/1.3/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/DumpFile.pm/1.16/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/EmailSummary.pm/1.15/Mon Jun 25 22:37:33 2012//Tbranch-ensembl-68
-/FindDirs.pm/1.2/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/Indexer.pm/1.3/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/ReuseSpeciesFactory.pm/1.2/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/SCPBlast.pm/1.3/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/SpeciesFactory.pm/1.3/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
-/WuBlastIndexer.pm/1.7/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-68
+/Base.pm/1.5/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-69
+/BlatIndexer.pm/1.9/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-69
+/ConcatFiles.pm/1.9/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-69
+/CopyDNA.pm/1.3/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-69
+/CreatePrimaryAssembly.pm/1.1/Mon Sep 24 13:27:13 2012//Tbranch-ensembl-69
+/DumpFile.pm/1.18/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-69
+/EmailSummary.pm/1.15/Mon Jun 25 22:37:33 2012//Tbranch-ensembl-69
+/FindDirs.pm/1.2/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-69
+/Indexer.pm/1.3/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-69
+/ReuseSpeciesFactory.pm/1.2/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-69
+/SCPBlast.pm/1.3/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-69
+/SpeciesFactory.pm/1.3.10.1/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-69
+/WuBlastIndexer.pm/1.7/Tue Apr 16 20:37:02 2013//Tbranch-ensembl-69
 D

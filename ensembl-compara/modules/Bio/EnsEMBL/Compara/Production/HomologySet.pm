@@ -64,24 +64,16 @@ package Bio::EnsEMBL::Compara::Production::HomologySet;
 
 use strict;
 use Bio::EnsEMBL::Compara::Production::GeneSet;
-use Bio::EnsEMBL::Compara::Homology;
-use Time::HiRes qw(time gettimeofday tv_interval);
-
-use Bio::EnsEMBL::Compara::Graph::CGObject;
-our @ISA = qw(Bio::EnsEMBL::Compara::Graph::CGObject);
 
 
-sub init {
-  my $self = shift;
-   $self->SUPER::init;
-   $self->clear;
+sub new {
+  my ($class, @args) = @_;
+  ## Allows to create a new object from an existing one with $object->new
+  $class = ref($class) if (ref($class));
+  my $self = {};
+  bless $self,$class;
+  $self->clear;  
   return $self;
-}
-
-sub dealloc {
-  my $self = shift;
-  #$self->unlink_all_neighbors;
-  return $self->SUPER::dealloc;
 }
 
 
@@ -109,8 +101,8 @@ sub add {
     $self->{'gene_set'}->add($gene1);
     $self->{'gene_set'}->add($gene2);
     my $description = $homology->description;
-    if (scalar @{$homology->method_link_species_set->species_set} == 1) {
-      my ($gdb) = @{$homology->method_link_species_set->species_set};
+    if (scalar @{$homology->method_link_species_set->species_set_obj->genome_dbs} == 1) {
+      my $gdb = $homology->method_link_species_set->species_set_obj->genome_dbs->[0];
       $description .= "_".$gdb->dbID;
     }
     $self->{'types'}->{$description}++;

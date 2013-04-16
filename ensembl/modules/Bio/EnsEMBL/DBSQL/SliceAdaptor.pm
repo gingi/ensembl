@@ -291,14 +291,23 @@ sub fetch_by_region {
 
 
       # try synonyms
-      my $syn_sql_sth = $self->prepare("select s.name from seq_region s, seq_region_synonym ss where s.seq_region_id = ss.seq_region_id and ss.synonym = ?");
+      my $syn_sql_sth = $self->prepare("select s.name, s.coord_system_id from seq_region s, seq_region_synonym ss where s.seq_region_id = ss.seq_region_id and ss.synonym = ?");
       $syn_sql_sth->bind_param(1, $seq_region_name, SQL_VARCHAR);
       $syn_sql_sth->execute();
       my $new_name;
-      $syn_sql_sth->bind_columns( \$new_name);
+      my $new_coord_system;
+      $syn_sql_sth->bind_columns( \$new_name, \$new_coord_system);
+            
       if($syn_sql_sth->fetch){
-	$syn_sql_sth->finish;
-	return $self->fetch_by_region($coord_system_name, $new_name, $start, $end, $strand, $version, $no_fuzz);
+        $syn_sql_sth->finish;
+        if (not defined($cs)) {
+            return $self->fetch_by_region($new_coord_system, $new_name, $start, $end, $strand, $version, $no_fuzz);
+        } elsif ($cs->dbID != $new_coord_system) {
+            warning("Searched for a known feature on coordinate system: ".$cs->dbID." but found it on: ".$new_coord_system.
+            "\n No result returned, consider searching without coordinate system or use toplevel.");
+            return;
+        }
+        
       }
       $syn_sql_sth->finish;
 
@@ -510,6 +519,8 @@ sub fetch_by_toplevel_location {
                 separated by C<..>, C<:> or C<->.
   Arg[2]      : boolean $no_warnings
                 Suppress warnings from this method
+  Arg[3]      : boolean $no_errors
+                Supress errors being thrown from this method
   Example			: my ($name, $start, $end, $strand) = $sa->parse_location_to_values('X:1..100:1);
   Description	: Takes in an Ensembl location String and returns the parsed
                 values
@@ -529,7 +540,7 @@ sub parse_location_to_values {
   my $number_regex = qr/[0-9,_ E]+/xms;
   my $strand_regex = qr/[+-1]|-1/xms;
   
-  my $regex = qr/^(\w+) \s* :? \s* ($number_regex)? $separator_regex ($number_regex)? $separator_regex ($strand_regex)? $/xms;
+  my $regex = qr/^((?:\w|\.|_|-)+) \s* :? \s* ($number_regex)? $separator_regex ($number_regex)? $separator_regex ($strand_regex)? $/xms;
   my ($seq_region_name, $start, $end, $strand);
   if(($seq_region_name, $start, $end, $strand) = $location =~ $regex) {
     
@@ -644,6 +655,8 @@ sub fetch_by_region_unique {
         push( @out, $segment->[2] );
       }
     }
+  } else {
+    @out = ($slice);
   }
 
   return \@out;
@@ -1081,6 +1094,76 @@ sub is_toplevel {
   $sth->finish;
   return 0;
 }
+
+
+=head2 has_karyotype
+  Arg        : int seq_region_id 
+  Example    : my $karyotype = $slice_adptor->has_karyotype($seq_region_id)
+  Description: Returns 1 if slice is a part of a karyotype else 0
+  Returntype : int
+  Caller     : Slice method has_karyotype
+  Status     : At Risk
+
+=cut
+
+sub has_karyotype {
+  my $self = shift;
+  my $id   = shift;
+
+  my $sth = $self->prepare(
+            "SELECT at.code from seq_region_attrib sra, attrib_type at "
+              . "WHERE sra.seq_region_id = ? "
+              . "AND at.attrib_type_id = sra.attrib_type_id "
+              . "AND at.code = 'karyotype_rank'" );
+
+  $sth->bind_param( 1, $id, SQL_INTEGER );
+  $sth->execute();
+
+  my $code;
+  $sth->bind_columns( \$code );
+
+  while ( $sth->fetch ) {
+    $sth->finish;
+    return 1;
+  }
+
+  $sth->finish;
+  return 0;
+}
+
+=head2 get_karyotype_rank
+  Arg        : int seq_region_id 
+  Example    : my $rank = $slice_adptor->get_karyotype_rank($seq_region_id)
+  Description: Returns the rank of a slice if it is part of the karyotype else 0
+  Returntype : int
+  Caller     : Slice method get_karyotype_rank
+  Status     : At Risk
+
+=cut
+
+sub get_karyotype_rank {
+  my $self = shift;
+  my $id   = shift;
+
+  my $sth = $self->prepare(
+            "SELECT sra.value from seq_region_attrib sra, attrib_type at "
+              . "WHERE sra.seq_region_id = ? "
+              . "AND at.attrib_type_id = sra.attrib_type_id "
+              . "AND at.code = 'karyotype_rank'" );
+
+  $sth->bind_param( 1, $id, SQL_INTEGER );
+  $sth->execute();
+
+  my $code;
+  $sth->bind_columns( \$code );
+
+  my $rank = $sth->fetchrow_array();
+  $sth->finish();
+
+  return $rank;
+}
+
+
 
 =head2 is_reference
   Arg        : int seq_region_id 

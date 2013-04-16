@@ -34,7 +34,6 @@ directories.
 
 NOTE: update_DB_for_release.pl and healtchecks should be run before this script.
 
-
 =head1 PARAMETERS
 
 =over
@@ -68,6 +67,12 @@ NOTE: update_DB_for_release.pl and healtchecks should be run before this script.
 =item B<-dnadb_name>   Core database name
 
 =item B<-ftp_root>     Root directory for ftp staging dir. Default = /lustre/scratch103/ensembl/funcgen/output/ftp
+
+=item B<-nfs_root>     Root directory for nfs dir. Default = /nfs/ensnfs-dev/staging
+
+=item B<-link_type>    Link types to create e.g. nfs or ftp, default generates both.
+
+=item B<-list_source_only> Doesn't create anything, simply lists the source dirs which would be used
 
 =item B<-help>         Prints a short help message
 
@@ -136,21 +141,20 @@ use Cwd;
 
 my @tmp_args = @ARGV;
 my ($host, $pass, $dbname, $dnadbhost, $dnadbport, $dnadbuser, $dnadbname, $dnadbpass);
-my ($list_source_only, $link_type);
+my ($list_source_only, $link_type, $nfs_assm_dir, $nfs_root, $ftp_root);
 
 #Default values
-my $force      = 0;
+#my $force      = 0;
 my $port       = 3306;
 my $user       = 'ensro';
-my $nfs_root   = '/nfs/ensnfs-dev/staging';
-my $ftp_root   = '/lustre/scratch103/ensembl/funcgen/output/ftp';
 my %link_config = (nfs => {}, ftp=>{});#empty config for validating link types
 my @link_types = keys %link_config;
 
 
 #get command line options
 #should this be feature types?
-my @set_types = ('result');#, 'dna_methylation');???
+my @set_types = ('result');#, 'dna_methylation');
+my @feature_classes = ('result_feature', 'dna_methylation_feature');
 
 print "create_ftp_dir_links.pl @tmp_args\n";
 
@@ -170,11 +174,11 @@ GetOptions
    'nfs_root=s'         => \$nfs_root,
    'link_type=s'        => \$link_type,
    'list_source_only'   => \$list_source_only,
-   'force'              => \$force,
-   "help|?"             => sub { pos2usage(-exitval => 0, -verbose => 1, -message => "Params are:\t@tmp_args"); },
-   "man|m"              => sub { pos2usage(-exitval => 0, -verbose => 2, -message => "Params are:\t@tmp_args"); },
+   #'force'              => \$force,
+   "help|?"             => sub { pod2usage(-exitval => 0, -verbose => 1); },
+   "man|m"              => sub { pod2usage(-exitval => 0, -verbose => 3); },
    
-  )  or pod2usage( -exitval => 1 ); #Catch unknown opts
+  )  or pod2usage( -exitval => 1 ); #Catch unknown opts, culprit will be printed by GetOptions
 
 
 if($link_type){
@@ -186,6 +190,17 @@ if($link_type){
     @link_types = ($link_type);
   }
 }
+
+if(! (defined $nfs_root &&
+      -d $nfs_root) ){
+  die('You have not specified a valid -nfs_root');
+}
+
+if(! (defined $ftp_root &&
+      -d $ftp_root) ){
+  die('You have not specified a valid -ftp_root');
+}
+
 
 
 if(!$host || !$user || !$dbname )  {  die("Missing connection parameters (use -h for help)"); }
@@ -222,14 +237,14 @@ my $metac          = $efgdb->get_MetaContainer;
 my $schema_version = $metac->get_schema_version;
 my $species        = $metac->single_value_by_key('species.production_name');
 
-if(! $schema_version ||
+if(! defined $schema_version ||
    ($dbname !~ /_${schema_version}_/)){
   die("Meta schema.version is not present in meta($schema_version) or does not match the dbname($dbname)");
 }
 
-if(! $species ||
-   ($dbname !~ /^${species}_/)){
-  die("Meta species.production_name  is not present in meta($species) or does not match the dbname($dbname)");
+if(! defined $species ||
+   ($dbname !~ /(.*_)*${species}_/)){
+  die("Meta species.production_name is not present in meta, or does not match the dbname($dbname !~ /^[.*_]${species}_/)");
 }
 
 my @assm_vers = @{$efgdb->dbc->db_handle->selectall_arrayref('SELECT distinct(version) from coord_system where is_current=1 and version is not NULL AND version !=""')};
@@ -242,6 +257,7 @@ if($#assm_vers != 0){
 
 my $assm = $assm_vers[0];
 
+my $dbfile_data_root = $nfs_root.'/'.$species.'/'.$assm;
 
 # CONFIG
 #To enable copying of links around, we use source paths relative to the target directory (rather than full paths)
@@ -282,22 +298,30 @@ foreach my $link_type(@link_types){
   #Create top level data_file dir which simply links to nfs
   if($link_type eq 'ftp'){
 
-    my $df_dir_link = $ftp_root."/data_files/${species}/${assm}";
+    #this is wrong below here
+    #nee to look into $dbfile_data_root to get feature types?
+    #no this needs to come from config or DB
+    #as we may have feature types from other DBs in there.
 
-    if(! -l $df_dir_link){ #Let's create it
-      print "Top level data_files dir link does not exist:\t$df_dir_link\n";
+
+    foreach my $fclass(@feature_classes){
+
+      my $fclass_dir_link = $ftp_root."/data_files/${species}/${assm}/${fclass}";
+      my $fclass_nfs_dir  = $dbfile_data_root."/${fclass}";
       
-      #Should grab dbfile_data_root here
-      my $dbfile_data_root    = $efgdb->get_MetaContainer->single_value_by_key('dbfile.data_root');
+      if(! -l $fclass_dir_link){ #Let's create it
+        print "Top level data_files dir link does not exist:\t$fclass_dir_link\n";
       
-      if(! ($dbfile_data_root &&
-            -d $dbfile_data_root) ){
-        die("Unable to find dbfile.data_root:\t$dbfile_data_root");
-      }
-      else{
-        my $cmd = "ln -s $dbfile_data_root $df_dir_link";
-        print "Creating top level data_files dir link:\t$cmd\n";
-        system($cmd) == 0 or die("Failed to create top level data_file dir link");
+        #We build dbfile_data_root above, as it has been removed from meta
+        
+        if(! -d $dbfile_data_root){
+          die("dbfile.data_root is not a valid directory:\t$dbfile_data_root");
+        }
+        else{
+          my $cmd = "ln -s $fclass_nfs_dir $fclass_dir_link";
+          print "Creating top level data_files dir link:\t$cmd\n";
+          system($cmd) == 0 or die("Failed to create ${fclass}_feature data_file dir link");
+        }
       }
     }
   }
@@ -310,7 +334,6 @@ foreach my $link_type(@link_types){
 
   #remove old links here?
 }
-
 
 
 
@@ -342,19 +365,23 @@ foreach my $set_type (@set_types) {
     #get true source here to list
     #will always be on nfs
 
-    ($target_dir = $source_dir) =~ s'/$'';
-    ($target_dir = $target_dir) =~ s'/.*/'';
-    $feature_class = ($set->set_type eq 'result') ? 'result_feature' : $set->feature_class.'_feature';
+    #do we even need dbfile_registry?
+    #subdir is easily auto-generated
+    #from feature_type and set name
+    #keep for now for flexibility
 
-    
+    $feature_class = $set->feature_class.'_feature';
+    #Strip leading /, to avoid empty string as first element
+    ($target_dir = $source_dir) =~ s'^/'';
+    $target_dir = (split '/', $target_dir)[1];
+    #It should always be the 2nd element, even if we have a full file path
+
+    push @true_paths, $dbfile_data_root."/${feature_class}/${target_dir}";
 
 
-    push @true_paths, $nfs_root."/${species}/${assm}/${feature_class}/${target_dir}";
+    if (! $list_source_only) {
 
-
-    if(! $list_source_only){
-
-      foreach my $link_type(@link_types) {
+      foreach my $link_type (@link_types) {
         my $rel_dir = $link_config{$link_type}->{release_target_path};
         my $fclass_dir = $rel_dir."/${feature_class}";
         
@@ -362,58 +389,65 @@ foreach my $set_type (@set_types) {
           system("mkdir -p $fclass_dir") == 0 or die("Failed to create $link_type release dir:\t${fclass_dir}");
         }
 	
-      chdir($fclass_dir) || die("Failed to move to $link_type release dir:\t${fclass_dir}");;
+        chdir($fclass_dir) || die("Failed to move to $link_type release dir:\t${fclass_dir}");;
 
 	
-      #Now we need to redefine source_dir as link to data_files relative to target dir
-      $source_dir =  $link_config{$link_type}->{relative_source_path}."/${feature_class}/${target_dir}";
+        #Now we need to redefine source_dir as link to data_files relative to target dir
+        $source_dir =  $link_config{$link_type}->{relative_source_path}."/${feature_class}/${target_dir}";
       
    
-      #SANITY CHECKING
+        #SANITY CHECKING
       
-      #This is now dependant on link_type?
-      #should do this once really 
+        #This is now dependant on link_type?
+        #should do this once really 
      
 
-      if (! -d $source_dir) {     #Is is a directory?
-        #This will be a directory as the link is at the data_file level
-        die("Source dbfile_data_dir does not exist for ".$set->name."\t".$source_dir);
-      } else {                    #Does is contain any data?
-        opendir(DirHandle, $source_dir) || die("Failed to open source dir:\t$source_dir");
+        if (! -d $source_dir) { #Is is a directory?
+          #This will be a directory as the link is at the data_file level
+          die("Source dbfile_data_dir does not exist for ".$set->name."\t".$source_dir."\nFrom $fclass_dir");
+        } else {                #Does is contain any data?
+          opendir(DirHandle, $source_dir) || die("Failed to open source dir:\t$source_dir");
         
-        #Need to catch error here
+          #Need to catch error here
         
-        my $num_files = 0;
+          my $num_files = 0;
         
-        while (readdir(DirHandle)) {
-          $num_files++;
-          #Could check for expected suffixes or non-empty files
-          #check for name match
-          #But we are verging on a HC here.
-        }
+          while (readdir(DirHandle)) {
+            $num_files++;
+            #Could check for expected suffixes or non-empty files
+            #check for name match
+            #But we are verging on a HC here.
+          }
         
-        closedir(DirHandle);
+          closedir(DirHandle);
         
-        if (! $num_files) {
-          die("Found 0 files in source directory:\t${source_dir}");
-        }
-      }	
+          if (! $num_files) {
+            die("Found 0 files in source directory:\t${source_dir}");
+          }
+        }	
       
       
-      if (-e $target_dir &&
-          (! -l $target_dir) ) {
-        die("$target_dir already exists but is not a link to $source_dir");
+        if (-e $target_dir){
+          
+          if(! -l $target_dir){
+            die("$target_dir already exists but is not a link to $source_dir");
+          }
+          else{ #Assume this is okay
+            #count skipped links?
+            next;
+          }
+        }
+
+      
+        my $cmd = "ln -sf $source_dir $target_dir";
+        system("$cmd") == 0 or die("Failed to create link using:\t${cmd}\nFrom $fclass_dir");
+        #print "$cmd\n";
+        $num_dirs{$link_type} ++;
       }
-      
-      my $cmd = "ln -sf $source_dir $target_dir";
-      system("$cmd") == 0 or die("Failed to create link using:\t${cmd}");
-      #print "$cmd\n";
-      $num_dirs{$link_type} ++;
     }
   }
-  }
 
-  foreach my $link_type(@link_types){
+  foreach my $link_type (@link_types){
     print "Linked ".$num_dirs{$link_type}." $link_type $set_type directories\n";
   }
 
@@ -427,4 +461,4 @@ print "Source file paths:\n\t".join("\n\t", @true_paths)."\n";
 #chdir($dir);
 
 
-print "Now print command to send to webteam which will follow links and rsync to the ftp dir\n";
+print "Need to add print of rsync command to send to webteam which will follow links and rsync to the ftp dir?\n";

@@ -107,7 +107,7 @@ sub store {
         my $source_id;
 		$sth->bind_columns(\$source_id);
 		$sth->fetch();
-		$sth->finish();
+		$sth->finish(); 
 		$vf->{source_id} = $source_id;
     }
     
@@ -130,8 +130,9 @@ sub store {
             somatic,
             minor_allele,
             minor_allele_freq,
-            minor_allele_count
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            minor_allele_count,
+            alignment_quality
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     });
     
     $sth->execute(
@@ -153,6 +154,7 @@ sub store {
         $vf->minor_allele,
         $vf->minor_allele_frequency,
         $vf->minor_allele_count,
+        $vf->flank_match,
     );
     
     $sth->finish;
@@ -388,54 +390,59 @@ sub _internal_fetch_all_with_annotation_by_Slice{
 		throw('Bio::EnsEMBL::Slice arg expected');
 	}
 	
-	my $extra_sql = '';
+  my $extra_sql = '';
+  my $extra_sql_in = '';
+  my $extra_table = '';
+  
+  if(defined $v_source) {
+    $extra_sql .= qq{ AND s.name = '$v_source' };
+  }
     
-    if(defined $v_source) {
-		$extra_sql .= qq{ AND s.name = '$v_source' };
+  if(defined $p_source) {
+    $extra_sql_in .= qq{ AND st.source_id = ps.source_id AND ps.name = '$p_source' };
+    $extra_table .= qq{, source ps};
+  }
+    
+  if(defined $annotation) {
+    if($annotation =~ /^[0-9]+$/) {
+      $extra_sql_in .= qq{ AND va.phenotype_id = $annotation };
     }
-    
-    if(defined $p_source) {
-		$extra_sql .= qq{ AND ps.name = '$p_source' };
+    else {
+      $extra_sql_in .= qq{ AND va.phenotype_id = p.phenotype_id 
+                           AND (p.name = '$annotation' OR p.description LIKE '%$annotation%') 
+                         };
+      $extra_table .= qq{, phenotype p};
     }
+  }
+  
+  if ($constraint) {
+    $extra_sql .= qq{ AND $constraint };
+  }
     
-    if(defined $annotation) {
-		if($annotation =~ /^[0-9]+$/) {
-		  $extra_sql .= qq{ AND p.phenotype_id = $annotation };
-		}
-		else {
-		  $extra_sql .= qq{ AND (p.name = '$annotation' OR p.description LIKE '%$annotation%') };
-		}
-    }
+  # Add the constraint for failed variations
+  $extra_sql .= " AND " . $self->db->_exclude_failed_variations_constraint();
     
-    if ($constraint) {
-        $extra_sql .= qq{ AND $constraint };
-    }
+  my $cols = join ",", $self->_columns();
     
-    # Add the constraint for failed variations
-    $extra_sql .= " AND " . $self->db->_exclude_failed_variations_constraint();
-    
-    my $cols = join ",", $self->_columns();
-    
-    my $sth = $self->prepare(qq{
-		SELECT $cols
-		FROM (variation_feature vf, variation_annotation va,
-		phenotype p, source s, source ps, study st) # need to link twice to source
-		LEFT JOIN failed_variation fv ON (fv.variation_id = vf.variation_id)
-		WHERE va.study_id = st.study_id
-		AND st.source_id = ps.source_id
-		AND vf.source_id = s.source_id
-		AND vf.variation_id = va.variation_id
-		AND va.phenotype_id = p.phenotype_id
+  my $sth = $self->prepare(qq{
+    SELECT $cols
+    FROM (variation_feature vf, source s)
+    LEFT JOIN failed_variation fv ON (fv.variation_id = vf.variation_id)
+    WHERE 
+    vf.variation_id IN
+      (SELECT va.variation_id FROM variation_annotation va, study st $extra_table 
+      WHERE va.study_id=st.study_id $extra_sql_in)
+    AND vf.source_id = s.source_id 
 		$extra_sql
-		AND vf.seq_region_id = ?
-		AND vf.seq_region_end > ?
-		AND vf.seq_region_start < ?
-		GROUP BY vf.variation_feature_id
-    });
+    AND vf.seq_region_id = ?
+    AND vf.seq_region_end >= ?
+    AND vf.seq_region_start <= ?
+    GROUP BY vf.variation_feature_id
+  });
+  
+  $sth->execute($slice->get_seq_region_id, $slice->start, $slice->end);
     
-    $sth->execute($slice->get_seq_region_id, $slice->start, $slice->end);
-    
-    return $self->_objs_from_sth($sth, undef, $slice);
+  return $self->_objs_from_sth($sth, undef, $slice);
 }
 
 =head2 fetch_all_with_annotation_by_Slice
@@ -646,53 +653,56 @@ sub fetch_all_by_Slice_Population {
 
 sub _internal_fetch_all_with_annotation {
     
-    my ($self, $v_source, $p_source, $annotation, $constraint) = @_;
+  my ($self, $v_source, $p_source, $annotation, $constraint) = @_;
     
-    my $extra_sql = '';
+  my $extra_sql = '';
+  my $extra_table = '';
     
-    if(defined $v_source) {
-        $extra_sql .= qq{ AND s.name = '$v_source' };
+  if(defined $v_source) {
+    $extra_sql .= qq{ AND s.name = '$v_source' };
+  }
+    
+  if(defined $p_source) {
+    $extra_sql .= qq{ AND st.source_id = ps.source_id AND ps.name = '$p_source' };
+    $extra_table .= qq{, source ps};
+  }
+    
+  if(defined $annotation) {
+    if($annotation =~ /^[0-9]+$/) {
+      $extra_sql .= qq{ AND va.phenotype_id = $annotation };
     }
-    
-    if(defined $p_source) {
-        $extra_sql .= qq{ AND ps.name = '$p_source' };
+    else {
+      $extra_sql .= qq{ AND va.phenotype_id = p.phenotype_id 
+					              AND (p.name = '$annotation' OR p.description LIKE '%$annotation%')
+                      };
+			$extra_table .= qq{, phenotype p};
     }
+  }
     
-    if(defined $annotation) {
-        if($annotation =~ /^[0-9]+$/) {
-          $extra_sql .= qq{ AND p.phenotype_id = $annotation };
-        }
-        else {
-          $extra_sql .= qq{ AND (p.name = '$annotation' OR p.description LIKE '%$annotation%') };
-        }
-    }
+  if ($constraint) {
+    $extra_sql .= qq{ AND $constraint };
+  }
     
-    if ($constraint) {
-        $extra_sql .= qq{ AND $constraint };
-    }
+  # Add the constraint for failed variations
+  $extra_sql .= " AND " . $self->db->_exclude_failed_variations_constraint();
     
-    # Add the constraint for failed variations
-    $extra_sql .= " AND " . $self->db->_exclude_failed_variations_constraint();
+  my $cols = join ",", $self->_columns();
     
-    my $cols = join ",", $self->_columns();
-    
-    my $sth = $self->prepare(qq{
+  my $sth = $self->prepare(qq{
         SELECT $cols
         FROM (variation_feature vf, variation_annotation va,
-        phenotype p, source s, source ps, study st) # need to link twice to source
+        source s, study st $extra_table) # need to link twice to source
         LEFT JOIN failed_variation fv ON (fv.variation_id = vf.variation_id)
         WHERE va.study_id = st.study_id
-        AND st.source_id = ps.source_id 
         AND vf.source_id = s.source_id
         AND vf.variation_id = va.variation_id
-        AND va.phenotype_id = p.phenotype_id
         $extra_sql
         GROUP BY vf.variation_feature_id
-    });
+  });
     
-    $sth->execute;
+  $sth->execute;
     
-    return $self->_objs_from_sth($sth);
+  return $self->_objs_from_sth($sth);
 }
 
 =head2 fetch_all_with_annotation
@@ -980,7 +990,7 @@ sub _columns {
              vf.seq_region_end vf.seq_region_strand vf.variation_id
              vf.allele_string vf.variation_name vf.map_weight s.name s.version vf.somatic 
              vf.validation_status vf.consequence_types vf.class_attrib_id
-             vf.minor_allele vf.minor_allele_freq vf.minor_allele_count);
+             vf.minor_allele vf.minor_allele_freq vf.minor_allele_count vf.alignment_quality);
 }
 
 sub _objs_from_sth {
@@ -1007,14 +1017,14 @@ sub _objs_from_sth {
       $seq_region_end, $seq_region_strand, $variation_id,
       $allele_string, $variation_name, $map_weight, $source_name, $source_version,
       $is_somatic, $validation_status, $consequence_types, $class_attrib_id,
-	  $minor_allele, $minor_allele_freq, $minor_allele_count, $last_vf_id);
+	  $minor_allele, $minor_allele_freq, $minor_allele_count, $last_vf_id,$alignment_quality);
 
     $sth->bind_columns(\$variation_feature_id, \$seq_region_id,
                      \$seq_region_start, \$seq_region_end, \$seq_region_strand,
                      \$variation_id, \$allele_string, \$variation_name,
                      \$map_weight, \$source_name, \$source_version, \$is_somatic, \$validation_status, 
                      \$consequence_types, \$class_attrib_id,
-					 \$minor_allele, \$minor_allele_freq, \$minor_allele_count);
+		     \$minor_allele, \$minor_allele_freq, \$minor_allele_count,\$alignment_quality);
 
     my $asm_cs;
     my $cmp_cs;
@@ -1144,9 +1154,10 @@ sub _objs_from_sth {
                 'overlap_consequences' => $overlap_consequences,
                 '_variation_id' => $variation_id,
                 'class_SO_term' => $aa->attrib_value_for_id($class_attrib_id),
-				'minor_allele' => $minor_allele,
-				'minor_allele_frequency' => $minor_allele_freq,
-				'minor_allele_count' => $minor_allele_count
+                'minor_allele' => $minor_allele,
+                'minor_allele_frequency' => $minor_allele_freq,
+                'minor_allele_count' => $minor_allele_count,
+                'flank_match'  => $alignment_quality
                 }
             );
         }

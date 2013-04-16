@@ -62,6 +62,8 @@ use Bio::EnsEMBL::Utils::Scalar qw(assert_ref);
 use Bio::EnsEMBL::Variation::Allele;
 use Bio::EnsEMBL::Utils::Iterator;
 
+use Scalar::Util qw(weaken);
+
 use DBI qw(:sql_types);
 
 our @ISA = ('Bio::EnsEMBL::Variation::DBSQL::BaseAdaptor');
@@ -231,9 +233,90 @@ sub fetch_all_by_Variation {
     
     # If a population was specified, attach the population to the allele object
     map {$_->population($population)} @{$alleles} if (defined($population));
-    
+	
+	# add freqs from genotypes for human (1KG data)
+	push @$alleles, @{$self->_fetch_all_by_Variation_from_Genotypes($variation, $population)} if $self->db->species =~ /homo_sapiens/i;
+	
     # Return the alleles
     return $alleles;
+}
+
+sub _fetch_all_by_Variation_from_Genotypes {
+	my $self = shift;
+	my $variation = shift;
+    my $population = shift;
+    
+    # Make sure that we are passed a Variation object
+    assert_ref($variation,'Bio::EnsEMBL::Variation::Variation');
+    
+    # If we got a population argument, make sure that it is a Population object
+    assert_ref($population,'Bio::EnsEMBL::Variation::Population') if (defined($population));
+	
+	# fetch all genotypes
+	my $genotypes = $variation->get_all_IndividualGenotypes();
+	
+	return [] unless scalar @$genotypes;
+	
+	# get populations for individuals
+	my (@pop_list, %pop_hash);
+	
+	if(defined($population)) {
+		@pop_list = ($population);
+		map {$pop_hash{$population->dbID}{$_->dbID} = 1} @{$population->get_all_Individuals};
+	}
+	else {
+		my $pa = $self->db->get_PopulationAdaptor();
+		%pop_hash = %{$pa->_get_individual_population_hash([map {$_->individual->dbID} @$genotypes])};
+		return [] unless %pop_hash;
+		
+		@pop_list = @{$pa->fetch_all_by_dbID_list([keys %pop_hash])};
+	}
+	
+	return [] unless @pop_list and %pop_hash;
+	
+	my %ss_list = map {$_->subsnp || '' => 1} @$genotypes;
+	
+	my @objs;
+	
+	foreach my $pop(@pop_list) {
+		
+		# HACK: only include 1KG phase 1 pops for now
+		next unless $pop->name =~ /^1000GENOMES:phase_1_/;
+		
+		foreach my $ss(keys %ss_list) {
+			
+			my (%counts, $total, @freqs);
+			map {$counts{$_}++}
+				map {@{$_->{genotype}}}
+				grep {$pop_hash{$pop->dbID}{$_->individual->dbID}}
+				grep {$_->subsnp || '' eq $ss}
+				@$genotypes;
+			
+			next unless %counts;
+			
+			my @alleles = keys %counts;
+			$total += $_ for values %counts;
+			next unless $total;
+			
+			@freqs = map {defined($counts{$_}) ? ($counts{$_} / $total) : 0} @alleles;
+			
+			for my $i(0..$#alleles) {
+				push @objs, Bio::EnsEMBL::Variation::Allele->new_fast({
+					allele     => $alleles[$i],
+					count      => scalar keys %counts ? ($counts{$alleles[$i]} || 0) : undef,
+					frequency  => @freqs ? $freqs[$i] : undef,
+					population => $pop,
+					variation  => $variation,
+					adaptor    => $self,
+					subsnp     => $ss eq '' ? undef : $ss,
+				});
+				
+				weaken($objs[-1]->{'variation'});
+			}
+		}
+	}
+	
+	return \@objs;
 }
 
 =head2 get_all_failed_descriptions
@@ -267,12 +350,21 @@ sub get_all_failed_descriptions {
 =head2 get_subsnp_handle
 
   Arg[1]      : Bio::EnsEMBL::Variation::Allele
-	               The allele object to get the subsnp handle for
+	               The allele object to get the observation submitter subsnp handle for
+  Arg[2]      : Bio::EnsEMBL::Variation::Population (optional)
+                       The population object to get the frequency submitter subsnp handle for                           
   Example     : 
                 my $handle = $adaptor->get_subsnp_handle($allele);
-		        print "The allele '" . $allele->allele() . "' of subsnp 'ss" . $allele->subsnp_id() . "' was submitted by '$handle'\n";
+		print "The allele '" . $allele->allele() . "' of subsnp 'ss" . $allele->subsnp() . "' was submitted by '$handle'\n";
+
+                my $handle = $adaptor->get_subsnp_handle($allele, $population);
+		print "Frequency data for subsnp 'ss" . $allele->subsnp() . "' in population " . $population->name() . " was submitted by '$handle'\n";
+
+
 		
   Description : Gets the submitter handle for the specified allele
+                The initial observation and later allele frequencies may be submitted for the same ss record by different groups
+                supplying a population returns the submitter handle for data obtained within this population  
   ReturnType  : string
   Exceptions  : thrown on incorrect argument
   Caller      : general
@@ -283,29 +375,55 @@ sub get_all_failed_descriptions {
 sub get_subsnp_handle {
     my $self = shift;
     my $allele = shift;
-    
+    my $population = shift ; ## return submitter for specific allele frequency
+
     # Assert that the object passed is an Allele
     assert_ref($allele,'Bio::EnsEMBL::Variation::Allele');
     
+    # If we got a population argument, make sure that it is a Population object
+    assert_ref($population,'Bio::EnsEMBL::Variation::Population') if (defined($population));
+
+
     # Get the subsnp id and get rid of any 'ss' prefix
     my $ssid = $allele->subsnp() || "";
     $ssid =~ s/^ss//;
     
-    my $stmt = qq{
+    my ($stmt, $sth);
+    if(defined $population ){
+       $stmt = qq{
         SELECT
-            handle
+            submitter_handle.handle
         FROM
-            subsnp_handle
+            submitter_handle, allele
         WHERE
-            subsnp_id = ?
+            allele.subsnp_id = ?
+        AND allele.frequency_submitter_handle = submitter_handle.handle_id
+        AND allele.sample_id = ?
         LIMIT 1
-    };
-    my $sth = $self->prepare($stmt);
+        };
+       $sth = $self->prepare($stmt);
+       $sth->execute($ssid, $population->dbID());       
+       
+    }
+    else{
+        $stmt = qq{
+          SELECT
+              handle
+          FROM
+              subsnp_handle
+          WHERE
+              subsnp_id = ?
+          LIMIT 1
+        };
+
+
+    $sth = $self->prepare($stmt);
     $sth->execute($ssid);
+
+    }
     my $handle;
     $sth->bind_columns(\$handle);
     $sth->fetch();
-    
     return $handle;
 }
 

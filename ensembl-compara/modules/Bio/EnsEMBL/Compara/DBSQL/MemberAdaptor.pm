@@ -346,7 +346,7 @@ sub _fetch_all_by_source_taxon_chr_name_start_end_strand_limit {
   my ($self,$source_name,$taxon_id,$chr_name,$chr_start,$chr_end,$chr_strand,$limit) = @_;
 
   $self->throw("all args are required") 
-    unless($source_name && $taxon_id && $chr_name && $chr_start && $chr_end && $chr_strand);
+      unless($source_name && $taxon_id && $chr_start && $chr_end && $chr_strand && defined ($chr_name));
 
   my $constraint = "m.source_name = '$source_name' and m.taxon_id = $taxon_id 
                     and m.chr_name = '$chr_name' 
@@ -587,7 +587,7 @@ sub fetch_canonical_member_for_gene_member_id {
 
 sub fetch_canonical_peptide_member_for_gene_member_id {
     my $self = shift;
-    deprecate("Use fetch_canonical_member_for_gene_member_id() instead");
+    deprecate("Use fetch_canonical_member_for_gene_member_id() instead. fetch_canonical_peptide_member_for_gene_member_id() will be removed in release 70.");
     return $self->fetch_canonical_member_for_gene_member_id(@_);
 }
 
@@ -600,7 +600,7 @@ sub fetch_canonical_peptide_member_for_gene_member_id {
 
 sub fetch_canonical_transcript_member_for_gene_member_id {
     my $self = shift;
-    deprecate("Use fetch_canonical_member_for_gene_member_id() instead");
+    deprecate("Use fetch_canonical_member_for_gene_member_id() instead. fetch_canonical_transcript_member_for_gene_member_id() will be removed in release 70.");
     return $self->fetch_canonical_member_for_gene_member_id(@_);
 }
 
@@ -636,7 +636,8 @@ sub create_instance_from_rowhash {
 	my ($self, $rowhash) = @_;
 	
 	return Bio::EnsEMBL::Compara::Member->new_fast({
-		_dbID           => $rowhash->{member_id},
+		_adaptor        => $self,                   # field name NOT in sync with Bio::EnsEMBL::Storable
+		_dbID           => $rowhash->{member_id},   # field name NOT in sync with Bio::EnsEMBL::Storable
 		_stable_id      => $rowhash->{stable_id},
 		_version        => $rowhash->{version},
 		_taxon_id       => $rowhash->{taxon_id},
@@ -650,7 +651,6 @@ sub create_instance_from_rowhash {
 		_source_name    => $rowhash->{source_name},
 		_display_label  => $rowhash->{display_label},
 		_gene_member_id => $rowhash->{gene_member_id},
-		_adaptor        => $self
 	});
 }
 

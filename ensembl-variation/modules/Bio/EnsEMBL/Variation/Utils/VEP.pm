@@ -386,7 +386,23 @@ sub parse_vcf {
         }
         
         # get type
-        my $type = $info{SVTYPE};
+        my $type;
+        
+        if($alt =~ /\<|\[|\]|\>/) {
+            $type = $alt;
+            $type =~ s/\<|\>//g;
+            $type =~ s/\:.+//g;
+            
+            if($start >= $end && $type =~ /del/i) {
+                warn "WARNING: VCF line on line ".$config->{line_number}." looks incomplete, skipping:\n$line\n";
+                return [];
+            }
+            
+        }
+        else {
+            $type = $info{SVTYPE};
+        }
+        
         my $so_term;
         
         if(defined($type)) {
@@ -829,7 +845,7 @@ sub get_all_consequences {
     push @{$vf_hash{$_->{chr}}{int($_->{start} / $config->{chunk_size})}{$_->{start}}}, $_ for grep {!defined($_->{non_variant})} @$listref;
     
     my @non_variant = grep {defined($_->{non_variant})} @$listref;
-    debug("Skipping ".(scalar @non_variant)." non-variant loci\n") unless defined($config->{quiet});
+    debug("Skipping ".(scalar @non_variant)." non-variant loci\n") unless defined($config->{quiet}) or !(scalar @non_variant);
     
     # get regions
     my $regions = &regions_from_hash($config, \%vf_hash);
@@ -993,6 +1009,8 @@ sub get_all_consequences {
                     
                     # decode and thaw "output" from forked process
                     push @{$by_pid{$pid}}, thaw(decode_base64($_));
+                    
+                    progress($config, ++$done_vars, $total_size);
                 }
             }
             
@@ -1126,7 +1144,7 @@ sub vf_list_to_cons {
             
             # original output
             if(defined($config->{original})) {
-                push @return, $vf->{_line};
+                push @return, \$vf->{_line};
             }
             
             # GVF output
@@ -1227,7 +1245,7 @@ sub vf_list_to_cons {
                 push @return, @{vf_to_consequences($config, $vf)};
             }
             
-            print PARENT "BUMP\n" if defined($config->{forked});
+            #print PARENT "BUMP\n" if defined($config->{forked});
         }
         
         end_progress($config) unless scalar @$listref == 1;
@@ -1428,8 +1446,6 @@ sub vf_to_consequences {
             next if(defined $config->{coding_only} && !($tv->affects_cds));
             
             push @return, map {tva_to_line($config, $_)} @{$tv->get_all_alternate_TranscriptVariationAlleles};
-            
-            undef $tv->{$_} for keys %$tv;
         }
     }
     
@@ -2182,7 +2198,7 @@ sub whole_genome_fetch_custom {
     # count and report
     my $total_annotations = 0;
     $total_annotations += scalar keys %{$annotation_cache->{$chr}->{$_}} for keys %{$annotation_cache->{$chr}};
-    debug("Retrieved $total_annotations custom annotations (", (join ", ", map {(scalar keys %{$annotation_cache->{$chr}->{$_}}).' '.$_} keys %{$annotation_cache->{$chr}}), ")");
+    debug("Retrieved $total_annotations custom annotations (", (join ", ", map {(scalar keys %{$annotation_cache->{$chr}->{$_}}).' '.$_} keys %{$annotation_cache->{$chr}}), ")") unless defined($config->{quiet});
     
     # compare annotations to variations in hash
     debug("Analyzing custom annotations") unless defined($config->{quiet});
@@ -2252,6 +2268,7 @@ sub whole_genome_fetch_transcript {
             ) {
                 # pinch slice from slice cache if we don't already have it
                 $vf->{slice} ||= $slice_cache->{$chr};
+                $vf->{slice} = $slice_cache->{$chr} if defined($vf->{slice}->{is_fake});
                 
                 my $tv = Bio::EnsEMBL::Variation::TranscriptVariation->new(
                     -transcript        => $tr,
@@ -2839,7 +2856,7 @@ sub check_svs_hash {
             
             # check for structural variations
             if(defined($config->{sa})) {
-                my $slice = $config->{sa}->fetch_by_region('chromosome', $chr, $start, $end);
+                my $slice = $config->{sa}->fetch_by_region(undef, $chr, $start, $end);
                 
                 if(defined($slice)) {
                     my $svs = $config->{svfa}->fetch_all_by_Slice($slice);
@@ -2869,17 +2886,27 @@ sub get_slice {
     my $otherfeatures = shift;
     $otherfeatures ||= '';
     
-    return undef unless defined($config->{sa}) && defined($chr);
-    
     my $slice;
     
-    # first try to get a chromosome
-    eval { $slice = $config->{$otherfeatures.'sa'}->fetch_by_region('chromosome', $chr); };
-    
-    # if failed, try to get any seq region
-    if(!defined($slice)) {
-        $slice = $config->{$otherfeatures.'sa'}->fetch_by_region(undef, $chr);
+    # with a FASTA DB we can just spoof slices
+    if(defined($config->{fasta_db})) {
+        $slice = Bio::EnsEMBL::Slice->new(
+			-COORD_SYSTEM      => $config->{coord_system},
+			-START             => 1,
+			-END               => $config->{fasta_db}->length($chr),
+			-SEQ_REGION_NAME   => $chr,
+			-SEQ_REGION_LENGTH => $config->{fasta_db}->length($chr)
+		);
+        
+        $slice->{is_fake} = 1;
+        
+        return $slice;
     }
+    
+    return undef unless defined($config->{sa}) && defined($chr);
+    
+    # first try to get a chromosome
+    eval { $slice = $config->{$otherfeatures.'sa'}->fetch_by_region(undef, $chr); };
     
     return $slice;
 }
@@ -3593,6 +3620,8 @@ sub load_dumped_transcript_cache {
         }
         
         $t->{slice}->{adaptor} = $config->{sa};
+        
+        $_->{slice} ||= $t->{slice} for @{$t->{_trans_exon_array}};
     }
     
     return $tr_cache;
@@ -4325,6 +4354,18 @@ sub write_cache_info {
         print OUT "\n";
     }
     
+    # sift/polyphen versions
+    foreach my $tool(qw(sift polyphen)) {
+        if(defined($config->{$tool})) {
+            my $var_mca = $config->{reg}->get_adaptor($config->{species}, 'variation', 'metacontainer');
+            
+            if(defined($var_mca)) {
+                my $version = $var_mca->list_value_by_key($tool.'_version');
+                print OUT "$tool\_version\t".$version->[0]."\n" if defined($version) and scalar @$version;
+            }
+        }
+    }
+    
     close OUT;
 }
 
@@ -4465,7 +4506,7 @@ sub check_frequencies {
     my $freq_gt_lt    = $config->{freq_gt_lt};
     
     my $freq_pop_name = (split /\_/, $freq_pop)[-1];
-    $freq_pop_name = undef if $freq_pop_name =~ /1kg|hap/;
+    $freq_pop_name = undef if $freq_pop_name =~ /1kg|hap|any/;
     
     delete $config->{filtered_freqs};
     

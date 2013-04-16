@@ -1,4 +1,4 @@
-# $Id: Subset.pm,v 1.10 2012-05-10 14:19:20 mm14 Exp $
+# $Id: Subset.pm,v 1.11 2012-09-10 10:55:55 mm14 Exp $
 #
 # Module to handle family members
 #
@@ -31,11 +31,9 @@ The rest of the documentation details each of the object methods. Internal metho
 package Bio::EnsEMBL::Compara::Subset;
 
 use strict;
-use Bio::Species;
 use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::Utils::Argument;
 
-use Data::Dumper;
 
 sub new {
   my ($class, @args) = @_;

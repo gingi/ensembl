@@ -5,7 +5,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Copyright (c) 1999-2012 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -24,7 +24,7 @@
 
 =head1 NAME
 
-Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor - Simple wrapper class for Funcgen StorableAdaptors
+Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor - Simple wrapper class for Funcgen Storable Adaptors
 
 =head1 SYNOPSIS
 
@@ -42,6 +42,7 @@ Bio::EnsEMBL::DBSQL::BaseAdaptor
 =cut
 
 package Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor;
+
 require Exporter;
 use vars qw(@ISA @EXPORT);
 use strict;
@@ -889,23 +890,91 @@ sub _main_table{
 }
 
 
-=head2 list_dbIDs
+=head2 _list_dbIDs
 
-  Args       : None
-  Example    : my @feature_ids = @{$ofa->list_dbIDs()};
-  Description: Gets an array of internal IDs for all objects in
-               the main table of this class.
-  Returntype : List of ints
+  Example    : my @table_ids = @{$adaptor->_list_dbIDs()};
+  Description: Wrapper for parent method, dynamically passes correct table name to query.
+               Gets an array of internal IDs for all objects in the main table of this class.
+  Returntype : List of Ints
   Exceptions : None
-  Caller     : ?
-  Status     : Medium Risk
+  Caller     : General
+  Status     : Stable
 
 =cut
 
-sub list_dbIDs {
+
+sub _list_dbIDs{
+  my $self = shift;
+  return $self->SUPER::_list_dbIDs($self->_main_table->[0]);
+}
+
+
+
+#Need this to support generating valid adaptor names in FeatureSet
+#this needs to be in the BaseAdaptor, so we can access it without 
+#having a set or feature adaptor defined.
+
+
+sub build_feature_class_name{
+  my ($self, $fclass) = @_;
+   
+  if(! defined $fclass){
+    throw('You must pass a feature class argument to build the feature class name');
+  }
+ 
+  my @words = split('_', $fclass);
+  
+  foreach my $word(@words){
+    $word = ucfirst($word);
+    $word = 'DNA' if $word eq 'Dna';
+  }
+  
+  return join('', (@words, 'Feature') );
+}
+
+
+
+# Generic constraint methods, called from compose_constraint_query
+# Depends on inheriting Adaptor having TABLES and TRUE_TABLES 'constants' set.
+
+sub _constrain_status {
+  my ($self, $state) = @_;
+  
+  my $constraint_conf = { tables => [['status', 's']]};  #,['status_name', 'sn']),
+    
+  #This can't use IN without duplicating the result
+  #Would need to add a default_final_clause to group
+
+  #my @sn_ids;
+  #if( (ref($states) ne 'ARRAY') ||
+  #scalar(@$states) == 0 ){
+  #throw('Must pass an arrayref of status_names');
+  #}
+  #foreach my $sn(@$states){
+  ##This will throw if status not valid, but still may be absent
+  #	push @sn_ids, $self->_get_status_name_id($sn);
+  #  }
+      
+	  
+      
+  my @tables = $self->_tables;
+  my ($table_name, $syn) = @{$tables[0]};
+	  
+  my $constraint = " $syn.${table_name}_id=s.table_id AND ".
+    "s.table_name='$table_name' AND s.status_name_id=".$self->_get_status_name_id($state);
+  #"s.table_name='$table_name' AND s.status_name_id IN (".join(', ', @sn_ids.')';
+  
+  return ($constraint, $constraint_conf);
+}
+
+### DEPRECATED ###
+
+sub list_dbIDs { #Deprecated in v69
 	my $self = shift;	
+  deprecate('Please use _list_dbIDs.');
 	return $self->_list_dbIDs($self->_main_table->[0]);
 }
+
 
 
 1;

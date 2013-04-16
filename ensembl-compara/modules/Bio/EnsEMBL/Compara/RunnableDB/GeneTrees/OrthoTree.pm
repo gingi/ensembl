@@ -55,7 +55,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.28.2.1 $
+$Revision: 1.35 $
 
 =head1 APPENDIX
 
@@ -72,7 +72,6 @@ use IO::File;
 use File::Basename;
 use List::Util qw(max);
 use Scalar::Util qw(looks_like_number);
-use Time::HiRes qw(time gettimeofday tv_interval);
 
 use Bio::EnsEMBL::Compara::Homology;
 use Bio::EnsEMBL::Compara::Member;
@@ -111,28 +110,36 @@ sub fetch_input {
 
     $self->param('homologyDBA', $self->compara_dba->get_HomologyAdaptor);
 
-    my $starttime = time();
-    $self->param('tree_id_str') or die "tree_id_str is an obligatory parameter";
-    my $tree_id = $self->param($self->param('tree_id_str')) or die "'*_tree_id' is an obligatory parameter";
+    my $tree_id = $self->param('gene_tree_id') or die "'gene_tree_id' is an obligatory parameter";
     my $gene_tree = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_root_id($tree_id) or die "Could not fetch gene_tree with tree_id='$tree_id'";
     $gene_tree->preload();
     $self->param('gene_tree', $gene_tree->root);
 
-    #if ($self->input_job->retry_count > 0) {
     $self->delete_old_homologies;
     $self->delete_old_orthotree_tags;
     $self->fill_easy_values;
 
     if($self->debug) {
         $self->param('gene_tree')->print_tree($self->param('tree_scale'));
-        printf("time to fetch tree : %1.3f secs\n" , time()-$starttime);
     }
     unless($self->param('gene_tree')) {
         $self->throw("undefined GeneTree as input\n");
     }
     $self->param('taxon_tree', $self->load_species_tree_from_string( $self->get_species_tree_string ) );
+
+    # Loads all the homology MLSSs in order to save DB queries later
     my %mlss_hash;
     $self->param('mlss_hash', \%mlss_hash);
+    foreach my $mlss (@{$self->compara_dba->get_MethodLinkSpeciesSetAdaptor->fetch_all}) {
+        my $mlss_type = $mlss->method->type;
+        next if ($mlss_type ne 'ENSEMBL_PARALOGUES' and $mlss_type ne 'ENSEMBL_ORTHOLOGUES');
+        my $gdbs = $mlss->species_set_obj->genome_dbs;
+        # This should be unique to a pair of genome_db_ids, and equal if we switch the two genome_dbs
+        # WARNING: This trick is valid for genome_db_id up to 10000
+        my $mlss_key = sprintf("%s_%d", $mlss_type, $gdbs->[0]->dbID * $gdbs->[-1]->dbID + 100000000*($gdbs->[0]->dbID + $gdbs->[-1]->dbID));
+        $mlss_hash{$mlss_key} = $mlss;
+    }
+    $self->param('taxon_hash', []);
 }
 
 
@@ -168,25 +175,26 @@ sub run {
 sub write_output {
     my $self = shift @_;
 
+    $self->store_taxon_names unless $self->param('_readonly');
     $self->store_homologies;
 }
 
 
-sub DESTROY {
+sub post_cleanup {
   my $self = shift;
 
   if($self->param('gene_tree')) {
-    printf("OrthoTree::DESTROY  releasing gene_tree\n") if($self->debug);
+    printf("OrthoTree::post_cleanup  releasing gene_tree\n") if($self->debug);
     $self->param('gene_tree')->release_tree;
     $self->param('gene_tree', undef);
   }
   if($self->param('taxon_tree')) {
-    printf("OrthoTree::DESTROY  releasing taxon_tree\n") if($self->debug);
+    printf("OrthoTree::post_cleanup  releasing taxon_tree\n") if($self->debug);
     $self->param('taxon_tree')->release_tree;
     $self->param('taxon_tree', undef);
   }
 
-  $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+  $self->SUPER::post_cleanup if $self->can("SUPER::post_cleanup");
 }
 
 
@@ -200,14 +208,11 @@ sub DESTROY {
 sub run_analysis {
   my $self = shift;
 
-  my $starttime = time()*1000;
-  my $tmp_time = time();
   my $gene_tree = $self->param('gene_tree');
   my $tree_node_id = $gene_tree->node_id;
 
   print "Getting all leaves\n";
   my @all_gene_leaves = @{$gene_tree->get_all_leaves};
-  printf("%1.3f secs to fetch all leaves\n", time()-$tmp_time) if ($self->debug);
 
   #precalculate the ancestor species_hash (caches into the metadata of
   #nodes) also augments the Duplication tagging
@@ -225,7 +230,6 @@ sub run_analysis {
   #Accomplish by creating a fully connected graph between all the
   #genes under the tree (hybrid graph structure) and then analyze each
   #gene/gene link
-  $tmp_time = time();
   printf("build fully linked graph\n") if($self->debug);
   my @genepairlinks;
   my $graphcount = 0;
@@ -247,32 +251,24 @@ sub run_analysis {
       print STDERR "build graph $graphcount\n" if ($graphcount++ % 10 == 0);
     }
   }
-  printf("%1.3f secs build links and features\n", time()-$tmp_time) if($self->debug>1);
 
   $gene_tree->print_tree($self->param('tree_scale')) if($self->debug);
 
   #sort the gene/gene links by distance
   #   makes debug display easier to read, not required by algorithm
-  $tmp_time = time();
   printf("sort links\n") if($self->debug);
   my @sorted_genepairlinks = 
     sort {$a->distance_between <=> $b->distance_between} @genepairlinks;
-  printf("%1.3f secs to sort links\n", time()-$tmp_time) if($self->debug > 1);
 
   #analyze every gene pair (genepairlink) to get its classification
   printf("analyze links\n") if($self->debug);
   printf("%d links\n", scalar(@genepairlinks)) if ($self->debug);
-  $tmp_time = time();
   $self->param('orthotree_homology_counts', {});
   foreach my $genepairlink (@sorted_genepairlinks) {
     $self->analyze_genepairlink($genepairlink);
   }
-  printf("%1.3f secs to analyze genepair links\n", time()-$tmp_time) if($self->debug > 1);
   
   #display summary stats of analysis 
-  my $runtime = time()*1000-$starttime;  
-  $gene_tree->tree->store_tag('OrthoTree_runtime_msec', $runtime) unless ($self->param('_readonly'));
-
   if($self->debug) {
     printf("%d genes in tree\n", scalar(@{$gene_tree->get_all_leaves}));
     printf("%d pairings\n", scalar(@genepairlinks));
@@ -448,7 +444,7 @@ sub get_ancestor_species_hash
     if ($is_dup) {
         my $original_node_type = $node->get_tagvalue('node_type');
         if ((not defined $original_node_type) or ($original_node_type eq 'speciation')) {
-            print "fixing node_type of ", $node->node_id, "\n";
+            $self->warning(sprintf("fixing node_type of %d\n", $node->node_id));
             $node->store_tag('node_type', 'duplication') unless ($self->param('_readonly'));
         }
     }
@@ -487,15 +483,20 @@ sub get_ancestor_taxon_level {
       $taxon_level = $taxon;
     }
   }
-  my $taxon_id = $taxon_level->get_tagvalue("taxon_id");
   $ancestor->add_tag("taxon_level", $taxon_level);
-  $ancestor->store_tag("taxon_id", $taxon_id) unless ($self->param('_readonly'));
-  $ancestor->store_tag("taxon_name", $taxon_level->name) unless ($self->param('_readonly'));
-
-  #$ancestor->print_tree($self->param('tree_scale'));
-  #$taxon_level->print_tree(10);
+  push @{$self->param('taxon_hash')}, [$ancestor, $taxon_level];
 
   return $taxon_level;
+}
+
+sub store_taxon_names {
+    my $self = shift;
+
+    foreach my $arr (@{$self->param('taxon_hash')}) {
+        my ($ancestor, $taxon_level) = @$arr;
+        $ancestor->store_tag('taxon_id', $taxon_level->get_tagvalue('taxon_id'));
+        $ancestor->store_tag('taxon_name', $taxon_level->name);
+    }
 }
 
 
@@ -546,7 +547,6 @@ sub delete_old_orthotree_tags
     my $tree_node_id = $self->param('gene_tree')->node_id;
 
     print "deleting old orthotree tags\n" if ($self->debug);
-    my $delete_time = time();
 
     my $sql1 = 'UPDATE gene_tree_node JOIN gene_tree_node_attr USING (node_id) SET taxon_id = NULL, taxon_name = NULL, duplication_confidence_score = NULL WHERE root_id = ?';
     my $sth1 = $self->compara_dba->dbc->prepare($sql1);
@@ -557,8 +557,6 @@ sub delete_old_orthotree_tags
     my $sth2 = $self->compara_dba->dbc->prepare($sql2);
     $sth2->execute($tree_node_id);
     $sth2->finish;
-
-    printf("%1.3f secs to delete old orthotree tags\n", time()-$delete_time) if ($self->debug);
 }
 
 sub delete_old_homologies {
@@ -568,7 +566,6 @@ sub delete_old_homologies {
 
     # New method all in one go -- requires key on tree_node_id
     print "deleting old homologies\n" if ($self->debug);
-    my $delete_time = time();
 
     # Delete first the members
     my $sql1 = 'DELETE homology_member FROM homology JOIN homology_member USING (homology_id) WHERE tree_node_id=?';
@@ -581,8 +578,6 @@ sub delete_old_homologies {
     my $sth2 = $self->compara_dba->dbc->prepare($sql2);
     $sth2->execute($tree_node_id);
     $sth2->finish;
-    
-    printf("%1.3f secs to delete old homologies\n", time()-$delete_time) if ($self->debug);
 }
 
 sub fill_easy_values
@@ -906,7 +901,7 @@ sub store_gene_link_as_homology {
   $homology->subtype($subtype);
   $homology->ancestor_node_id($ancestor->node_id);
   $homology->tree_node_id($tree_node_id);
-  $homology->method_link_species_set_id($mlss->dbID);
+  $homology->method_link_species_set($mlss);
   
   $homology->add_Member($gene1);
   $homology->add_Member($gene2);

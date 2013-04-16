@@ -102,7 +102,7 @@ use Data::Dumper;
 use strict;
 
 $| = 1;							#autoflush
-my ($pass, $dbname, $array_name, $line, $label, $dnadb_user, $dnadb_port);
+my ($pass, $dbname, $array_name, $line, $label, $dnadb_user, $dnadb_port,$dnadb_name);
 my ($clobber, $type, $desc, $file, $class, $logic_name, $name, $dnadb_host);
 my ($anal_db, $db_version, $db_file, $program, $program_version, $program_file);
 my ($gff_source, $gff_feature, $module, $module_version, $parameters, $created);
@@ -129,6 +129,7 @@ GetOptions (
 			"dnadb_host=s"    => \$dnadb_host,
 			"dnadb_user=s"    => \$dnadb_user,
 			"dnadb_port=s"    => \$dnadb_port,
+			"dnadb_name=s"    => \$dnadb_name,
 			"user|u=s"        => \$user,
 			"dbname|d=s"      => \$dbname,
 			"species=s"       => \$species,
@@ -271,6 +272,7 @@ my $db = Bio::EnsEMBL::Funcgen::DBSQL::DBAdaptor->new(
 													  -dnadb_host => $dnadb_host,
 													  -dnadb_port => $dnadb_port,
 													  -dnadb_user => $dnadb_user,
+													  -dnadb_name => $dnadb_name,
 													  -species => $species,
 													 );
 #test db connections

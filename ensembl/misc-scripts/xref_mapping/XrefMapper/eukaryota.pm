@@ -18,9 +18,8 @@ sub set_methods{
   return $default_method, \%override_method_for_source;
 }
 
-sub transcript_display_xref_sources {
+sub gene_display_xref_sources {
     my $self     = shift;
-    my $fullmode = shift;
 
     print STDERR "getting the list of external_dbs for assigning gene names from eukaryota.pm\n";
 
@@ -42,20 +41,97 @@ sub transcript_display_xref_sources {
                  PGD_GENE
                  Mycgr3_jgi_v2.0_gene
                  BROAD_Magnaporthe_DB
+                 PGSC_GENE
+                 PHYTOZOME_GMAX_GENE
                );
     
     my %ignore;
 
-    # Both methods
     
-    if(!$fullmode){
-	$ignore{"EntrezGene"}= 'FROM:RefSeq_[pd][en][pa].*_predicted';
-    }
-    else{
-	$ignore{"EntrezGene"} = 'select ox.object_xref_id from object_xref ox, dependent_xref dx, source s1, xref x1, source s2, xref x2 where ox.object_xref_id = dx.object_xref_id and dx.dependent_xref_id = x1.xref_id and x1.source_id = s1.source_id and s1.name = "EntrezGene" and x2.xref_id = dx.master_xref_id and x2.source_id = s2.source_id and (s2.name like "Refseq_dna_predicted" or s2.name like "RefSeq_peptide_predicted") and ox.ox_status = "DUMP_OUT"';
-	
-    }
+    #don't use EntrezGene labels dependent on predicted RefSeqs
+
+    $ignore{'EntrezGene'} =<<IEG;
+SELECT DISTINCT ox.object_xref_id
+  FROM object_xref ox, dependent_xref dx, 
+       xref xmas, xref xdep, 
+       source smas, source sdep
+    WHERE ox.xref_id = dx.dependent_xref_id AND
+          dx.dependent_xref_id = xdep.xref_id AND
+          dx.master_xref_id = xmas.xref_id AND
+          xmas.source_id = smas.source_id AND
+          xdep.source_id = sdep.source_id AND
+          smas.name like "Refseq%predicted" AND
+          sdep.name like "EntrezGene" AND
+          ox.ox_status = "DUMP_OUT" 	 
+IEG
+
+    #don't use labels starting with LOC
+
+    $ignore{'LOC_prefix'} =<<LOCP;
+SELECT object_xref_id
+  FROM object_xref JOIN xref USING(xref_id) JOIN source USING(source_id)
+   WHERE ox_status = 'DUMP_OUT' AND label REGEXP '^LOC[[:digit:]]+'
+LOCP
+
+    return [\@list,\%ignore];
+}
+
+
+sub transcript_display_xref_sources {
+    my $self     = shift;
+
+    print STDERR "getting the list of external_dbs for assigning transcript names from eukaryota.pm\n";
+
+    my @list = qw(
+                 RFAM
+                 RNAMMER
+                 TRNASCAN_SE
+                 Uniprot_genename
+                 ENA_GENE
+                 BROAD_U_maydis
+                 BROAD_F_oxysporum
+                 BROAD_G_zeae
+                 BROAD_G_moniliformis
+                 BROAD_P_infestans
+                 phyra_jgi_v1.1
+                 physo1_jgi_v1.1
+	   	 phatr_jgi_v2
+		 phatr_jgi_v2_bd
+                 PGD_GENE
+                 Mycgr3_jgi_v2.0_gene
+                 BROAD_Magnaporthe_DB
+                 PGSC_GENE
+                 PHYTOZOME_GMAX_GENE
+               );
     
+    my %ignore;
+
+    
+    #don't use EntrezGene labels dependent on predicted RefSeqs
+
+    $ignore{'EntrezGene'} =<<IEG;
+SELECT DISTINCT ox.object_xref_id
+  FROM object_xref ox, dependent_xref dx, 
+       xref xmas, xref xdep, 
+       source smas, source sdep
+    WHERE ox.xref_id = dx.dependent_xref_id AND
+          dx.dependent_xref_id = xdep.xref_id AND
+          dx.master_xref_id = xmas.xref_id AND
+          xmas.source_id = smas.source_id AND
+          xdep.source_id = sdep.source_id AND
+          smas.name like "Refseq%predicted" AND
+          sdep.name like "EntrezGene" AND
+          ox.ox_status = "DUMP_OUT" 	 
+IEG
+
+    #don't use labels starting with LOC
+
+    $ignore{'LOC_prefix'} =<<LOCP;
+SELECT object_xref_id
+  FROM object_xref JOIN xref USING(xref_id) JOIN source USING(source_id)
+   WHERE ox_status = 'DUMP_OUT' AND label REGEXP '^LOC[[:digit:]]+'
+LOCP
+
     return [\@list,\%ignore];
 }
 
@@ -76,6 +152,8 @@ sub gene_description_sources {
 	  "phatr_jgi_v2_bd",
           "PGD_GENE",
           "BROAD_Magnaporthe_DB",
+          "PGSC_GENE",
+          "PHYTOZOME_GMAX_GENE",
           "RFAM",
           "TRNASCAN_SE",
           "RNAMMER",

@@ -87,6 +87,11 @@ use Bio::EnsEMBL::Utils::Exception;
 use base ('Bio::EnsEMBL::Compara::DBSQL::BaseAdaptor', 'Bio::EnsEMBL::Compara::DBSQL::TagAdaptor');
 
 
+sub object_class {
+    return 'Bio::EnsEMBL::Compara::MethodLinkSpeciesSet';
+}
+
+
 =head2 store
 
   Arg  1     : Bio::EnsEMBL::Compara::MethodLinkSpeciesSet object
@@ -105,7 +110,7 @@ use base ('Bio::EnsEMBL::Compara::DBSQL::BaseAdaptor', 'Bio::EnsEMBL::Compara::D
 =cut
 
 sub store {
-  my ($self, $mlss) = @_;
+  my ($self, $mlss, $store_components_first) = @_;
 
   throw("method_link_species_set must be a Bio::EnsEMBL::Compara::MethodLinkSpeciesSet\n")
     unless ($mlss && ref $mlss &&
@@ -115,7 +120,7 @@ sub store {
   $self->db->get_MethodAdaptor->store( $method );   # will only store if the object needs storing (type is missing) and reload the dbID otherwise
 
   my $species_set_obj   = $mlss->species_set_obj()  or die "No SpeciesSet defined, cannot store";
-  $self->db->get_SpeciesSetAdaptor->store( $species_set_obj );
+  $self->db->get_SpeciesSetAdaptor->store( $species_set_obj, $store_components_first );
 
   my $dbID;
   if(my $already_stored_method_link_species_set = $self->fetch_by_method_link_id_species_set_id($method->dbID, $species_set_obj->dbID, 1) ) {
@@ -233,7 +238,7 @@ sub store {
 sub delete {
     my ($self, $method_link_species_set_id) = @_;
 
-    my $method_link_species_set_sql = 'DELETE mlsst, mlss FROM method_link_species_set mlss LEFT JOIN method_link_species_set_tag mlsst WHERE method_link_species_set_id = ?';
+    my $method_link_species_set_sql = 'DELETE mlsst, mlss FROM method_link_species_set mlss LEFT JOIN method_link_species_set_tag mlsst USING (method_link_species_set_id) WHERE method_link_species_set_id = ?';
     my $sth = $self->prepare($method_link_species_set_sql);
     $sth->execute($method_link_species_set_id);
     $sth->finish();
@@ -618,6 +623,7 @@ sub fetch_by_method_link_type_species_set_name {
       }
   }
   warning("Unable to find method_link_species_set with method_link_type of $method_link_type and species_set_tag value of $species_set_name\n");
+  return undef;
 }
 
 

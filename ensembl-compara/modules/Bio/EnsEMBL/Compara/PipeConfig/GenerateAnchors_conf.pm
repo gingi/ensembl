@@ -22,11 +22,11 @@ sub default_options {
 	'password' 		=> $ENV{'ENSADMIN_PSW'},
 	   # connection parameters to various databases:
 	'pipeline_db' => { # the production database itself (will be created)
-		-host   => 'compara3',
+		-host   => 'compara4',
 		-port   => 3306,
                 -user   => 'ensadmin',
 		-pass   => $self->o('password'),
-		-dbname => $ENV{'USER'}.'_test_mammal_anchors'.$self->o('rel_with_suffix'),
+		-dbname => $ENV{'USER'}.'_seven_mammal_anchors_'.$self->o('rel_with_suffix'),
    	},
 	  # database containing the pairwise alignments needed to get the overlaps
 	'compara_pairwise_db' => {
@@ -40,7 +40,7 @@ sub default_options {
 	'reference_genome_db_id' => 90,
 	  # pairwise alignments from these non-ref genome_db_ids and the reference_genome_db_id will be use to build the anchors
 	  # if it's an empty string then all pairwise alignments with the reference_genome_db_id will be used
-	'non_ref_genome_db_ids' => [39,61,57,3,132,108],
+	'non_ref_genome_db_ids' => [39,61,57,3,132,108,122],
 #	'non_ref_genome_db_ids' => [],
 	  # location of species core dbs which were used in the pairwise alignments
 	'core_db_urls' => [ 'mysql://ensro@ens-livemirror:3306/67' ],
@@ -75,10 +75,11 @@ sub pipeline_create_commands {
 sub resource_classes {
     my ($self) = @_; 
     return {
-         0 => { -desc => 'mem2500',  'LSF' => '-C0 -M2500000 -R"select[mem>2500] rusage[mem=2500]"' },
-         1 => { -desc => 'mem3500',  'LSF' => '-C0 -M3500000 -R"select[mem>3500] rusage[mem=3500]"' },
-         2 => { -desc => 'mem7500',  'LSF' => '-C0 -M7500000 -R"select[mem>7500] rusage[mem=7500]"' },  
-         3 => { -desc => 'mem14000', 'LSF' => '-C0 -M14000000 -R"select[mem>14000] rusage[mem=14000]"' },  
+	%{$self->SUPER::resource_classes},  # inherit 'default' from the parent class
+         'default' => {'LSF' => '-C0 -M2500000 -R"select[mem>2500] rusage[mem=2500]"' },
+         'mem3500' => {'LSF' => '-C0 -M3500000 -R"select[mem>3500] rusage[mem=3500]"' },
+         'mem7500' => {'LSF' => '-C0 -M7500000 -R"select[mem>7500] rusage[mem=7500]"' },  
+         'mem14000' => {'LSF' => '-C0 -M14000000 -R"select[mem>14000] rusage[mem=14000]"' },  
     };  
 }
 
@@ -160,7 +161,7 @@ sub pipeline_analyses {
                 -flow_into => {
                                2 => [ 'innodbise_table' ],
                               },  
-		-wait_for       => [ 'import_entries' ],
+		-wait_for       => [ 'import_entries', 'load_method_link_table' ],
             },  
             {   -logic_name    => 'innodbise_table',
                 -module        => 'Bio::EnsEMBL::Hive::RunnableDB::SqlCmd',
@@ -196,7 +197,7 @@ sub pipeline_analyses {
 		-logic_name     => 'populate_compara_tables',
 		-module         => 'Bio::EnsEMBL::Hive::RunnableDB::SqlCmd',
 		-input_ids => [{}],
-		-wait_for       => [ 'innodbise_table' ],
+		-wait_for       => [ 'set_genome_db_locator', 'load_method_link_table' ],
 		-parameters => {
 				'sql' => [
 						#ml and mlss entries for the overlaps, pecan and gerp
@@ -229,7 +230,7 @@ sub pipeline_analyses {
 	   {
 		-logic_name	=> 'find_pairwise_overlaps',
 		-module		=> 'Bio::EnsEMBL::Compara::Production::EPOanchors::FindPairwiseOverlaps',
-		-wait_for      => [ 'chunk_reference_dnafrags' ],
+		-wait_for      => [ 'populate_compara_tables' ],
 		-parameters     => { 'overlaps_mlssid' => $self->o('overlaps_mlssid'), },
 		-flow_into	=> {
 					2 => [ 'pecan' ],
@@ -250,6 +251,7 @@ sub pipeline_analyses {
 				   },
 		-hive_capacity => 50,
 		-failed_job_tolerance => 10, 
+		-max_retry_count => 1,
    	   },
            {    -logic_name => 'pecan_high_mem',
                 -parameters => {
@@ -260,14 +262,16 @@ sub pipeline_analyses {
                 -module => 'Bio::EnsEMBL::Compara::RunnableDB::MercatorPecan::Pecan',
                 -hive_capacity => 10, 
                 -can_be_empty => 1,
-                -rc_id => 2,
+                -rc_name => 'mem7500',
+		-failed_job_tolerance => 100,
+		-max_retry_count => 1,
            },  
 	   {
 		-logic_name    => 'gerp_constrained_element',
 		-module => 'Bio::EnsEMBL::Compara::RunnableDB::GenomicAlignBlock::Gerp',
 		-parameters    => { 'window_sizes' => '[1,10,100,500]', 'gerp_exe_dir' => $self->o('gerp_exe_dir'), 
 				    'program_version' => $self->o('gerp_program_version'), 'mlss_id' => $self->o('pecan_mlssid'), },
-		-hive_capacity => 50,
+		-hive_capacity => 100,
 		-batch_size    => 5,
 	   },
 	   { 

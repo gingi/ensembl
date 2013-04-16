@@ -46,9 +46,9 @@ sub default_options {
     return {
         %{$self->SUPER::default_options},
 
-#       'mlss_id'         => 30038,         # it is very important to check that this value is current (commented out to make it obligatory to specify)
+#       'mlss_id'         => 30039,         # it is very important to check that this value is current (commented out to make it obligatory to specify)
         'host'            => 'compara4',    # where the pipeline database will be created
-        'release'         => '68',          # current ensembl release number
+        'release'         => '69',          # current ensembl release number
         'rel_suffix'      => '',            # an empty string by default, a letter otherwise
         'rel_with_suffix' => $self->o('release').$self->o('rel_suffix'),
 
@@ -86,10 +86,10 @@ sub default_options {
         'cons_capacity'   =>  400,
 
             # homology database connection parameters (we inherit half of the members and sequences from there):
-        'homology_db'  => 'mysql://ensro@compara3/mm14_compara_homology_68',
+        'homology_db'  => 'mysql://ensro@compara1/mm14_compara_homology_69',
 
             # used by the StableIdMapper as the reference:
-        'prev_rel_db' => 'mysql://ensadmin:'.$self->o('password').'@compara3/mm14_ensembl_compara_67',
+        'prev_rel_db' => 'mysql://ensadmin:'.$self->o('password').'@compara3/mm14_ensembl_compara_68',
 
             # used by the StableIdMapper as the location of the master 'mapping_session' table:
         'master_db' => 'mysql://ensadmin:'.$self->o('password').'@compara1/sf5_ensembl_compara_master',    
@@ -132,7 +132,7 @@ sub resource_classes {
     return {
         %{$self->SUPER::resource_classes},  # inherit 'default' from the parent class
 
-        'Urgent'       => { 'LSF' => '-q yesterday' },
+        'urgent'       => { 'LSF' => '-q yesterday' },
         'LongBlast'    => { 'LSF' => '-C0 -M'.$self->o('blast_gigs').'000000 -q long -R"select['.$self->o('dbresource').'<'.$self->o('blast_capacity').' && mem>'.$self->o('blast_gigs').'000] rusage['.$self->o('dbresource').'=10:duration=10:decay=1:mem='.$self->o('blast_gigs').'000]"' },
         'BigMcxload'   => { 'LSF' => '-C0 -M'.$self->o('mcxload_gigs').'000000 -q hugemem -R"select[mem>'.$self->o('mcxload_gigs').'000] rusage[mem='.$self->o('mcxload_gigs').'000]"' },
         'BigMcl'       => { 'LSF' => '-C0 -M'.$self->o('mcl_gigs').'000000 -n '.$self->o('mcl_procs').' -q hugemem -R"select[ncpus>='.$self->o('mcl_procs').' && mem>'.$self->o('mcl_gigs').'000] rusage[mem='.$self->o('mcl_gigs').'000] span[hosts=1]"' },
@@ -210,6 +210,7 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::LoadMembers',
             -parameters => {
                 'include_nonreference'  => 1,
+                'include_patches'       => 1,
                 'include_reference'     => 0,
             },
             -hive_capacity => -1,
@@ -240,7 +241,7 @@ sub pipeline_analyses {
                 '2->A' => [ 'load_uniprot_factory' ],
                 'A->1' => [ 'snapshot_after_load_uniprot' ],
             },
-            -rc_name => 'Urgent',
+            -rc_name => 'urgent',
         },
 
         {   -logic_name    => 'load_uniprot_factory',
@@ -326,8 +327,24 @@ sub pipeline_analyses {
             -hive_capacity => $self->o('blast_capacity'),
             -flow_into => {
                 3 => [ ':////mcl_sparse_matrix?insertion_method=REPLACE' ],
+                -1 => 'blast_himem',
             },
             -rc_name => 'LongBlast',
+        },
+
+        {   -logic_name    => 'blast_himem',
+            -module        => 'Bio::EnsEMBL::Compara::RunnableDB::Families::BlastAndParseDistances',
+            -parameters    => {
+                'blastdb_dir'   => $self->o('blastdb_dir'),
+                'blastdb_name'  => $self->o('blastdb_name'),
+                'blast_params'  => $self->o('blast_params'),
+                'idprefixed'    => 1,
+            },
+            -hive_capacity => $self->o('blast_capacity'),
+            -flow_into => {
+                3 => [ ':////mcl_sparse_matrix?insertion_method=REPLACE' ],
+            },
+            -rc_name => '4GigMem',
         },
 
         {   -logic_name => 'snapshot_after_blast',
@@ -392,7 +409,7 @@ sub pipeline_analyses {
                     'find_update_singleton_cigars' => { },
                 }
             },
-            -rc_name => 'Urgent',
+            -rc_name => 'urgent',
         },
 
 # <Archiving flow-in sub-branch>
@@ -402,7 +419,7 @@ sub pipeline_analyses {
                 'cmd'   => 'gzip #input_filenames#',
             },
             -hive_capacity => 20, # to enable parallel branches
-            -rc_name => 'Urgent',
+            -rc_name => 'urgent',
         },
 # </Archiving flow-in sub-branch>
 
@@ -451,7 +468,7 @@ sub pipeline_analyses {
             -flow_into => {
                 1 => [ 'insert_redundant_peptides' ],
             },
-            -rc_name => 'Urgent',
+            -rc_name => 'urgent',
         },
 
         {   -logic_name => 'insert_redundant_peptides',
@@ -463,7 +480,7 @@ sub pipeline_analyses {
             -flow_into => {
                 1 => [ 'insert_ensembl_genes' ],
             },
-            -rc_name => 'Urgent',
+            -rc_name => 'urgent',
         },
 
         {   -logic_name => 'insert_ensembl_genes',
@@ -472,7 +489,7 @@ sub pipeline_analyses {
                 'sql' => "INSERT INTO family_member SELECT fm.family_id, m.gene_member_id, NULL FROM member m, family_member fm WHERE m.member_id=fm.member_id AND m.source_name='ENSEMBLPEP' GROUP BY family_id, gene_member_id",
             },
             -hive_capacity => 20, # to enable parallel branches
-            -rc_name => 'Urgent',
+            -rc_name => 'urgent',
         },
 # </Mafft sub-branch>
 
@@ -516,7 +533,7 @@ sub pipeline_analyses {
                 'subject' => "FamilyPipeline(".$self->o('rel_with_suffix').") has completed",
                 'text' => "This is an automatic message.\nFamilyPipeline for release ".$self->o('rel_with_suffix')." has completed.",
             },
-            -rc_name => 'Urgent',
+            -rc_name => 'urgent',
         },
 
         #

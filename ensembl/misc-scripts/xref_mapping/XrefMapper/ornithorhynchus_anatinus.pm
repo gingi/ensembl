@@ -6,31 +6,22 @@ use vars '@ISA';
 
 @ISA = qw{ XrefMapper::BasicMapper };
 
-# Same as in BasicMapper but Genoscope order reversed.
 
-sub transcript_display_xref_sources {
-  my @list = qw(Platypus_olfactory_receptor
-		Oxford_FGU_Oa_tscript
-		Oxford_FGU_Oa_gene
-		RFAM
-		miRBase
-		IMGT/GENE_DB
-		HUGO
-		SGD
-		MGI
-		flybase_symbol
-		Anopheles_symbol
-		Genoscope_annotated_gene
-		Uniprot/SWISSPROT
-		Uniprot/Varsplic
-		RefSeq_peptide
-		RefSeq_dna
-		Uniprot/SPTREMBL
-		EntrezGene);
+sub gene_display_xref_sources {
+
+ my $self     = shift;
+	
+  my @list = qw(Oxford_FGU_Oa_gene
+                RFAM
+                miRBase
+                Uniprot_genename
+                EntrezGene);
 
   my %ignore;
 
-  $ignore{"EntrezGene"} =(<<'IEG');
+  #don't use EntrezGene labels dependent on predicted RefSeqs
+
+$ignore{'EntrezGene'} =<<IEG;
 SELECT DISTINCT ox.object_xref_id
   FROM object_xref ox, dependent_xref dx, 
        xref xmas, xref xdep, 
@@ -42,15 +33,50 @@ SELECT DISTINCT ox.object_xref_id
           xdep.source_id = sdep.source_id AND
           smas.name like "Refseq%predicted" AND
           sdep.name like "EntrezGene" AND
-          ox.ox_status = "DUMP_OUT"
+          ox.ox_status = "DUMP_OUT" 	 
 IEG
 
-  $ignore{"Uniprot/SPTREMBL"} =(<<BIGN);
+
+
+  #don't use labels starting with LOC
+
+$ignore{'LOC_prefix'} =<<LOCP;
 SELECT object_xref_id
-    FROM object_xref JOIN xref USING(xref_id) JOIN source USING(source_id)
-     WHERE ox_status = 'DUMP_OUT' AND name = 'Uniprot/SPTREMBL' 
-      AND priority_description = 'protein_evidence_gt_2'
-BIGN
+  FROM object_xref JOIN xref USING(xref_id) JOIN source USING(source_id)
+   WHERE ox_status = 'DUMP_OUT' AND label REGEXP '^LOC[[:digit:]]+'
+LOCP
+
+$ignore{'Uniprot_genename'} =<<IEG;
+SELECT DISTINCT ox.object_xref_id
+  FROM object_xref ox, dependent_xref dx, 
+       xref xmas, xref xdep, 
+       source smas, source sdep
+    WHERE ox.xref_id = dx.dependent_xref_id AND
+          dx.dependent_xref_id = xdep.xref_id AND
+          dx.master_xref_id = xmas.xref_id AND
+          xmas.source_id = smas.source_id AND
+          xdep.source_id = sdep.source_id AND
+          smas.name like "Uniprot/SPTREMBL" AND
+          smas.status = "LOWEVIDENCE" AND
+          sdep.name like "Uniprot_genename" AND
+          ox.ox_status = "DUMP_OUT"      
+IEG
+
+
+  return [\@list,\%ignore];
+} 
+
+
+sub transcript_display_xref_sources {
+  my @list = qw(Platypus_olfactory_receptor
+		Oxford_FGU_Oa_tscript		
+		RFAM
+		miRBase
+		Uniprot/SWISSPROT
+		Uniprot/Varsplic
+		);
+
+  my %ignore;
 
   return [\@list,\%ignore];
 }

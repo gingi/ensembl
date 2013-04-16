@@ -60,6 +60,13 @@ use Time::HiRes qw(time gettimeofday tv_interval);
 
 use base('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
+sub param_defaults {
+    return {
+            # we should not really point at personal directories... but let's temporarily keep it as is:
+        'search_hmm_executable' => '/nfs/acari/avilella/src/hmmer3/latest/hmmer-3.0b3/src/hmmsearch',
+    };
+}
+
 
 =head2 fetch_input
 
@@ -77,9 +84,9 @@ sub fetch_input {
 
   $self->param('max_evalue', 0.05);
 
-  if(defined($self->param('protein_tree_id'))) {
-    $self->param('tree', $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($self->param('protein_tree_id')));
-    printf("  protein_tree_id : %d\n", $self->param('protein_tree_id')) if ($self->debug);
+  if(defined($self->param('gene_tree_id'))) {
+    $self->param('tree', $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($self->param('gene_tree_id')));
+    printf("  gene_tree_id : %d\n", $self->param('gene_tree_id')) if ($self->debug);
   }
 
   # Fetch hmm_profile
@@ -156,10 +163,7 @@ sub run_search_hmm {
   close FILE;
   $self->param('hmmprofile', undef);
 
-  my $search_hmm_executable = $self->analysis->program_file;
-  unless (-e $search_hmm_executable) {
-    $search_hmm_executable = "/nfs/acari/avilella/src/hmmer3/latest/hmmer-3.0b3/src/hmmsearch";
-  }
+  my $search_hmm_executable = $self->param('search_hmm_executable');
 
   my $fh;
   eval { open($fh, "$search_hmm_executable $tempfilename $fastafile |") || die $!; };

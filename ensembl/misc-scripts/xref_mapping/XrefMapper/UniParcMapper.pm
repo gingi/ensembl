@@ -7,16 +7,14 @@ use Bio::EnsEMBL::Utils::Exception qw(throw);
 
 use base qw(XrefMapper::BasicMapper);
 
-my $DEFAULT_METHOD = 'XrefMapper::Methods::OracleUniParc';
+my $DEFAULT_METHOD = 'XrefMapper::Methods::MySQLUniParc';
 
 sub new {
   my($class, $mapper) = @_;
   my $self = bless {}, $class;
   $self->core($mapper->core);
   $self->xref($mapper->xref);
-  $self->uniparc($mapper->uniparc());
   $self->mapper($mapper);
-  $self->method($self->uniparc()->method() || $DEFAULT_METHOD);
   return $self;
 }
 
@@ -53,14 +51,13 @@ sub verbose {
 }
 
 sub process {
-  my ($self, $do_upload) = @_;
+  my ($self) = @_;
   
   $self->_update_status('checksum_xrefs_started');
   
-  my $method = $self->get_method();
-  my $results = $method->run();
-
-  if($do_upload) {
+  if($self->_map_checksums()) {
+    my $method = $self->get_method();
+    my $results = $method->run();
     $self->log_progress('Starting upload');
     $self->upload($results);
   }
@@ -71,7 +68,6 @@ sub process {
 
 sub upload {
   my ($self, $results) = @_;
-  
   #The elements come in as an array looking like
   #  [ { id => 1, upi => 'UPI00000A', object_type => 'Translation' } ]
   
@@ -90,8 +86,12 @@ SQL
    
   $h->transaction(-CALLBACK => sub {
     
+    $self->log_progress('Deleting records from previous possible upload runs');
+    $self->_delete_entries('object_xref');
+    $self->_delete_entries('xref');
+    
     $self->log_progress('Starting xref insertion');
-    #Record UPIs to make sure we do not insert a UPI in more than once
+    #Record UPIs to make sure we do not attempt to insert duplicate UPIs
     my %upi_xref_id;
     $h->batch(-SQL => $insert_xref, -CALLBACK => sub {
       my ($sth) = @_;
@@ -125,6 +125,33 @@ SQL
   return;
 }
 
+sub _delete_entries {
+  my ($self, $table) = @_;
+  $self->log_progress('Deleting entries from %s', $table);
+  my $lookup = {
+    xref => <<'SQL',
+DELETE  x
+FROM    xref x
+WHERE   x.source_id    = ?
+SQL
+    object_xref => <<'SQL',
+DELETE  ox
+FROM    xref x,
+        object_xref ox
+WHERE   x.source_id    = ?
+AND     ox.xref_id          = x.xref_id
+SQL
+  };
+  
+  my $sql = $lookup->{$table};
+  throw "Cannot find delete SQL for the table $table" unless $sql;
+  my $source_id = $self->source_id();
+  my $count = $self->_xref_helper()->execute_update(-SQL => $sql, -PARAMS => [$source_id]);
+  my $type = ($count == 1) ? 'entry' : 'entries';
+  $self->log_progress('Deleted %s %s from %s', $count, $type, $table);
+  return;
+}
+
 sub source_id {
   my ($self) = @_;
   return $self->_xref_helper()->execute_single_result(
@@ -145,7 +172,7 @@ sub species_id {
 
 sub get_method {
   my ($self) = @_;
-  my $method_class = $self->method();
+  my $method_class = $DEFAULT_METHOD;
   eval "require ${method_class};";
   if($@) {
     throw "Cannot require the class ${method_class}. Make sure your PERL5LIB is correct: $@";
@@ -169,10 +196,16 @@ sub _update_status {
   return;
 }
 
+sub _map_checksums {
+  my ($self) = @_;
+  my $count = $self->_xref_helper()->execute_single_result(-SQL => 'select count(*) from checksum_xref');
+  return $count;
+}
+
 sub log_progress {
   my ( $self, $fmt, @params ) = @_;
   return if (!$self->verbose);
-  printf( STDERR "CHKSM==> %s", sprintf( $fmt, @params ) );
+  printf( STDERR "CHKSM==> %s\n", sprintf( $fmt, @params ) );
 }
 
 1;

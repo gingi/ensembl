@@ -90,6 +90,15 @@ sub default_options {
     buildhmm_exe    =>  $self->o('exe_dir').'/hmmbuild',
     codeml_exe      =>  $self->o('exe_dir').'/codeml',
 
+    # HMM specific parameters
+   'hmm_clustering'            => 0, ## by default run blastp clustering
+   'cm_file_or_directory'      => '/nfs/production/panda/ensemblgenomes/data/PANTHER7.2/',
+   'hmm_library_basedir'       => '/nfs/production/panda/ensemblgenomes/data/PANTHER7.2/',
+   'blast_path'                => '/nfs/panda/ensemblgenomes/external/ncbi-blast-2.2.23+-x86_64-Linux/bin/',
+   'pantherScore_path'         => '/nfs/panda/ensemblgenomes/data/pantherScore1.03/',
+   'hmmer_path'                => '/nfs/panda/ensemblgenomes/external/hmmer-2.3.2-x86_64-Linux/src/',
+
+
     #Clustering
     outgroups => [],
 
@@ -98,6 +107,23 @@ sub default_options {
     use_genomedb_id         =>  1,
     tree_dir                =>  $self->o('ensembl_cvs_root_dir').'/EGCompara/config/prod/trees/Version'.$self->o('eg_release').'Trees',
 #    species_tree_input_file =>  $self->o('tree_dir').'/'.$self->o('division_name').'.peptide.nh',
+
+    # hive_capacity values for some analyses:
+        'reuse_capacity'            =>   4,
+        'blast_factory_capacity'    =>  50,
+        'blastp_capacity'           => 900,
+        'mcoffee_capacity'          => 600,
+        'split_genes_capacity'      => 600,
+        'njtree_phyml_capacity'     => 400,
+        'ortho_tree_capacity'       => 200,
+        'ortho_tree_annot_capacity' => 300,
+        'quick_tree_break_capacity' => 100,
+        'build_hmm_capacity'        => 200,
+        'merge_supertrees_capacity' => 100,
+        'other_paralogs_capacity'   => 100,
+        'homology_dNdS_capacity'    => 200,
+        'qc_capacity'               =>   4,
+        'HMMer_classify_capacity'   => 100,
 
     #DNDS
     codeml_parameters_file  => $self->o('ensembl_cvs_root_dir').'/EGCompara/config/prod/configs/Release'.$self->o('eg_release').'/codeml.ctl.hash',
@@ -199,13 +225,15 @@ sub resource_classes {
   my ($self) = @_;
   return {
          'default'      => {'LSF' => '-q production' },
+         '250Mb_job'    => {'LSF' => '-q production -M250   -R"select[mem>250]   rusage[mem=250]"' },
          '500Mb_job'    => {'LSF' => '-q production -M500   -R"select[mem>500]   rusage[mem=500]"' },
          '1Gb_job'      => {'LSF' => '-q production -M1000  -R"select[mem>1000]  rusage[mem=1000]"' },
          '2Gb_job'      => {'LSF' => '-q production -M2000  -R"select[mem>2000]  rusage[mem=2000]"' },
          '8Gb_job'      => {'LSF' => '-q production -M8000  -R"select[mem>8000]  rusage[mem=8000]"' },
-         '24Gb_job'     => {'LSF' => '-q production -M24000 -R"select[mem>24000] rusage[mem=24000]"' },
-         'mcoffee'      => {'LSF' => '-q production -W 24:00' },
-         'mcoffee_himem'    => {'LSF' => '-q production -M 32768 -R "rusage[mem=32768]" -W 24:00' },
+         '500Mb_long_job'    => {'LSF' => '-q production -M500   -R"select[mem>500]   rusage[mem=500]"' },
+         'urgent_hcluster'     => {'LSF' => '-q production -M32000 -R"select[mem>32000] rusage[mem=32000]"' },
+         'msa'      => {'LSF' => '-q production -W 24:00' },
+         'msa_himem'    => {'LSF' => '-q production -M 32768 -R "rusage[mem=32768]" -W 24:00' },
   };
 }
 
@@ -226,7 +254,7 @@ sub _new_analyses {
       -module => 'Bio::EnsEMBL::Hive::RunnableDB::Dummy',
       -parameters => { },
       -flow_into => {
-        1 => { 'mysql:////gene_tree_root_tag' => { root_id => '#protein_tree_id#', tag => 'division', value => $self->o('division_name') } }
+        1 => { 'mysql:////gene_tree_root_tag' => { root_id => '#gene_tree_id#', tag => 'division', value => $self->o('division_name') } }
       }
     },
     {
@@ -277,15 +305,7 @@ sub _modify_analyses {
   my ($self, $list) = @_;
 
   foreach my $analysis (@{$list}) {
-    if ($analysis->{'-logic_name'} =~ /^mcoffee/ or $analysis->{'-logic_name'} =~ /^mafft/) {
-      #Mcoffee resource alteration
-      if ($analysis->{'-logic_name'} =~ /himem$/) {
-        $analysis->{-rc_name} = 'mcoffee_himem';
-      } else {
-        $analysis->{-rc_name} = 'mcoffee';
-      }
-
-    } elsif ($analysis->{'-logic_name'} eq 'ortho_tree') {
+    if ($analysis->{'-logic_name'} eq 'ortho_tree') {
       #Get normal flow to send a job to division_tag_protein_trees all the time
       #rather than having the flow do the write; for some reason this old
       #version stopped working
