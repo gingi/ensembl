@@ -1,3 +1,23 @@
+=head1 LICENSE
+
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/legal/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <dev@ensembl.org>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk.org>.
+
+=cut
+
 use strict;
 use warnings;
 
@@ -48,7 +68,11 @@ sub dbCore {
   
   return $self->get_dbAdaptor('core');
 }
-
+sub dbInt {
+  my $self = shift;
+  
+  return $self->get_dbAdaptor('intvar');
+}
 sub get_dbAdaptor {
   my $self = shift;
   my $type = shift;
@@ -77,6 +101,11 @@ sub registryfile {
   my $self = shift;
   
   return $self->{'registryfile'};
+}
+sub registry {
+  my $self = shift;
+  
+  return $self->{'registry'};
 }
 
 sub species {

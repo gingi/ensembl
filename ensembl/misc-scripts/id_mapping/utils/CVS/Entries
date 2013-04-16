@@ -1,8 +1,8 @@
-/batch_id_history.pl/1.6/Thu Oct 27 12:24:06 2011//Tbranch-ensembl-70
-/compare_results.pl/1.7/Thu Oct 27 12:24:06 2011//Tbranch-ensembl-70
-/compare_scores.pl/1.5/Thu Oct 27 12:24:06 2011//Tbranch-ensembl-70
-/dump_scores.pl/1.6/Thu Oct 27 12:24:06 2011//Tbranch-ensembl-70
-/id_mapping_clean.sql/1.2/Fri Apr  4 10:53:52 2008//Tbranch-ensembl-70
-/manage_id_mapping_tables.pl/1.10/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-70
-/myManager.ksh/1.6/Wed Nov 30 11:42:01 2011//Tbranch-ensembl-70
+/batch_id_history.pl/1.6/Thu Oct 27 12:24:06 2011//Tbranch-ensembl-71
+/compare_results.pl/1.7/Thu Oct 27 12:24:06 2011//Tbranch-ensembl-71
+/compare_scores.pl/1.5/Thu Oct 27 12:24:06 2011//Tbranch-ensembl-71
+/dump_scores.pl/1.6/Thu Oct 27 12:24:06 2011//Tbranch-ensembl-71
+/id_mapping_clean.sql/1.2/Fri Apr  4 10:53:52 2008//Tbranch-ensembl-71
+/manage_id_mapping_tables.pl/1.10/Tue Apr 16 20:37:26 2013//Tbranch-ensembl-71
+/myManager.ksh/1.6/Wed Nov 30 11:42:01 2011//Tbranch-ensembl-71
 D

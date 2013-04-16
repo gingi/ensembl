@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -37,7 +37,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.13 $
+$Revision: 1.19 $
 
 =head1 APPENDIX
 
@@ -60,7 +60,6 @@ use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
 sub param_defaults {
     return {
-        'use_exon_boundaries'   => 0,                       # careful: 0 and undef have different meanings here
         'escape_branch'         => -1,
     };
 }
@@ -108,7 +107,7 @@ sub fetch_input {
   # Protein Tree input.
     #$self->param('protein_tree')->flatten_tree; # This makes retries safer
     # The extra option at the end adds the exon markers
-    $self->param('input_fasta', $self->dumpProteinTreeToWorkdir($self->param('protein_tree'), $self->param('use_exon_boundaries')) );
+    $self->param('input_fasta', $self->dumpProteinTreeToWorkdir($self->param('protein_tree')) );
 
 #  if ($self->param('redo')) {
 #    # Redo - take previously existing alignment - post-process it
@@ -191,7 +190,7 @@ sub write_output {
         }
     }
 
-    $self->compara_dba->get_AlignedMemberAdaptor->store($self->param('protein_tree'));
+    $self->compara_dba->get_GeneAlignAdaptor->store($self->param('protein_tree'));
     # Store various alignment tags:
     $self->_store_aln_tags($self->param('protein_tree'));
 
@@ -264,12 +263,11 @@ sub update_single_peptide_tree {
 sub dumpProteinTreeToWorkdir {
   my $self = shift;
   my $tree = shift;
-  my $use_exon_boundaries = shift;
 
-  my $fastafile =$self->worker_temp_directory.($use_exon_boundaries ? 'proteintree_exon_' : 'proteintree_').($tree->root_id).'.fasta';
+  my $fastafile =$self->worker_temp_directory.'proteintree_'.($tree->root_id).'.fasta';
 
   $fastafile =~ s/\/\//\//g;  # converts any // in path to /
-  return $fastafile if((-e $fastafile) and not $use_exon_boundaries);
+  return $fastafile if (-e $fastafile);
   print("fastafile = '$fastafile'\n") if ($self->debug);
 
   open(OUTSEQ, ">$fastafile")
@@ -287,11 +285,11 @@ sub dumpProteinTreeToWorkdir {
     my $gene_member; my $canonical_member = undef;
     eval {
       $gene_member = $member->gene_member; 
-      $canonical_member = $gene_member->get_canonical_Member;
+      $canonical_member = $gene_member->get_canonical_SeqMember;
     };
     if($self->debug() and $@) { print "ERROR IN EVAL (node_id=".$member->node_id.") : $@"; }
     unless (defined($canonical_member) && ($canonical_member->member_id eq $member->member_id) ) {
-      my $canonical_member2 = $gene_member->get_canonical_Member;
+      my $canonical_member2 = $gene_member->get_canonical_SeqMember;
       my $clustered_stable_id = $member->stable_id;
       my $canonical_stable_id = $canonical_member->stable_id;
       $tree->store_tag('canon.'.$clustered_stable_id."_".$canonical_stable_id,1);
@@ -303,12 +301,10 @@ sub dumpProteinTreeToWorkdir {
       $seq_id_hash->{$member->sequence_id} = 1;
 
       my $seq = '';
-      if ($use_exon_boundaries) {
-          $seq = $member->sequence_exon_bounded;
-      } else {
-          $seq = $member->sequence;
-      }
+      $seq = $member->sequence;
       $residues += $member->seq_length;
+      $seq =~ s/\*/X/g;
+      $member->sequence($seq);
       $seq =~ s/(.{72})/$1\n/g;
       chomp $seq;
 
@@ -338,9 +334,6 @@ sub parse_and_store_alignment_into_proteintree {
   my $format = 'fasta';
   my $tree = $self->param('protein_tree');
 
-  if (2 == $self->param('use_exon_boundaries')) {
-    $msa_output .= ".overaln";
-  }
   return 0 unless($msa_output and -e $msa_output);
 
   #
@@ -366,6 +359,7 @@ sub parse_and_store_alignment_into_proteintree {
   # Convert alignment strings into cigar_lines
   #
   my $alignment_length;
+  my %align_string;
   foreach my $id (keys %align_hash) {
       next if ($id eq 'cons');
     my $alignment_string = $align_hash{$id};
@@ -378,6 +372,7 @@ sub parse_and_store_alignment_into_proteintree {
     }
     # Call the method to do the actual conversion
     $align_hash{$id} = $self->_to_cigar_line(uc($alignment_string));
+    $align_string{$id} = uc($alignment_string);
     #print "The cigar_line of $id is: ", $align_hash{$id}, "\n";
   }
   $tree->aln_length($alignment_length);
@@ -400,9 +395,9 @@ sub parse_and_store_alignment_into_proteintree {
       my @cigar_match_lengths = map { if ($_ eq '') {$_ = 1} else {$_ = $_;} } map { $_ =~ /^(\d*)/ } ( $member->cigar_line =~ /(\d*[M])/g );
       # Sum up the M lengths
       my $seq_cigar_length; map { $seq_cigar_length += $_ } @cigar_match_lengths;
-      my $member_sequence = $member->sequence; $member_sequence =~ s/\*//g;
+      my $member_sequence = $member->sequence;
       if ($seq_cigar_length != length($member_sequence)) {
-        print $member_sequence."\n".$member->cigar_line."\n" if ($self->debug);
+        print $member->sequence_id.":$seq_cigar_length:".length($member_sequence).":".$member_sequence."\n".$member->cigar_line."\n".$align_string{$member->sequence_id}."\n" if ($self->debug);
         $self->throw("While storing the cigar line, the returned cigar length did not match the sequence length\n");
       }
   }

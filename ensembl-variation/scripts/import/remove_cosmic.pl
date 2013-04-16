@@ -1,4 +1,25 @@
 
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/legal/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <dev@ensembl.org>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk.org>.
+
+=cut
+
 # Deletes all COSMIC data from a variation database
 
 use strict;
@@ -76,7 +97,7 @@ $dbh->do(qq{
     DELETE FROM sample WHERE name LIKE "COSMIC:gene:%"
 });
 
-print "Deleted all samples, populations and studies\n" if $verbose;
+print "Deleted all samples, populations\n" if $verbose;
 
 # now all the stuff that is joined to variation
 
@@ -86,15 +107,6 @@ $dbh->do(qq{
     DELETE  fv
     FROM    failed_variation fv, variation v
     WHERE   fv.variation_id = v.variation_id
-    AND     v.source_id = $source_id
-});
-
-# flanking_sequence - variation_id
-
-$dbh->do(qq{
-    DELETE  fs
-    FROM    flanking_sequence fs, variation v
-    WHERE   fs.variation_id = v.variation_id
     AND     v.source_id = $source_id
 });
 
@@ -116,13 +128,21 @@ $dbh->do(qq{
     AND     v.source_id = $source_id
 });
 
-# variation_annotation - variation_id
+# phenotype_feature_attrib - variation_id
 
 $dbh->do(qq{
-    DELETE  va
-    FROM    variation_annotation va, variation v
-    WHERE   va.variation_id = v.variation_id
-    AND     v.source_id = $source_id
+    DELETE  pfa
+    FROM    phenotype_feature pf, phenotype_feature_attrib pfa
+    WHERE   pf.phenotype_feature_id=pfa.phenotype_feature_id
+    AND     pf.source_id = $source_id
+});
+
+# phenotype_feature - variation_id
+
+$dbh->do(qq{
+    DELETE  pf
+    FROM    phenotype_feature pf
+    WHERE   pf.source_id = $source_id
 });
 
 # variation_set_variation - variation_id

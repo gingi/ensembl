@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -42,7 +42,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.50 $
+$Revision: 1.53 $
 
 =head1 APPENDIX
 
@@ -56,6 +56,7 @@ package Bio::EnsEMBL::Compara::DBSQL::GeneTreeAdaptor;
 use strict;
 use Data::Dumper;
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
+use Bio::EnsEMBL::Utils::Scalar qw(:assert);
 
 use Bio::EnsEMBL::Compara::GeneTree;
 use DBI qw(:sql_types);
@@ -264,7 +265,9 @@ sub fetch_default_for_Member {
     my ($self, $member) = @_;
 
     # Discard the UNIPROT members
-    return [] if (ref($member) and not ($member->source_name =~ 'ENSEMBL'));
+    return undef if (ref($member) and not ($member->source_name =~ 'ENSEMBL'));
+    # Returns if $member is not defined or 0
+    return undef unless $member;
 
     my $join = [[['gene_tree_node', 'gtn'], 'gtn.root_id = gtr.root_id'], [['member', 'm'], 'gtn.member_id = m.member_id']];
     my $constraint = '((m.member_id = ?) OR (m.gene_member_id = ?)) AND (gtr.clusterset_id = "default")';
@@ -382,9 +385,7 @@ sub store {
 sub delete_tree {
     my ($self, $tree) = @_;
 
-    unless($tree->isa('Bio::EnsEMBL::Compara::GeneTree')) {
-        throw("set arg must be a [Bio::EnsEMBL::Compara::GeneTree] not a $tree");
-    }
+    assert_ref($tree, 'Bio::EnsEMBL::Compara::GeneTree');
 
     # Remove all the nodes but the root
     my $gene_tree_node_Adaptor = $tree->root->adaptor;

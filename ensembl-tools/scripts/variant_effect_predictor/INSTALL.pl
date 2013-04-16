@@ -3,14 +3,15 @@
 use Getopt::Long;
 use LWP::Simple qw($ua getstore get);
 use File::Listing qw(parse_dir);
+use Net::FTP;
 
 $| = 1;
-our $VERSION = 2.8;
+our $VERSION = 71;
 
 # CONFIGURE
 ###########
 
-my ($DEST_DIR, $ENS_CVS_ROOT, $API_VERSION, $BIOPERL_URL, $CACHE_URL, $help);
+my ($DEST_DIR, $ENS_CVS_ROOT, $API_VERSION, $BIOPERL_URL, $CACHE_URL, $FTP_USER, $help);
 
 GetOptions(
 	'DESTDIR|d=s'  => \$DEST_DIR,
@@ -42,10 +43,11 @@ my $lib_dir = $DEST_DIR;
 
 $DEST_DIR       .= '/Bio';
 $ENS_CVS_ROOT ||= 'http://cvs.sanger.ac.uk/cgi-bin/viewvc.cgi/';
-$BIOPERL_URL  ||= 'http://bioperl.org/DIST/old_releases/bioperl-1.2.3.tar.gz';
-$API_VERSION  ||= 70;
+$BIOPERL_URL  ||= 'http://bioperl.org/DIST/BioPerl-1.6.1.tar.gz';
+$API_VERSION  ||= 71;
 $CACHE_URL    ||= "ftp://ftp.ensembl.org/pub/release-$API_VERSION/variation/VEP";
 $CACHE_DIR    ||= $ENV{HOME}.'/.vep';
+$FTP_USER     ||= 'anonymous';
 
 our $prev_progress = 0;
 
@@ -122,7 +124,7 @@ elsif($total > 0) {
 }
 
 if(defined($message)) {
-	print "$message\n\nAre you sure you want to continue installing the API (y/n)? ";
+	print "$message\n\nSkip to the next step (n) to install cache files\n\nDo you want to continue installing the API (y/n)? ";
 	
 	my $ok = <>;
 	
@@ -237,7 +239,7 @@ unpack_tar("$DEST_DIR/tmp/$bioperl_file", "$DEST_DIR/tmp/");
 
 print " - moving files\n";
 
-$bioperl_file =~ /(bioperl.+?)\.tar\.gz/;
+$bioperl_file =~ /(bioperl.+?)\.tar\.gz/i;
 my $bioperl_dir = $1;
 `mv -f $DEST_DIR/tmp/$bioperl_dir/Bio/* $DEST_DIR/`;
 `rm -rf $DEST_DIR/tmp/$bioperl_dir`;# or die "ERROR: Failed to remove directory $DEST_DIR/$bioperl_dir\n";
@@ -295,7 +297,21 @@ print "\nDownloading list of available cache files\n";
 my $num = 1;
 my $species_list;
 my @files;
-push @files, map {$_->[0]} grep {$_->[0] =~ /tar.gz/} @{parse_dir(get($CACHE_URL))};
+
+if($CACHE_URL =~ /^ftp/i) {
+  $CACHE_URL =~ m/(ftp:\/\/)?(.+?)\/(.+)/;
+  my $ftp = Net::FTP->new($2) or die "ERROR: Could not connect to FTP host $2\n$@\n";
+  $ftp->login($FTP_USER) or die "ERROR: Could not login as $FTP_USER\n$@\n";
+  
+  foreach my $sub(split /\//, $3) {
+    $ftp->cwd($sub) or die "ERROR: Could not change directory to $sub\n$@\n";
+  }
+  
+  push @files, grep {$_ =~ /tar.gz/} $ftp->ls;
+}
+else {
+  push @files, map {$_->[0]} grep {$_->[0] =~ /tar.gz/} @{parse_dir(get($CACHE_URL))};
+}
 
 # if we don't have a species list, we'll have to guess
 if(!scalar(@files)) {
@@ -327,7 +343,7 @@ foreach my $file(split /\s+/, <>) {
 	}
 	else {
 		$file_name = $file_path;
-		$file_name =~ m/^(\w+?\_\w+?)\_vep/;
+		$file_name =~ m/^(\w+?)\_vep/;
 		$species = $1;
 	}
 	
@@ -363,7 +379,7 @@ foreach my $file(split /\s+/, <>) {
 	}
 	
 	# move files
-	`mv -f $CACHE_DIR/tmp/$species/$API_VERSION $CACHE_DIR/$species/`;
+	`mv -f $CACHE_DIR/tmp/$species/* $CACHE_DIR/$species/`;
 }
 
 # cleanup
@@ -431,7 +447,7 @@ Options
 
 -h | --help        Display this message and quit
 -d | --DESTDIR     Set destination directory for API install (default = './')
--v | --VERSION     Set API version to install (default = 66)
+-v | --VERSION     Set API version to install (default = $VERSION)
 -c | --CACHEDIR    Set destination directory for cache files (default = '$HOME/.vep/')
 END
 

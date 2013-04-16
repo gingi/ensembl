@@ -1,6 +1,6 @@
 D/AltSplicingToolkit////
-/Fetch_gff.pl/1.5/Tue Apr 16 20:36:30 2013//Tbranch-ensembl-70
-/README.txt/1.3/Mon Oct 10 20:52:05 2011//Tbranch-ensembl-70
-/as_event_computations.sh/1.3/Mon Oct 17 10:42:47 2011//Tbranch-ensembl-70
-/generateSplicingEventTable.pl/1.2/Tue Apr 16 20:36:30 2013//Tbranch-ensembl-70
-/load_alt_splice_gff.pl/1.3/Mon Oct 17 09:20:47 2011//Tbranch-ensembl-70
+/Fetch_gff.pl/1.6/Tue Apr 16 20:39:47 2013//Tbranch-ensembl-71
+/README.txt/1.3/Mon Oct 10 20:52:05 2011//Tbranch-ensembl-71
+/as_event_computations.sh/1.3/Mon Oct 17 10:42:47 2011//Tbranch-ensembl-71
+/generateSplicingEventTable.pl/1.3/Tue Apr 16 20:39:47 2013//Tbranch-ensembl-71
+/load_alt_splice_gff.pl/1.3/Mon Oct 17 09:20:47 2011//Tbranch-ensembl-71

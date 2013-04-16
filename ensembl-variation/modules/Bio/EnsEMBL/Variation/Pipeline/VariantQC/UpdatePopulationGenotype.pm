@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -72,12 +72,15 @@ sub run {
   $var_dba->dbc->do(qq[ALTER TABLE genotype_code ORDER BY genotype_code_id, haplotype_id ASC]);
 
   ## Create coded genotypes from Mart table in which minus-strand single-mapping variants have been flipped
+   $var_dba->dbc->do(qq{ ALTER TABLE population_genotype_working DISABLE KEYS});
+
   $var_dba->dbc->do(qq[insert into population_genotype_working 
                       select pg.population_genotype_id, pg.variation_id, pg.subsnp_id,  
                       gc.genotype_code_id, pg.frequency, pg.sample_id, pg.count
                       from MTMP_population_genotype_working pg, genotype_code_tmp gc 
                       where pg.allele_1 = gc.allele_1 and pg.allele_2 = gc.allele_2 ]);
    
+ $var_dba->dbc->do(qq{ ALTER TABLE population_genotype_working ENABLE KEYS});
 }
 
 

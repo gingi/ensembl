@@ -29,7 +29,7 @@ our @short_names = qw(1kg_hct 1kg_hct_ceu 1kg_hct_yri 1kg_hce 1kg_hce_ceu 1kg_hc
                       ph_cosmic ph_ega precious hapmap_ceu hapmap_hcb hapmap_jpt hapmap_yri
                       Affy_500K Affy_SNP6 Cardio-Metabo_Chip HumanOmni1-Quad Illumina_1M-duo Illumina_660Q
                       Human610_Quad HumanHap550 HumanHap650Y HumanOmni2.5 PorcineSNP60
-                      esp_6500  
+                      esp_6500 clin_assoc 
                      );
 
 our @dbsnp_clinical_significance_types = qw(
@@ -851,7 +851,56 @@ our @ATTRIB_TYPES = (
         name => 'Protein function analysis ',
         description => 'The program used to make protein function predictions',
     },
-
+    {
+        code => 'associated_gene',
+        name => 'Associated gene',
+        description => 'ID of gene(s) linked by phenotype association',
+    },
+    {
+        code => 'risk_allele',
+        name => 'Risk allele',
+        description => 'Risk allele in phenotype association',
+    },
+    {
+        code => 'p_value',
+        name => 'P-value',
+        description => 'P-value denoting significance of an observed phenotype annotation',
+    },
+    {
+        code => 'variation_names',
+        name => 'Variation names',
+        description => 'Variant ID(s) linked with a phenotype association',
+    },
+    {
+        code => 'sample_id',
+        name => 'Sample ID',
+        description => 'Sample ID for source of phenotype association with structural variation',
+    },
+    {
+        code => 'strain_id',
+        name => 'Strain ID',
+        description => 'Strain ID for source of phenotype association with structural variation',
+    },
+    {
+        code => 'lod_score',
+        name => 'LOD score',
+        description => 'Log Of Odds score',
+    },
+    {
+        code => 'variance',
+        name => 'Variance',
+        description => 'Variance statistic',
+    },
+    {
+        code => 'inheritance_type',
+        name => 'Inheritance type',
+        description => 'Inheritance type of a trait',
+    },
+    {
+        code => 'external_id',
+        name => 'External ID',
+        description => 'External identifier for an entity',
+    },
 );
 
 # attribs are specified in the %ATTRIBS hash, having the attrib_type code as hash key and a listref containing the attribs that will be loaded as value

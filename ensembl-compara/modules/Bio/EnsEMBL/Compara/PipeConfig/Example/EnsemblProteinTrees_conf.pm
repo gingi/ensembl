@@ -1,6 +1,6 @@
 =heada LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -61,7 +61,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.11 $
+$Revision: 1.16 $
 
 =head1 APPENDIX
 
@@ -85,8 +85,8 @@ sub default_options {
 
     # parameters that are likely to change from execution to another:
 #       'mlss_id'               => 40077,   # it is very important to check that this value is current (commented out to make it obligatory to specify)
-        'release'               => '70',
-        'rel_suffix'            => '',    # an empty string by default, a letter otherwise
+        'release'               => '71',
+        'rel_suffix'            => 'b',    # an empty string by default, a letter otherwise
         'work_dir'              => '/lustre/scratch109/ensembl/'.$self->o('ENV', 'USER').'/protein_trees_'.$self->o('rel_with_suffix'),
 
     # dependent parameters: updating 'work_dir' should be enough
@@ -109,9 +109,8 @@ sub default_options {
     # executable locations:
         'wublastp_exe'              => '/usr/local/ensembl/bin/wublastp',
         'hcluster_exe'              => '/software/ensembl/compara/hcluster/hcluster_sg',
-        'mcoffee_exe'               => '/software/ensembl/compara/tcoffee-7.86b/t_coffee',
-        'mafft_exe'                 => '/software/ensembl/compara/mafft-6.707/bin/mafft',
-        'mafft_binaries'            => '/software/ensembl/compara/mafft-6.707/binaries',
+        'mcoffee_home'              => '/software/ensembl/compara/tcoffee/Version_9.03.r1318/',
+        'mafft_home'                => '/software/ensembl/compara/mafft-7.017/',
         'sreformat_exe'             => '/usr/local/ensembl/bin/sreformat',
         'treebest_exe'              => '/software/ensembl/compara/treebest.doubletracking',
         'quicktree_exe'             => '/software/ensembl/compara/quicktree_1.1/bin/quicktree',
@@ -144,6 +143,7 @@ sub default_options {
         'other_paralogs_capacity'   => 100,
         'homology_dNdS_capacity'    => 200,
         'qc_capacity'               =>   4,
+        'hc_capacity'               =>   4,
         'HMMer_classify_capacity'   => 100,
 
     # connection parameters to various databases:
@@ -199,7 +199,7 @@ sub default_options {
            -port   => 3306,
            -user   => 'ensro',
            -pass   => '',
-           -dbname => 'sf5_ensembl_compara_69',
+           -dbname => 'sf5_ensembl_compara_70',
         },
         #'reuse_db' => {   # current release if we are testing after production
         #    -host   => 'compara1',

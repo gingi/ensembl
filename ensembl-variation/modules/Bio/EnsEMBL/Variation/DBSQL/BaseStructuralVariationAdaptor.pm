@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -160,6 +160,12 @@ sub fetch_by_name {
 	my $objs = $self->generic_fetch($constraint);
   throw("Multiple structural variations found with the same name: '$name'") if @$objs > 1;
   return $objs->[0] if @$objs == 1;
+}
+
+# alias for fetch_by_name
+sub fetch_by_stable_id {
+	my $self = shift;
+	return $self->fetch_by_name(@_);
 }
 
 

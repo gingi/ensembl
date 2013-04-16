@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -258,7 +258,7 @@ sub fetch_all_by_Variation {
   my $pgs = $self->generic_fetch("pg.variation_id = " . $variation->dbID());
   
   # fetch pop GTs from ind GTs for human (1KG data)
-  push @$pgs, @{$self->_fetch_all_by_Variation_from_Genotypes($variation)} if $self->db->species =~ /homo_sapiens/i;
+  push @$pgs, @{$self->_fetch_all_by_Variation_from_Genotypes($variation)};
   
   return $pgs;
 }

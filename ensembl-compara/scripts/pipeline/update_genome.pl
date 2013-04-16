@@ -19,6 +19,7 @@ my $description = q{
 ##
 ##      - It updates the genome_db table
 ##      - It updates all the dnafrags for the given genome_db
+##      - It updates all the collections for the given genome_db
 ##
 ###########################################################################
 
@@ -69,6 +70,9 @@ perl update_genome.pl
         from that number (and we will assign according to the current number
         of Genome DBs exceeding the offset). First ID will be equal to the
         offset+1
+    [--collection "collection name"]
+        Adds the new / updated genome_db_id to the collection. This option
+        can be used multiple times
 
 =head1 OPTIONS
 
@@ -140,6 +144,11 @@ from that number (and we will assign according to the current number
 of Genome DBs exceeding the offset). First ID will be equal to the
 offset+1
 
+=item B<[--collection "Collection name"]>
+
+Adds the new / updated genome_db_id to the collection. This option
+can be used multiple times
+
 =back
 
 =head1 INTERNAL METHODS
@@ -184,6 +193,9 @@ perl update_genome.pl
         from that number (and we will assign according to the current number
         of Genome DBs exceeding the offset). First ID will be equal to the
         offset+1
+    [--collection "Collection name"]
+        Adds the new / updated genome_db_id to the collection. This option
+        can be used multiple times
 };
 
 my $help;
@@ -195,6 +207,7 @@ my $species_name;
 my $taxon_id;
 my $force = 0;
 my $offset = 0;
+my @collection = ();
 
 GetOptions(
     "help" => \$help,
@@ -205,6 +218,7 @@ GetOptions(
     "taxon_id=i" => \$taxon_id,
     "force!" => \$force,
     'offset=i' => \$offset,
+    "collection=s@" => \@collection,
   );
 
 $| = 0;
@@ -236,6 +250,8 @@ throw ("Cannot connect to database [$compara]") if (!$compara_db);
 
 my $genome_db = update_genome_db($species_db, $compara_db, $force);
 print "Bio::EnsEMBL::Compara::GenomeDB->dbID: ", $genome_db->dbID, "\n\n";
+
+update_collections($compara_db, $genome_db, \@collection);
 
 # delete_genomic_align_data($compara_db, $genome_db);
 
@@ -367,6 +383,52 @@ sub update_genome_db {
     );
   }
   return $genome_db;
+}
+
+=head2 update_collections
+
+  Arg[1]      : Bio::EnsEMBL::Compara::DBSQL::DBAdaptor $compara_dba
+  Arg[2]      : Bio::EnsEMBL::Compara::GenomeDB $genome_db
+  Arg[3]      : Array reference of strings (the collections to add the species to)
+  Description : This method updates all the collection species sets to
+                include the new genome_db
+  Returns     : -none-
+  Exceptions  : throw if any SQL statment fails
+
+=cut
+
+sub update_collections {
+  my ($compara_dba, $genome_db, $all_collections) = @_;
+
+  # Gets all the collections with that genome_db
+  my $sql = 'SELECT species_set_id FROM species_set_tag JOIN species_set USING (species_set_id) JOIN genome_db USING (genome_db_id) WHERE tag = "name" AND value LIKE "collection-%" AND name = ?';
+  my $ss_ids = $compara_dba->dbc->db_handle->selectall_arrayref($sql, undef, $genome_db->name);
+
+  my $ssa = $compara_dba->get_SpeciesSetAdaptor;
+  my $sss = $ssa->fetch_all_by_dbID_list([map {$_->[0]} @$ss_ids]);
+
+  foreach my $collection (@$all_collections) {
+    my $all_ss = $ssa->fetch_all_by_tag_value("name", "collection-$collection");
+    if (scalar(@$all_ss) == 0) {
+      warn "cannot find the collection '$collection'";
+    } elsif (scalar(@$all_ss) > 1) {
+      warn "There are multiple collections '$collection'";
+    } else {
+      push @$sss, $all_ss->[0];
+    }
+  }
+
+  foreach my $ss (@$sss) {
+      my $ini_genome_dbs = $ss->genome_dbs;
+      my $new_genome_dbs = [grep {$_->name ne $genome_db->name} @$ini_genome_dbs];
+      push @$new_genome_dbs, $genome_db;
+      my $species_set = Bio::EnsEMBL::Compara::SpeciesSet->new( -genome_dbs => $new_genome_dbs );
+      $ssa->store($species_set);
+      my $sql = 'UPDATE species_set_tag SET species_set_id = ? WHERE species_set_id = ? AND tag = "name"';
+      my $sth = $compara_dba->dbc->prepare($sql);
+      $sth->execute($species_set->dbID, $ss->dbID);
+      $sth->finish();
+  }
 }
 
 =head2 delete_genomic_align_data
@@ -541,7 +603,7 @@ sub print_method_link_species_sets_to_update {
     next if ($this_genome_db->name ne $genome_db->name);
     foreach my $this_method_link_species_set (@{$method_link_species_set_adaptor->fetch_all_by_GenomeDB($this_genome_db)}) {
       $method_link_species_sets->{$this_method_link_species_set->method->dbID}->
-          {join("-", sort map {$_->name} @{$this_method_link_species_set->species_set})} = $this_method_link_species_set;
+          {join("-", sort map {$_->name} @{$this_method_link_species_set->species_set_obj->genome_dbs})} = $this_method_link_species_set;
     }
   }
 
@@ -550,8 +612,8 @@ sub print_method_link_species_sets_to_update {
     last if ($this_method_link_id > 200); # Avoid non-genomic method_link_species_set
     foreach my $this_method_link_species_set (values %{$method_link_species_sets->{$this_method_link_id}}) {
       printf "%8d: ", $this_method_link_species_set->dbID,;
-      print $this_method_link_species_set->method_link_type, " (",
-          join(",", map {$_->name} @{$this_method_link_species_set->species_set}), ")\n";
+      print $this_method_link_species_set->method->type, " (",
+          join(",", map {$_->name} @{$this_method_link_species_set->species_set_obj->genome_dbs}), ")\n";
     }
   }
 
@@ -582,7 +644,7 @@ sub create_new_method_link_species_sets {
     next if ($this_genome_db->name ne $genome_db->name);
     foreach my $this_method_link_species_set (@{$method_link_species_set_adaptor->fetch_all_by_GenomeDB($this_genome_db)}) {
       $method_link_species_sets->{$this_method_link_species_set->method->dbID}->
-          {join("-", sort map {$_->name} @{$this_method_link_species_set->species_set})} = $this_method_link_species_set;
+          {join("-", sort map {$_->name} @{$this_method_link_species_set->species_set_obj->genome_dbs})} = $this_method_link_species_set;
     }
   }
 
@@ -591,8 +653,8 @@ sub create_new_method_link_species_sets {
     last if ($this_method_link_id > 200); # Avoid non-genomic method_link_species_set
     foreach my $this_method_link_species_set (values %{$method_link_species_sets->{$this_method_link_id}}) {
       printf "%8d: ", $this_method_link_species_set->dbID,;
-      print $this_method_link_species_set->method_link_type, " (",
-          join(",", map {$_->name} @{$this_method_link_species_set->species_set}), ")\n";
+      print $this_method_link_species_set->method->type, " (",
+          join(",", map {$_->name} @{$this_method_link_species_set->species_set_obj->genome_dbs}), ")\n";
     }
   }
 

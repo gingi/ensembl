@@ -80,18 +80,18 @@ sub default_options {
 	  'contact'  => 'ensembl-dev@ebi.ac.uk',
 
 	  'input_feature_class' => 'result',
-	  'registry_host' => 'ens-livemirror',
-	  'registry_port' => 3306,
-	  'registry_user' => 'ensro',
+	  'registry_host'       => 'ens-livemirror',
+	  'registry_port'       => 3306,
+	  'registry_user'       => 'ensro',
 	  #'assembly' => 37,
 
-	  'host' => 'ens-genomics1',
-	  'port' => 3306,
-	  'feature_analysis' => 'bwa_samse',
-	  'recover' => 1,
+	  'host'              => 'ens-genomics1',
+	  'port'              => 3306,
+	  'feature_analysis'  => 'bwa_samse',
+	  'recover'           => 1,
 
-	  'data_dir' =>'/lustre/scratch103/ensembl/funcgen',
-	  'output_dir' =>'/lustre/scratch103/ensembl/funcgen/output/'.$self->o('dbname'),
+	  'data_dir'   =>'/lustre/scratch109/ensembl/funcgen',
+	  'output_dir' =>'/lustre/scratch109/ensembl/funcgen/output/'.$self->o('dbname'),
 
 	  #you can only add a slice at a time... see if list of values can be passed as params...
 	  #'slice' => undef,
@@ -113,18 +113,19 @@ sub default_options {
 sub resource_classes {
     my ($self) = @_;
     return {
-   'default'                          => { 'LSF' => '' },
-   'urgent'                           => { 'LSF' => '-q yesterday' },
-   'normal_ens-genomics1'             => { 'LSF' => '-R"select[myens_genomics1<1000] rusage[myens_genomics1=10:duration=10:decay=1]"' },
-   'long_ens-genomics1'               => { 'LSF' => '-q long -R"select[myens_genomics1<1000] rusage[myens_genomics1=10:duration=10:decay=1]"' },
-   'long_high_memory'                 => { 'LSF' => '-q long -M4000000 -R"select[mem>4000] rusage[mem=4000]"' },
-   'long_ens-genomics1_high_memory'   => { 'LSF' => '-q long -M6000000 -R"select[myens_genomics1<600 && mem>6000] rusage[myens_genomics1=12:duration=5:decay=1:mem=6000]"' },
-#	    0 => { -desc => 'default',          'LSF' => '' },
-#	    1 => { -desc => 'urgent',           'LSF' => '-q yesterday' },
-#	    2 => { -desc => 'normal ens-genomics1',  'LSF' => '-R"select[myens_genomics1<1000] rusage[myens_genomics1=10:duration=10:decay=1]"' },
-#	    3 => { -desc => 'long ens-genomics1',    'LSF' => '-q long -R"select[myens_genomics1<1000] rusage[myens_genomics1=10:duration=10:decay=1]"' },
-#	    4 => { -desc => 'long high memory',      'LSF' => '-q long -M4000000 -R"select[mem>4000] rusage[mem=4000]"' },
-#	    5 => { -desc => 'long ens-genomics1 high memory',  'LSF' => '-q long -M6000000 -R"select[myens_genomics1<600 && mem>6000] rusage[myens_genomics1=12:duration=5:decay=1:mem=6000]"' },
+        'default'                    => { 'LSF' => '' },
+        'urgent'                     => { 'LSF' => '-q yesterday' },
+        'normal_monitored'           => { 'LSF' => "        -R\"select[$ENV{LSF_RESOURCE_HOST}<1000] rusage[$ENV{LSF_RESOURCE_HOST}=10:duration=10:decay=1]\"" },
+        'long_monitored'             => { 'LSF' => "-q long -R\"select[$ENV{LSF_RESOURCE_HOST}<1000] rusage[$ENV{LSF_RESOURCE_HOST}=10:duration=10:decay=1]\"" },
+        'long_high_memory'           => { 'LSF' => '-q long -M4000000 -R"select[mem>4000] rusage[mem=4000]"' },
+        'long_monitored_high_memory' => { 'LSF' => "-q long -M4000000 -R\"select[$ENV{LSF_RESOURCE_HOST}<1000 && mem>4000] rusage[$ENV{LSF_RESOURCE_HOST}=10:duration=10:decay=1,mem=4000]\"" },
+
+#	    0 => { -desc => 'default',                         'LSF' => '' },
+#	    1 => { -desc => 'urgent',                          'LSF' => '-q yesterday' },
+#	    2 => { -desc => 'normal ens-genomics1',            'LSF' => '-R"select[myens_genomics1<1000] rusage[myens_genomics1=10:duration=10:decay=1]"' },
+#	    3 => { -desc => 'long ens-genomics1',              'LSF' => '-q long -R"select[myens_genomics1<1000] rusage[myens_genomics1=10:duration=10:decay=1]"' },
+#	    4 => { -desc => 'long high memory',                'LSF' => '-q long -M4000000 -R"select[mem>4000] rusage[mem=4000]"' },
+#	    5 => { -desc => 'long ens-genomics1 high memory',  'LSF' => '-q long -M6000000 -R"select[myens_genomics1<600 && mem>6000] rusage[myens_genomics1=12:duration=5:decay=1,mem=6000]"' },
 	   };
 }
 
@@ -146,9 +147,22 @@ sub pipeline_wide_parameters {
 	  'output_dir'      => $self->o('output_dir')."/".$self->o('vendor'),
 	  'hive_output_dir' => $self->o('output_dir')."/".$self->o('vendor')."/hive_debug",
 	  "species"         => $self->o('species'),
+
+
 	  "dbname"          => $self->o("dbname"),
 	  "user"            => $self->o("user"),
 	  "pass"            => $self->o("pass"),
+	 'host' => $self->o('host'),
+	  'port' => $self->o('port'),
+
+
+#Added DNADB parameters
+      "dnadb_host"   => $self->o('dnadb_host'),
+	  "dnadb_port"   => $self->o('dnadb_port'),
+	  "dnadb_user"   => $self->o('dnadb_user'),
+	  "dnadb_name"   => $self->o('dnadb_name'),
+
+
 	  "input_dir"       => $self->o('input_dir'),
 
 	  'verbose'  => $self->o('verbose'),
@@ -167,8 +181,7 @@ sub pipeline_wide_parameters {
 		  'registry_version' => $self->o('registry_version'),
 	  'assembly' => $self->o('assembly'),
 
-	  'host' => $self->o('host'),
-	  'port' => $self->o('port'),
+
 	  'feature_analysis' => $self->o('feature_analysis'),
 	  'recover' => $self->o('recover'),
 
@@ -246,7 +259,8 @@ sub pipeline_analyses {
 			  2 => [ 'wrap_up_pipeline' ],
 			 },
 	   -hive_capacity => 10,
-	   -rc_name => 'default',
+           -rc_name => 'default',
+#	   -rc_id => 0,
 	   #this really need revising as this is sorting the bed files
 	   #Need to change resource to reserve tmp space
 	  },
@@ -260,7 +274,8 @@ sub pipeline_analyses {
 			     ],
 	   -hive_capacity => 50,
 	   #Control files should be handled by setup_pipeline.
-	   -rc_name => 'long_ens-genomics1_high_memory', # Better safe than sorry... size of datasets tends to increase...
+           -rc_name => 'long_monitored_high_memory',
+            #-rc_id => 5, # Better safe than sorry... size of datasets tends to increase...
 	   #use semaphores...
 	   #-wait_for => [ 'setup_pipeline' ]
 	  },
@@ -273,7 +288,8 @@ sub pipeline_analyses {
 	  		  # (jobs for this analysis will be flown_into via branch-2 from 'setup_pipeline' jobs above)
 	  		 ],
 	   -hive_capacity => 10,
-	   -rc_name => 'default',
+           -rc_name => 'default',
+#	   -rc_id => 0,
 	   #Use semaphores...
 	   #-wait_for => [ 'run_peaks_DNAse', 'run_peaks' ],
 	  },

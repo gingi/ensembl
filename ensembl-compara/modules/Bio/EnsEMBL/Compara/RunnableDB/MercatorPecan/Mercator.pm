@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -104,8 +104,8 @@ sub write_output {
   foreach my $sr_id (@{$synteny_region_ids}) {
 
     #Flow into pecan
-    my $dataflow_output_id = "{ synteny_region_id=>$sr_id }";
-    $self->dataflow_output_id($dataflow_output_id,1);
+    my $dataflow_output_id = { synteny_region_id => $sr_id };
+    $self->dataflow_output_id($dataflow_output_id,2);
   }
 
   return 1;

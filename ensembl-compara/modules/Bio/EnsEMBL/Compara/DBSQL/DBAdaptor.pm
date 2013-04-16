@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -42,11 +42,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mp12 $
+$Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.91 $
+$Revision: 1.95 $
 
 =head1 APPENDIX
 
@@ -145,6 +145,7 @@ sub get_available_adaptors {
         'MethodLinkSpeciesSet'  => 'Bio::EnsEMBL::Compara::DBSQL::MethodLinkSpeciesSetAdaptor',
         'NCBITaxon'             => 'Bio::EnsEMBL::Compara::DBSQL::NCBITaxonAdaptor',
         'SpeciesTree'           => 'Bio::EnsEMBL::Compara::DBSQL::SpeciesTreeAdaptor',
+        'HMMProfile'            => 'Bio::EnsEMBL::Compara::DBSQL::HMMProfileAdaptor',
 
             # genomic:
         'DnaFrag'               => 'Bio::EnsEMBL::Compara::DBSQL::DnaFragAdaptor',
@@ -169,18 +170,21 @@ sub get_available_adaptors {
             # gene-product:
         'Sequence'              => 'Bio::EnsEMBL::Compara::DBSQL::SequenceAdaptor',
         'Member'                => 'Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor',
+        'GeneMember'            => 'Bio::EnsEMBL::Compara::DBSQL::GeneMemberAdaptor',
+        'SeqMember'             => 'Bio::EnsEMBL::Compara::DBSQL::SeqMemberAdaptor',
+        'GeneAlign'             => 'Bio::EnsEMBL::Compara::DBSQL::GeneAlignAdaptor',
         'AlignedMember'         => 'Bio::EnsEMBL::Compara::DBSQL::AlignedMemberAdaptor',
-        'Subset'                => 'Bio::EnsEMBL::Compara::DBSQL::SubsetAdaptor',
         'Homology'              => 'Bio::EnsEMBL::Compara::DBSQL::HomologyAdaptor',
         'Family'                => 'Bio::EnsEMBL::Compara::DBSQL::FamilyAdaptor',
         'PeptideAlignFeature'   => 'Bio::EnsEMBL::Compara::DBSQL::PeptideAlignFeatureAdaptor',
         'GeneTree'              => 'Bio::EnsEMBL::Compara::DBSQL::GeneTreeAdaptor',
         'GeneTreeNode'          => 'Bio::EnsEMBL::Compara::DBSQL::GeneTreeNodeAdaptor',
-        'ProteinTree'           => 'Bio::EnsEMBL::Compara::DBSQL::ProteinTreeAdaptor',
-        'NCTree'                => 'Bio::EnsEMBL::Compara::DBSQL::NCTreeAdaptor',
         'CAFEGeneFamily'        => 'Bio::EnsEMBL::Compara::DBSQL::CAFEGeneFamilyAdaptor',
 
             # obsolete:
+        'Subset'                => 'Bio::EnsEMBL::Compara::DBSQL::SubsetAdaptor',
+        'ProteinTree'           => 'Bio::EnsEMBL::Compara::DBSQL::ProteinTreeAdaptor',
+        'NCTree'                => 'Bio::EnsEMBL::Compara::DBSQL::NCTreeAdaptor',
         'Domain'                => 'Bio::EnsEMBL::Compara::DBSQL::DomainAdaptor',
         'SitewiseOmega'         => 'Bio::EnsEMBL::Compara::DBSQL::SitewiseOmegaAdaptor',
     );

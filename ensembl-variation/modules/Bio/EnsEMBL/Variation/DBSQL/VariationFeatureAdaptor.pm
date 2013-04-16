@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -53,7 +53,7 @@ Bio::EnsEMBL::Variation::DBSQL::VariationFeatureAdaptor
   }
 
   # fetch all genome hits for a particular variation
-  $v = $va->fetch_by_name('rs56');
+  $v = $va->fetch_by_nam('rs56');
 
   foreach $vf (@{$vfa->fetch_all_by_Variation($v)}) {
     print $vf->seq_region_name(), $vf->seq_region_start(), '-',
@@ -131,8 +131,9 @@ sub store {
             minor_allele,
             minor_allele_freq,
             minor_allele_count,
-            alignment_quality
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            alignment_quality,
+            evidence
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     });
     
     $sth->execute(
@@ -149,12 +150,13 @@ sub store {
         (join ",", @{$vf->get_all_validation_states}) || undef,
         $vf->{slice} ? (join ",", @{$vf->consequence_type('SO')}) : 'intergenic_variant',
         $vf->{variation_set_id} || '',
-        $vf->{class_attrib_id} || $self->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $vf->{class_SO_term}) || 18,
+        $vf->{class_attrib_id} || ( $vf->{class_SO_term} && $self->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $vf->{class_SO_term}) ) || 18,
         $vf->is_somatic,
         $vf->minor_allele,
         $vf->minor_allele_frequency,
         $vf->minor_allele_count,
         $vf->flank_match,
+        $vf->{evidence} ? (join ",", @{$vf->{evidence}}) : undef
     );
     
     $sth->finish;
@@ -377,13 +379,13 @@ sub fetch_all_genotyped_by_Slice{
     return $self->fetch_all_by_Slice_constraint($slice,$constraint);
 }
 
-sub _internal_fetch_all_with_annotation_by_Slice{
+sub _internal_fetch_all_with_phenotype_by_Slice{
 
 	my $self = shift;
 	my $slice = shift;
 	my $v_source = shift;
 	my $p_source = shift;
-	my $annotation = shift;
+	my $phenotype = shift;
 	my $constraint = shift;
 	
 	if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
@@ -403,13 +405,13 @@ sub _internal_fetch_all_with_annotation_by_Slice{
     $extra_table .= qq{, source ps};
   }
     
-  if(defined $annotation) {
-    if($annotation =~ /^[0-9]+$/) {
-      $extra_sql_in .= qq{ AND va.phenotype_id = $annotation };
+  if(defined $phenotype) {
+    if($phenotype =~ /^[0-9]+$/) {
+      $extra_sql_in .= qq{ AND pf.phenotype_id = $phenotype };
     }
     else {
-      $extra_sql_in .= qq{ AND va.phenotype_id = p.phenotype_id 
-                           AND (p.name = '$annotation' OR p.description LIKE '%$annotation%') 
+      $extra_sql_in .= qq{ AND pf.phenotype_id = p.phenotype_id 
+                           AND (p.name = '$phenotype' OR p.description LIKE '%$phenotype%') 
                          };
       $extra_table .= qq{, phenotype p};
     }
@@ -428,10 +430,11 @@ sub _internal_fetch_all_with_annotation_by_Slice{
     SELECT $cols
     FROM (variation_feature vf, source s)
     LEFT JOIN failed_variation fv ON (fv.variation_id = vf.variation_id)
-    WHERE 
-    vf.variation_id IN
-      (SELECT va.variation_id FROM variation_annotation va, study st $extra_table 
-      WHERE va.study_id=st.study_id $extra_sql_in)
+    WHERE vf.seq_region_id = pf.seq_region_id
+    AND vf.seq_region_start = pf.seq_region_start
+    AND vf.seq_region_end = pf.seq_region_end
+    AND vf.variation_name = pf.object_id
+    $extra_sql_in
     AND vf.source_id = s.source_id 
 		$extra_sql
     AND vf.seq_region_id = ?
@@ -445,23 +448,23 @@ sub _internal_fetch_all_with_annotation_by_Slice{
   return $self->_objs_from_sth($sth, undef, $slice);
 }
 
-=head2 fetch_all_with_annotation_by_Slice
+=head2 fetch_all_with_phenotype_by_Slice
 
   Arg [1]    : Bio::EnsEMBL:Variation::Slice $slice
   Arg [2]    : $variation_feature_source [optional]
-  Arg [3]    : $annotation_source [optional]
-  Arg [4]    : $annotation_name [optional]
-  Example    : my @vfs = @{$vfa->fetch_all_with_annotation_by_Slice($slice)};
-  Description: Retrieves all germline variation features associated with annotations for
+  Arg [3]    : $phenotype_source [optional]
+  Arg [4]    : $phenotype_name [optional]
+  Example    : my @vfs = @{$vfa->fetch_all_with_phenotype_by_Slice($slice)};
+  Description: Retrieves all germline variation features associated with phenotypes for
                a given slice.
                The optional $variation_feature_source argument can be used to
                retrieve only variation features from a paricular source.
-               The optional $annotation source argument can be used to
-               retrieve only variation features with annotations provided by
+               The optional $phenotype source argument can be used to
+               retrieve only variation features with phenotypes provided by
                a particular source.
-               The optional $annotation_name argument can
+               The optional $phenotype_name argument can
                be used to retrieve only variation features associated with
-               that annotation - this can also be a phenotype's dbID.
+               that phenotype - this can also be a phenotype's dbID.
   Returntype : reference to list Bio::EnsEMBL::Variation::VariationFeature
   Exceptions : throw on bad argument
   Caller     : general
@@ -469,23 +472,23 @@ sub _internal_fetch_all_with_annotation_by_Slice{
 
 =cut
 
-sub fetch_all_with_annotation_by_Slice {
+sub fetch_all_with_phenotype_by_Slice {
     my $self = shift;
-    my ($slice, $v_source, $p_source, $annotation) = @_;
+    my ($slice, $v_source, $p_source, $phenotype) = @_;
     my $constraint = 'vf.somatic = 0';
-    return $self->_internal_fetch_all_with_annotation_by_Slice($slice, $v_source, $p_source, $annotation, $constraint);
+    return $self->_internal_fetch_all_with_phenotype_by_Slice($slice, $v_source, $p_source, $phenotype, $constraint);
 }
 
-=head2 fetch_all_somatic_with_annotation_by_Slice
+=head2 fetch_all_somatic_with_phenotype_by_Slice
 
   Arg [1]    : Bio::EnsEMBL:Variation::Slice $slice
   Arg [2]    : $variation_feature_source [optional]
-  Arg [3]    : $annotation_source [optional]
-  Arg [4]    : $annotation_name [optional]
-  Example    : my @vfs = @{$vfa->fetch_all_somatic_with_annotation_by_Slice($slice)};
-  Description: Retrieves all somatic variation features associated with annotations for
+  Arg [3]    : $phenotype_source [optional]
+  Arg [4]    : $phenotype_name [optional]
+  Example    : my @vfs = @{$vfa->fetch_all_somatic_with_phenotype_by_Slice($slice)};
+  Description: Retrieves all somatic variation features associated with phenotypes for
                a given slice.
-               (see fetch_all_with_annotation_by_Slice documentation for description of
+               (see fetch_all_with_phenotype_by_Slice documentation for description of
                the other parameters)
   Returntype : reference to list Bio::EnsEMBL::Variation::VariationFeature
   Exceptions : throw on bad argument
@@ -494,11 +497,11 @@ sub fetch_all_with_annotation_by_Slice {
 
 =cut
 
-sub fetch_all_somatic_with_annotation_by_Slice {
+sub fetch_all_somatic_with_phenotype_by_Slice {
     my $self = shift;
-    my ($slice, $v_source, $p_source, $annotation) = @_;
+    my ($slice, $v_source, $p_source, $phenotype) = @_;
     my $constraint = 'vf.somatic = 1';
-    return $self->_internal_fetch_all_with_annotation_by_Slice($slice, $v_source, $p_source, $annotation, $constraint);
+    return $self->_internal_fetch_all_with_phenotype_by_Slice($slice, $v_source, $p_source, $phenotype, $constraint);
 }
 
 =head2 fetch_all_by_Slice_VariationSet
@@ -560,7 +563,7 @@ sub fetch_all_by_Slice_VariationSet{
   Arg [3]	 : $minimum_frequency (optional)
   Example    : $pop = $pop_adaptor->fetch_by_dbID(659);
 			  $slice = $slice_adaptor->fetch_by_region("chromosome", 1, 1, 1e6);
-              @vfs = @{$vf_adaptor->fetch_all_by_Slice_Population($slice,$pop)};
+              @vfs = @{$vf_adaptor->fetch_all_by_Slice_Population($pop,$slice)};
   Description: Retrieves all variation features in a slice which are stored for
 			   a specified population. If $minimum_frequency is supplied, only
 			   variations with a minor allele frequency (MAF) greater than
@@ -651,9 +654,9 @@ sub fetch_all_by_Slice_Population {
   return $self->_objs_from_sth($sth, undef, $slice);
 }
 
-sub _internal_fetch_all_with_annotation {
+sub _internal_fetch_all_with_phenotype {
     
-  my ($self, $v_source, $p_source, $annotation, $constraint) = @_;
+  my ($self, $v_source, $p_source, $phenotype, $constraint) = @_;
     
   my $extra_sql = '';
   my $extra_table = '';
@@ -667,13 +670,13 @@ sub _internal_fetch_all_with_annotation {
     $extra_table .= qq{, source ps};
   }
     
-  if(defined $annotation) {
-    if($annotation =~ /^[0-9]+$/) {
-      $extra_sql .= qq{ AND va.phenotype_id = $annotation };
+  if(defined $phenotype) {
+    if($phenotype =~ /^[0-9]+$/) {
+      $extra_sql .= qq{ AND pf.phenotype_id = $phenotype };
     }
     else {
-      $extra_sql .= qq{ AND va.phenotype_id = p.phenotype_id 
-					              AND (p.name = '$annotation' OR p.description LIKE '%$annotation%')
+      $extra_sql .= qq{ AND pf.phenotype_id = p.phenotype_id 
+					              AND (p.name = '$phenotype' OR p.description LIKE '%$phenotype%')
                       };
 			$extra_table .= qq{, phenotype p};
     }
@@ -690,12 +693,15 @@ sub _internal_fetch_all_with_annotation {
     
   my $sth = $self->prepare(qq{
         SELECT $cols
-        FROM (variation_feature vf, variation_annotation va,
+        FROM (variation_feature vf, phenotype_feature pf,
         source s, study st $extra_table) # need to link twice to source
         LEFT JOIN failed_variation fv ON (fv.variation_id = vf.variation_id)
-        WHERE va.study_id = st.study_id
+        WHERE pf.study_id = st.study_id
         AND vf.source_id = s.source_id
-        AND vf.variation_id = va.variation_id
+        AND vf.seq_region_id = pf.seq_region_id
+				AND vf.seq_region_start = pf.seq_region_start
+				AND vf.seq_region_end = pf.seq_region_end
+				AND vf.variation_name = pf.object_id
         $extra_sql
         GROUP BY vf.variation_feature_id
   });
@@ -705,22 +711,22 @@ sub _internal_fetch_all_with_annotation {
   return $self->_objs_from_sth($sth);
 }
 
-=head2 fetch_all_with_annotation
+=head2 fetch_all_with_phenotype
 
   Arg [1]    : $variation_feature_source [optional]
-  Arg [2]    : $annotation_source [optional]
-  Arg [3]    : $annotation_name [optional]
-  Example    : my @vfs = @{$vfa->fetch_all_with_annotation('EGA', undef, 123)};
-  Description: Retrieves all germline variation features associated with the given annotation
+  Arg [2]    : $phenotype_source [optional]
+  Arg [3]    : $phenotype_name [optional]
+  Example    : my @vfs = @{$vfa->fetch_all_with_phenotype('EGA', undef, 123)};
+  Description: Retrieves all germline variation features associated with the given phenotype
   Returntype : reference to list Bio::EnsEMBL::Variation::VariationFeature
   Caller     : webcode
   Status     : Experimental
 
 =cut
 
-sub fetch_all_with_annotation {
+sub fetch_all_with_phenotype {
     
-    my ($self, $v_source, $p_source, $annotation, $constraint) = @_;
+    my ($self, $v_source, $p_source, $phenotype, $constraint) = @_;
     
     my $somatic_constraint = 'vf.somatic = 0';
     
@@ -731,25 +737,25 @@ sub fetch_all_with_annotation {
         $constraint = $somatic_constraint;
     }
     
-    return $self->_internal_fetch_all_with_annotation($v_source, $p_source, $annotation, $constraint);
+    return $self->_internal_fetch_all_with_phenotype($v_source, $p_source, $phenotype, $constraint);
 }
 
-=head2 fetch_all_somatic_with_annotation
+=head2 fetch_all_somatic_with_phenotype
 
   Arg [1]    : $variation_feature_source [optional]
-  Arg [2]    : $annotation_source [optional]
-  Arg [3]    : $annotation_name [optional]
-  Example    : my @vfs = @{$vfa->fetch_all_somatic_with_annotation('COSMIC', undef, 807)};
-  Description: Retrieves all somatic variation features associated with the given annotation
+  Arg [2]    : $phenotype_source [optional]
+  Arg [3]    : $phenotype_name [optional]
+  Example    : my @vfs = @{$vfa->fetch_all_somatic_with_phenotype('COSMIC', undef, 807)};
+  Description: Retrieves all somatic variation features associated with the given phenotype
   Returntype : reference to list Bio::EnsEMBL::Variation::VariationFeature
   Caller     : webcode
   Status     : Experimental
 
 =cut
 
-sub fetch_all_somatic_with_annotation {
+sub fetch_all_somatic_with_phenotype {
     
-    my ($self, $v_source, $p_source, $annotation, $constraint) = @_;
+    my ($self, $v_source, $p_source, $phenotype, $constraint) = @_;
     
     my $somatic_constraint = 'vf.somatic = 1';
     
@@ -760,7 +766,7 @@ sub fetch_all_somatic_with_annotation {
         $constraint = $somatic_constraint;
     }
     
-    return $self->_internal_fetch_all_with_annotation($v_source, $p_source, $annotation, $constraint);
+    return $self->_internal_fetch_all_with_phenotype($v_source, $p_source, $phenotype, $constraint);
 }
 
 
@@ -990,7 +996,7 @@ sub _columns {
              vf.seq_region_end vf.seq_region_strand vf.variation_id
              vf.allele_string vf.variation_name vf.map_weight s.name s.version vf.somatic 
              vf.validation_status vf.consequence_types vf.class_attrib_id
-             vf.minor_allele vf.minor_allele_freq vf.minor_allele_count vf.alignment_quality);
+             vf.minor_allele vf.minor_allele_freq vf.minor_allele_count vf.alignment_quality vf.evidence);
 }
 
 sub _objs_from_sth {
@@ -1017,14 +1023,14 @@ sub _objs_from_sth {
       $seq_region_end, $seq_region_strand, $variation_id,
       $allele_string, $variation_name, $map_weight, $source_name, $source_version,
       $is_somatic, $validation_status, $consequence_types, $class_attrib_id,
-	  $minor_allele, $minor_allele_freq, $minor_allele_count, $last_vf_id,$alignment_quality);
+	  $minor_allele, $minor_allele_freq, $minor_allele_count, $last_vf_id,$alignment_quality,$evidence);
 
     $sth->bind_columns(\$variation_feature_id, \$seq_region_id,
                      \$seq_region_start, \$seq_region_end, \$seq_region_strand,
                      \$variation_id, \$allele_string, \$variation_name,
                      \$map_weight, \$source_name, \$source_version, \$is_somatic, \$validation_status, 
                      \$consequence_types, \$class_attrib_id,
-		     \$minor_allele, \$minor_allele_freq, \$minor_allele_count,\$alignment_quality);
+		     \$minor_allele, \$minor_allele_freq, \$minor_allele_count,\$alignment_quality, \$evidence);
 
     my $asm_cs;
     my $cmp_cs;
@@ -1128,6 +1134,11 @@ sub _objs_from_sth {
             if (defined($validation_status)) {
                 $validation_code = get_validation_code([split(',',$validation_status)]);
             }
+
+	    my @evidence;
+	    if (defined($evidence)) {
+		@evidence = split(/,/,$evidence );
+	    }
             
             #my $overlap_consequences = $self->_variation_feature_consequences_for_set_number($consequence_types);
             
@@ -1157,7 +1168,8 @@ sub _objs_from_sth {
                 'minor_allele' => $minor_allele,
                 'minor_allele_frequency' => $minor_allele_freq,
                 'minor_allele_count' => $minor_allele_count,
-                'flank_match'  => $alignment_quality
+                'flank_match'  => $alignment_quality,
+                'evidence'     => \@evidence
                 }
             );
         }
@@ -1335,6 +1347,10 @@ sub _parse_hgvs_transcript_position {
   my $transcript  = shift;
             
   my ($start,$start_offset, $end, $end_offset) = $description =~ m/^([\-\*]?\d+)((?:[\+\-]\d+)?)(?:_([\-\*]?\d+)((?:[\+\-]\d+)?))?/;
+
+ my $is_exonic = 1;
+ $is_exonic = 0 if ($start_offset || $end_offset || substr($start,0,1) eq '*' || (defined $end && substr($end,0,1) eq '*') || $start < 0);
+
   my ($start_direction, $end_direction); ## go back or forward into intron
 
   if($start_offset ){
@@ -1408,11 +1424,12 @@ sub _parse_hgvs_transcript_position {
     ### overwrite exonic location with genomic coordinates
     $start = $coords[0]->start(); 
     $end   = $coords[0]->end();
-    
+
     #### intronic variants are described as after or before the nearest exon 
     #### - add this offset to genomic start & end positions
     if(defined $start_direction ){
       if($strand  == 1){
+
         if($start_direction eq "+"){ $start = $start + $start_offset; }
         if($end_direction   eq "+"){ $end   = $end   + $end_offset;   }
       
@@ -1425,6 +1442,8 @@ sub _parse_hgvs_transcript_position {
       
         if($start_direction eq "-"){ $start = $start + $start_offset;}
         if($end_direction   eq "-"){ $end   = $end   + $end_offset;  }
+
+        ($start, $end) = ($end,$start) ;
      }
    }
    if($description =~ /dup/){ 
@@ -1433,8 +1452,7 @@ sub _parse_hgvs_transcript_position {
      if($strand  == 1){ $start++; }
      else{             $end--;   }
   }
-   
-  return ($start, $end, $strand);
+  return ($start, $end, $strand, $is_exonic);
 }
 
 =head2 fetch_by_hgvs_notation
@@ -1480,7 +1498,6 @@ sub fetch_by_hgvs_notation {
   # strip version number from reference
   if ($reference=~ /^ENS|^LRG_\d+/){
     $reference =~ s/\.\d+//g;
-    warn ("The position specified by HGVS notation '$hgvs' refers to a nucleotide that may not have a specific reference sequence. The current Ensembl genome reference sequence will be used.") ;
    }
   #ÊA small fix in case the reference is a LRG and there is no underscore between name and transcript
   $reference =~ s/^(LRG_[0-9]+)_?(t[0-9]+)$/$1\_$2/i;
@@ -1500,7 +1517,13 @@ sub fetch_by_hgvs_notation {
       my $transcript_adaptor = $user_transcript_adaptor || $self->db()->dnadb()->get_TranscriptAdaptor();
       my $transcript = $transcript_adaptor->fetch_by_stable_id($reference) or throw ("Could not get a Transcript object for '$reference'");
 
-      ($start, $end, $strand) =  _parse_hgvs_transcript_position($description, $transcript) ;  
+      my $is_exonic;
+      ($start, $end, $strand, $is_exonic) =  _parse_hgvs_transcript_position($description, $transcript) ; 
+
+      #If the position given was in a intronic or UTR position, it could be undefined what reference sequence the position actually refers to. Issue a warning that we will use the Ensembl reference sequence.
+      warn ("The position specified by HGVS notation '$hgvs' refers to a nucleotide that may not have a specific reference sequence. The current Ensembl genome reference sequence will be used.\n")  if $is_exonic eq "0";
+
+ 
       $slice = $slice_adaptor->fetch_by_region($transcript->coord_system_name(),$transcript->seq_region_name());   
       ($ref_allele, $alt_allele) = _get_hgvs_alleles($description, $hgvs);  
   
@@ -1544,6 +1567,7 @@ sub fetch_by_hgvs_notation {
      # insertion: the start & end positions are inverted by convention
       if($end > $start){ ($start, $end  ) = ( $end , $start); }   
   }
+ 
   else{
     # If the reference from the sequence does not correspond to the reference given in the HGVS notation, throw an exception 
     if (defined($ref_allele) && $ref_allele ne $refseq_allele){        
@@ -1574,7 +1598,7 @@ sub fetch_by_hgvs_notation {
          '-source'  => 'Parsed from HGVS notation',
          '-alleles' => \@allele_objs
     );
-    
+
     #ÊCreate a variation feature object
     my $variation_feature = Bio::EnsEMBL::Variation::VariationFeature->new(
        '-adaptor'       => $self,

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -564,7 +564,7 @@ sub y_axis_max {
 sub packed {
     my ($self, $packed) = @_;
 
-    if($packed) {
+    if(defined $packed) {
 	$self->{'packed'} = $packed;
     }
     return $self->{'packed'};
@@ -640,10 +640,7 @@ sub _reverse_score {
 	}
     } else {
 	my @scores = split ' ', $score_str;
-	my $rev_str;
-	for (my $i = $num_scores-1; $i >= 0; $i--) {
-	    $rev_str .= $scores[$i];	
-	} 
+        $rev_str = join " ", (CORE::reverse @scores);
     }
     return $rev_str;
 }

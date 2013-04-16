@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -597,7 +597,6 @@ sub is_known {
 =head2 status
 
   Arg [1]    : string $status
-  Example    : none
   Description: get/set for attribute status
   Returntype : string
   Exceptions : none
@@ -615,7 +614,6 @@ sub status {
 =head2 biotype
 
   Arg [1]    : string $biotype
-  Example    : none
   Description: get/set for attribute biotype
   Returntype : string
   Exceptions : none
@@ -820,7 +818,6 @@ sub add_alternative_translation {
 =head2 spliced_seq
 
   Args       : none
-  Example    : none
   Description: Retrieves all Exon sequences and concats them together.
                No phase padding magic is done, even if phases do not align.
   Returntype : Text
@@ -1450,7 +1447,7 @@ sub get_all_Exons {
 
   Arg        :  None
 
-  Examples   :  my @exons = @{ $transcript->get_all_constitutive_Exons() };
+  Example   :  my @exons = @{ $transcript->get_all_constitutive_Exons() };
 
   Description:  Returns an listref of the constitutive exons in this
                 transcript in order, i.e. the first exon in the
@@ -1710,6 +1707,7 @@ sub five_prime_utr_Feature {
   my ($self) = @_;
   my ($start, $end);
   my $cdna_coding = $self->cdna_coding_start();
+  return unless $cdna_coding;
   my ($genomic_pos) = $self->cdna2genomic($cdna_coding, $cdna_coding);
   if($self->strand() == 1) {
     $start = $self->seq_region_start();
@@ -1752,6 +1750,7 @@ sub three_prime_utr_Feature {
   my ($self) = @_;
   my ($start, $end);
   my $cdna_coding = $self->cdna_coding_end();
+  return unless $cdna_coding;
   my ($genomic_pos) = $self->cdna2genomic($cdna_coding, $cdna_coding);
   if($self->strand() == 1) {
     $end = $self->seq_region_end();
@@ -1780,7 +1779,6 @@ sub three_prime_utr_Feature {
 =head2 get_all_translateable_Exons
 
   Args       : none
-  Example    : none
   Description: Returns a list of exons that translate with the
                start and end exons truncated to the CDS regions.
                This function does not take into account any SeqEdits

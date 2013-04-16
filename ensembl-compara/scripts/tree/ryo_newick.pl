@@ -3,8 +3,6 @@ use strict;
 use warnings;
 
 use Bio::EnsEMBL::Registry;
-use Bio::EnsEMBL::Compara::NestedSet;
-use Bio::EnsEMBL::Compara::Member;
 use Getopt::Long;
 
 my $reg = "Bio::EnsEMBL::Registry";
@@ -47,7 +45,7 @@ t --> timetree ($tree->get_tagvalue('ensembl timetree mya')
 l --> display_label ($tree->gene_member->display_label)
 s --> genome short name ($tree->genome_db->short_name)
 i --> stable_id ($tree->gene_member->stable_id)
-p --> peptide Member ($tree->get_canonical_Member->stable_id)
+p --> peptide Member ($tree->get_canonical_SeqMember->stable_id)
 x --> taxon_id ($tree->taxon_id)
 m --> member_id ($tree->member_id)
 o --> node_id ($self->node_id)

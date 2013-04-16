@@ -1,10 +1,11 @@
-/CheckdbSNPImport.pm/1.4/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
-/FinishVariantQC.pm/1.11/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
-/FlipPopulationGenotype.pm/1.1/Tue Oct  2 14:40:31 2012//Tbranch-ensembl-70
-/InitVariantQC.pm/1.6/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
-/SpecialCase.pm/1.1/Fri Nov 30 17:04:30 2012//Tbranch-ensembl-70
-/UnmappedVariant.pm/1.1/Fri May 25 16:54:24 2012//Tbranch-ensembl-70
-/UpdatePopulationGenotype.pm/1.4/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
-/VariantQC.pm/1.14/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
-/VariantQC_conf.pm/1.8/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
+/CheckdbSNPImport.pm/1.6/Tue Apr 16 20:40:20 2013//Tbranch-ensembl-71
+/FinishVariantQC.pm/1.18/Tue Apr 16 20:40:20 2013//Tbranch-ensembl-71
+/FlipPopulationGenotype.pm/1.4/Tue Apr 16 20:40:20 2013//Tbranch-ensembl-71
+/InitVariantQC.pm/1.12/Tue Apr 16 20:40:20 2013//Tbranch-ensembl-71
+/RegisterDBSNPImport.pm/1.2/Wed Feb 13 09:51:47 2013//Tbranch-ensembl-71
+/SpecialCase.pm/1.5/Tue Apr 16 20:40:20 2013//Tbranch-ensembl-71
+/UnmappedVariant.pm/1.3/Tue Apr 16 20:40:20 2013//Tbranch-ensembl-71
+/UpdatePopulationGenotype.pm/1.7/Tue Apr 16 20:40:20 2013//Tbranch-ensembl-71
+/VariantQC.pm/1.20/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/VariantQC_conf.pm/1.11/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
 D

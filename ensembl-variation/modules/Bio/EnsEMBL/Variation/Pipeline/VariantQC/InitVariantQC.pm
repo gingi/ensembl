@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -101,7 +101,7 @@ sub fetch_input {
 
     ## bin unmapped var check in larger chunks
     
-    my   @unmapped_start_id;
+    my @unmapped_start_id;
     
     my $start_unmapped_from = int( $start_at_variation_id / $self->param('unmapped_batch_size') );
     my $unmapped_var_jobs   = int( $max_id->[0]->[0]      / $self->param('unmapped_batch_size') ); 
@@ -130,15 +130,24 @@ sub create_working_tables{
   $var_dba->dbc->do(qq{ DROP TABLE IF EXISTS variation_working});
   $var_dba->dbc->do(qq{ CREATE TABLE variation_working like variation });
   $var_dba->dbc->do(qq{ ALTER TABLE variation_working DROP COLUMN snp_id }); ## tmp column not in released schema
+  $var_dba->dbc->do(qq{ ALTER TABLE variation_working DISABLE KEYS});
+
+  ## temp table to hold variants with minor alleles not in the variation_feature allele string
+  $var_dba->dbc->do(qq{ DROP TABLE IF EXISTS tmp_failed_minor_allele});
+  $var_dba->dbc->do(qq{ CREATE TABLE tmp_failed_minor_allele  (
+                        variation_id int(11) unsigned NOT NULL,                        
+                        KEY variation_idx (variation_id)   )});
 
   ## table to hold variation feature info after fliping & ref allele assignment
   $var_dba->dbc->do(qq{ DROP TABLE IF EXISTS variation_feature_working});
   $var_dba->dbc->do(qq{ CREATE TABLE variation_feature_working like variation_feature });
-
+  $var_dba->dbc->do(qq{ ALTER TABLE variation_feature_working DISABLE KEYS});
+ 
 
   ## table to hold non-coded allele info after flipping 
   $var_dba->dbc->do(qq{ DROP TABLE IF EXISTS MTMP_allele_working });
   $var_dba->dbc->do(qq{ CREATE TABLE MTMP_allele_working like allele });
+  $var_dba->dbc->do(qq{ ALTER TABLE MTMP_allele_working DISABLE KEYS});
  
 
   ## table to hold coded allele info after fliping 
@@ -157,6 +166,7 @@ sub create_working_tables{
                         KEY subsnp_idx (subsnp_id),
                         KEY sample_idx (sample_id))
                       });
+  $var_dba->dbc->do(qq{ ALTER TABLE allele_working DISABLE KEYS});
   
   ## add intial values to allele code table
   $var_dba->dbc->do(qq{TRUNCATE allele_code});# empty if re-running to allow genotype_code population for basics
@@ -216,6 +226,13 @@ sub create_working_tables{
                         ORDER BY ac1.allele_code_id, ac1.allele_code_id + ac2.allele_code_id
                        });
 
+ $var_dba->dbc->do(qq{ CREATE TABLE IF NOT EXISTS maf(
+                        snp_id           int(11),
+                        allele           text,
+                        freq             float,
+                        count            int(11),
+                        is_minor_allele  int(11) )
+                      });
 
 }
 
@@ -344,7 +361,7 @@ sub create_1KG_table{
 
     my $var_dba  = $self->get_species_adaptor('variation');
     ## drop any pre-existing table and run clean new import
-    $var_dba->dbc->do(qq[ DROP TABLE tmp_1kg_var ]);
+    $var_dba->dbc->do(qq[ DROP TABLE IF EXISTS tmp_1kg_var ]);
 
     my $export_stmt = qq[ select rs_id from 1kg_rs_id ];
     dumpSQL($int_dba->dbc(), $export_stmt);

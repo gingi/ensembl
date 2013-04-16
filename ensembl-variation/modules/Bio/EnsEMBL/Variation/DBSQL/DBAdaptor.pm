@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -69,9 +69,7 @@ sub get_available_adaptors{
 		'StructuralVariation'             => 'Bio::EnsEMBL::Variation::DBSQL::StructuralVariationAdaptor',
 		'SupportingStructuralVariation'   => 'Bio::EnsEMBL::Variation::DBSQL::SupportingStructuralVariationAdaptor',
 		'StructuralVariationFeature'      => 'Bio::EnsEMBL::Variation::DBSQL::StructuralVariationFeatureAdaptor',
-		'StructuralVariationAnnotation'   => 'Bio::EnsEMBL::Variation::DBSQL::StructuralVariationAnnotationAdaptor',
 		'Study'                           => 'Bio::EnsEMBL::Variation::DBSQL::StudyAdaptor',
-		'VariationAnnotation'             => 'Bio::EnsEMBL::Variation::DBSQL::VariationAnnotationAdaptor',
 		'AlleleFeature'                   => 'Bio::EnsEMBL::Variation::DBSQL::AlleleFeatureAdaptor',
 		'LDFeatureContainer'              => 'Bio::EnsEMBL::Variation::DBSQL::LDFeatureContainerAdaptor',
 		'IndividualGenotype'              => 'Bio::EnsEMBL::Variation::DBSQL::IndividualGenotypeAdaptor',
@@ -92,6 +90,7 @@ sub get_available_adaptors{
     'Phenotype'                       => 'Bio::EnsEMBL::Variation::DBSQL::PhenotypeAdaptor',
     'RegulatoryFeatureVariation'      => 'Bio::EnsEMBL::Variation::DBSQL::RegulatoryFeatureVariationAdaptor',
     'MotifFeatureVariation'           => 'Bio::EnsEMBL::Variation::DBSQL::MotifFeatureVariationAdaptor',
+    'PhenotypeFeature'                => 'Bio::EnsEMBL::Variation::DBSQL::PhenotypeFeatureAdaptor',
     );
 	
     return (\%pairs);

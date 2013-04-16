@@ -1,4 +1,25 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/legal/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <dev@ensembl.org>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk.org>.
+
+=cut
+
 
 use Getopt::Long;
 use DBI;
@@ -6,8 +27,15 @@ use DBI;
 my $config = {};
 
 my %special_options = (
-	'homo_sapiens' => ' --sift b --polyphen b --regulatory',
-	'mus_musculus' => ' --regulatory',
+	'homo_sapiens'      => ' --sift b --polyphen b --regulatory'.
+	                       ' --freq_file /nfs/ensembl/wm2/VEP/cache/all_rs_global_freqs.txt,AFR,AMR,ASN,EUR',
+	'mus_musculus'      => ' --regulatory --sift b',
+	'bos_taurus'        => ' --sift b',
+	'canis_familiaris'  => ' --sift b',
+	'danio_rerio'       => ' --sift b',
+	'gallus_gallus'     => ' --sift b',
+	'rattus_norvegicus' => ' --sift b',
+	'sus_scrofa'        => ' --sift b',
 );
 
 GetOptions(
@@ -49,9 +77,7 @@ $config->{hosts} = [split /\,/, $config->{hosts}];
 
 foreach my $host(@{$config->{hosts}}) {
 	debug("Getting species list for host $host");
-	
 	my $species_list = get_species_list($config, $host);
-	
 	debug("Found ".(scalar @$species_list)." valid databases\n");
 	
 	foreach my $species(@$species_list) {
@@ -66,18 +92,20 @@ foreach my $host(@{$config->{hosts}}) {
 sub get_species_list {
 	my $config = shift;
 	my $host   = shift;
-	
-	# connect to DB
-	my $dbc = DBI->connect(
-		sprintf(
+
+	my $connection_string = sprintf(
 			"DBI:mysql(RaiseError=>1):host=%s;port=%s;db=mysql",
 			$host,
 			$config->{port}
-		), $config->{user}, $config->{password}
+		);
+	
+	# connect to DB
+	my $dbc = DBI->connect(
+	    $connection_string, $config->{user}, $config->{password}
 	);
 	
 	my $version = $config->{version};
-	
+
 	my $sth = $dbc->prepare(qq{
 		SHOW DATABASES LIKE '%\_core\_$version%'
 	});
@@ -89,19 +117,35 @@ sub get_species_list {
 	my @dbs;
 	push @dbs, $db while $sth->fetch;
 	$sth->finish;
-	
+
 	# remove master and coreexpression
 	@dbs = grep {$_ !~ /master|express/} @dbs;
-	
+
 	# filter on pattern if given
 	my $pattern = $config->{pattern};
 	@dbs = grep {$_ =~ /$pattern/} @dbs if defined($pattern);
-	
-	# remove version, build
-	$_ =~ s/^([a-z]+\_[a-z]+)(\_[a-z]+)?(.+)/$1$2/ for @dbs;
-	$_ =~ s/\_core$// for @dbs;
-	
-	return \@dbs;
+
+	my @species;
+
+	foreach my $current_db_name (@dbs) {
+
+	    $sth = $dbc->prepare("select meta_value from ".$current_db_name.".meta where meta_key='species.production_name';");
+	    $sth->execute();
+	    my $current_species = $sth->fetchall_arrayref();
+
+	    my @flattened_species_list = sort map { $_->[0] } @$current_species;
+			
+			if(@flattened_species_list) {
+				push @species, @flattened_species_list;
+			}
+			else {
+				$current_db_name =~ s/^([a-z]+\_[a-z,1-9]+)(\_[a-z]+)?(.+)/$1$2/;
+				$current_db_name =~ s/\_core$//;
+				push @species, $current_db_name;
+			}
+	}
+
+	return \@species;
 }
 
 sub dump_vep {
@@ -160,7 +204,7 @@ sub tar {
 	die("ERROR: VEP dump directory $root_dir/$sub_dir not found") unless -e $root_dir.'/'.$sub_dir;
 	
 	my $command = "tar -cz -C $root_dir -f $tar_file $sub_dir";
-	system($command);
+	system($command);# or die "ERROR: Failed to create tar file $tar_file\n";
 }
 
 # gets time

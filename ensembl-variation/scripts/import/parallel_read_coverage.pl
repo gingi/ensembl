@@ -1,4 +1,25 @@
-#!/usr/local/ensembl/bin/perl
+#!/usr/bin/env perl
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/legal/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <dev@ensembl.org>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk.org>.
+
+=cut
+
 
 use strict;
 use warnings;
@@ -69,7 +90,7 @@ $bsub_wait_status ||= 'done';
 my $call;
 my $i = 0;
 foreach my $read_file (glob("$read_dir/*.mapped")){
-    $call = "bsub -J read_coverage_job_$i -o $TMP_DIR/output_reads_$i.txt -q research /sw/arch/bin/perl read_coverage.pl -chost $chost -cuser $cuser -cport $cport -cdbname $cdbname -vhost $vhost -vuser $vuser -vpass $vpass -vport $vport -vdbname $vdbname -tmpdir $TMP_DIR -tmpfile read_coverage_$i.txt -maxlevel $max_level -readfile $read_file";
+    $call = "bsub -J read_coverage_job_$i -o $TMP_DIR/output_reads_$i.txt -q research /sw/arch/bin/env perl read_coverage.pl -chost $chost -cuser $cuser -cport $cport -cdbname $cdbname -vhost $vhost -vuser $vuser -vpass $vpass -vport $vport -vdbname $vdbname -tmpdir $TMP_DIR -tmpfile read_coverage_$i.txt -maxlevel $max_level -readfile $read_file";
 
     if ($ind_file)
     {

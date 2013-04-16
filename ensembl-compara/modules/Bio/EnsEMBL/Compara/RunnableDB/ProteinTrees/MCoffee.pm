@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -36,7 +36,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.21 $
+$Revision: 1.25 $
 
 =head1 APPENDIX
 
@@ -51,8 +51,6 @@ use strict;
 
 use IO::File;
 
-use Bio::EnsEMBL::Compara::AlignedMemberSet;
-
 use base ('Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::MSA');
 
 
@@ -60,6 +58,10 @@ sub param_defaults {
     my $self = shift;
     return {
         %{$self->SUPER::param_defaults},
+        'mafft_bin_dir'         => '/bin/',                 # where to find the mafft binaroes from $mafft_home
+        'mcoffee_exe_name'      => 't_coffee',              # where to find the t_coffee executable from $mcoffee_home/$mcoffee_exe_dir
+        'mcoffee_exe_dir'       => '/bin/',                 # where to find the t_coffee executable rirectory from $mcoffee_home
+        'mcoffee_bin_dir'       => '/plugins/linux',        # where to find the mcoffee binaries from $mcoffee_home
         'method'                => 'fmcoffee',              # the style of MCoffee to be run for this alignment
         'options'               => '',
         'cutoff'                => 2,                       # for filtering
@@ -120,7 +122,7 @@ sub parse_and_store_alignment_into_proteintree {
         printf("Updating the score of %s : %s\n",$member->stable_id,$score_string) if ($self->debug);
         $member->cigar_line($score_string);
     }
-    $self->compara_dba->get_AlignedMemberAdaptor->store($aln_score);
+    $self->compara_dba->get_GeneAlignAdaptor->store($aln_score);
     $self->param('protein_tree')->store_tag('mcoffee_scores', $aln_score->gene_align_id);
     $aln_score->root->release_tree;
     $aln_score->clear;
@@ -179,16 +181,6 @@ sub get_msa_command_line {
     open(OUTPARAMS, ">$paramsfile") or $self->throw("Error opening $paramsfile for write");
 
     my $extra_output = '';
-    if ($self->param('use_exon_boundaries')) {
-        if (1 == $self->param('use_exon_boundaries')) {
-            $method_string .= ", exon_pair";
-            my $exon_file = $self->param('input_fasta_exons');
-            print OUTPARAMS "-template_file=$exon_file\n";
-        } elsif (2 == $self->param('use_exon_boundaries')) {
-            $self->param('mcoffee_scores', undef);
-            $extra_output .= ',overaln  -overaln_param unalign -overaln_P1 99999 -overaln_P2 1'; # overaln_P1 150 and overaln_P2 30 was dealigning too aggressively
-        }
-    }
     $method_string .= "\n";
 
     print OUTPARAMS $method_string;
@@ -208,12 +200,17 @@ sub get_msa_command_line {
     my $cmd       = '';
     my $prefix    = '';
 
-    my $mcoffee_exe = $self->param('mcoffee_exe')
-        or die "'mcoffee_exe' is an obligatory parameter";
+    my $mcoffee_home = $self->param('mcoffee_home') or die "'mcoffee_home' is an obligatory parameter";
+    my $mcoffee_bin_dir = $self->param('mcoffee_bin_dir') or die "'mcoffee_bin_dir' is an obligatory parameter";
+    my $mcoffee_exe_name = $self->param('mcoffee_exe_name') or die "'mcoffee_exe_name' is an obligatory parameter";
+    my $mcoffee_exe_dir = $self->param('mcoffee_exe_dir') or die "'mcoffee_exe_dir' is an obligatory parameter";
+    die "Cannot find directory '$mcoffee_bin_dir' in '$mcoffee_home'" unless(-d $mcoffee_home.'/'.$mcoffee_bin_dir);
+    
+    my $mafft_home = $self->param('mafft_home') or die "'mafft_home' is an obligatory parameter";
+    my $mafft_bin_dir = $self->param('mafft_bin_dir') or die "'mafft_bin_dir' is an obligatory parameter";
+    die "Cannot find directory '$mafft_bin_dir' in '$mafft_home'" unless(-d $mafft_home.'/'.$mafft_bin_dir);
 
-    die "Cannot execute '$mcoffee_exe'" unless(-x $mcoffee_exe);
-
-    $cmd = $mcoffee_exe;
+    $cmd = "$mcoffee_home/$mcoffee_exe_dir/$mcoffee_exe_name";
     if ($self->param('redo_alnname') and ($self->param('method') eq 'unalign') ) {
         $cmd .= ' '. $self->param('options');
         $cmd .= ' '. $method_string;
@@ -230,10 +227,8 @@ sub get_msa_command_line {
     $prefix .= "export CACHE_4_TCOFFEE=\"$tempdir\";";
     $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
 
-    print "Using default mafft location\n" if $self->debug();
-    $prefix .= 'export MAFFT_BINARIES=/software/ensembl/compara/tcoffee-7.86b/install4tcoffee/bin/linux ;';
-    # path to t_coffee components:
-    $prefix .= 'export PATH=$PATH:/software/ensembl/compara/tcoffee-7.86b/install4tcoffee/bin/linux ;';
+    # Add the paths to the t_coffee built-in binaries + mafft (installed on its own)
+    $prefix .= "export PATH=$mafft_home/$mafft_bin_dir:\$PATH:$mcoffee_home/$mcoffee_exe_dir/:$mcoffee_home/$mcoffee_bin_dir;";
 
     return "$prefix $cmd";
 }

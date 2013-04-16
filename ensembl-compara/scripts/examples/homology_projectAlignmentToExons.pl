@@ -20,18 +20,18 @@ $reg->load_registry_from_db(
 
 
 my $human_gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor ("Homo sapiens", "core", "Gene");
-my $member_adaptor = Bio::EnsEMBL::Registry->get_adaptor ("Compara", "compara", "Member");
-my $homology_adaptor = Bio::EnsEMBL::Registry->get_adaptor ("Compara", "compara", "Homology");
+my $gene_member_adaptor = Bio::EnsEMBL::Registry->get_adaptor ("Multi", "compara", "GeneMember");
+my $homology_adaptor = Bio::EnsEMBL::Registry->get_adaptor ("Multi", "compara", "Homology");
 
 my $genes = $human_gene_adaptor-> fetch_all_by_external_name('BRCA2');
 
 my $gene = shift @$genes; # We assume we have only one gene
 
-my $member = $member_adaptor->fetch_by_source_stable_id("ENSEMBLGENE",$gene->stable_id);
+my $member = $gene_member_adaptor->fetch_by_source_stable_id("ENSEMBLGENE",$gene->stable_id);
 my @mouse_homologies = @{$homology_adaptor->fetch_all_by_Member_paired_species($member, "Mus_musculus",['ENSEMBL_ORTHOLOGUES'])};
 my @rat_homologies = @{$homology_adaptor->fetch_all_by_Member_paired_species($member, "Rattus_norvegicus",['ENSEMBL_ORTHOLOGUES'])};
 
-my $aligned_member = $member->get_canonical_Member;
+my $aligned_member = $member->get_canonical_SeqMember;
 
 sub print_transcript ($$)
 {
@@ -131,10 +131,10 @@ foreach my $homology (@mouse_homologies, @rat_homologies) {
     $gene1 = $gene2;
     $gene2 = $temp;
   }
-  my $member2 = $member_adaptor->fetch_by_source_stable_id("ENSEMBLGENE", $gene2->stable_id);
+  my $member2 = $gene_member_adaptor->fetch_by_source_stable_id("ENSEMBLGENE", $gene2->stable_id);
 
-  print_transcript($member->get_canonical_Member->get_Transcript, $cdna_simple_align);
-  print_transcript($member2->get_canonical_Member->get_Transcript, $cdna_simple_align);
+  print_transcript($member->get_canonical_SeqMember->get_Transcript, $cdna_simple_align);
+  print_transcript($member2->get_canonical_SeqMember->get_Transcript, $cdna_simple_align);
 
 }
 

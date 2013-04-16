@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -386,7 +386,7 @@ sub get_subsnp_handle {
     # Get the subsnp id and get rid of any 'ss' prefix
     my $ssid = $allele->subsnp() || "";
     $ssid =~ s/^ss//;
-    return if $ssid eq "0";
+    
     my ($stmt, $sth);
     if(defined $population ){
        $stmt = qq{

@@ -1,13 +1,13 @@
 
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -26,7 +26,7 @@ Bio::EnsEMBL::Variation::Pipeline::VariantQC::FlipPopulationGenotype
 =head1 DESCRIPTION
 
 Compliment alleles in population_genotype table where required
-Runs alongside allele/ variation feature flipping & QC
+Runs after allele/ variation feature flipping & QC
 
 =cut
 
@@ -66,10 +66,9 @@ sub get_flip_list{
     my $var_dba = shift;
     my %flip;
 
-    my $flip_ext_sth = $var_dba->dbc->prepare(qq[ select  variation_id from variation_to_reverse_working ]);
+    my $flip_ext_sth = $var_dba->dbc->prepare(qq[ select variation_id from variation_working where flipped = 1]);
     $flip_ext_sth->execute() ||die "Failed to extract flip list\n";;
-    my $var_list = $flip_ext_sth->fetchall_arrayref();
-    foreach my $l(@{$var_list}){
+    while(my $l = $flip_ext_sth->fetchrow_arrayref()){
         $flip{$l->[0]} = 1;
     }
 
@@ -100,6 +99,7 @@ sub flip_genotypes{
                                                  values(?,?,?,?,?,?,?,?)
                                                 ]);
 
+    $var_dba->dbc->do(qq{ ALTER TABLE MTMP_population_genotype_working DISABLE KEYS});
    
     my $start = 1;
     my $batch = 10000;
@@ -111,7 +111,7 @@ sub flip_genotypes{
   
         while (my $l = $data_ext_sth->fetchrow_arrayref() ){
             
-            if($flip->{$l->[1]}){
+            if($flip->{$l->[1]} == 1){
                 ## update genotypes for flipped variants                
                 defined $QUICK_COMP{$l->[3]} ? $l->[3] = $QUICK_COMP{$l->[3]} : reverse_comp(\$l->[3]);
                 defined $QUICK_COMP{$l->[4]} ? $l->[4] = $QUICK_COMP{$l->[4]} : reverse_comp(\$l->[4]);
@@ -121,6 +121,7 @@ sub flip_genotypes{
         }
         $start = $end +1;
     }
+    $var_dba->dbc->do(qq{ ALTER TABLE MTMP_population_genotype_working ENABLE KEYS});
 
 }
 

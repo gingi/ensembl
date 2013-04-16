@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -256,10 +256,6 @@ sub _dumpMultipleAlignmentStructToWorkdir {
   $file_root    =~ s/\/\//\//g;  # converts any // in path to /
 
   my $aln_file = $file_root . ".aln";
-#   if($self->debug) {
-#     printf("dumpMultipleAlignmentStructToWorkdir : %d members\n", $leafcount);
-#     print("aln_file = '$aln_file'\n");
-#   }
 
   open(OUTSEQ, ">$aln_file")
     or $self->throw("Error opening $aln_file for write");

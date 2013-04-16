@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -46,7 +46,7 @@ use Scalar::Util qw(weaken);
 use Bio::AlignIO;
 
 use Bio::EnsEMBL::Utils::Argument;
-use Bio::EnsEMBL::Utils::Scalar;
+use Bio::EnsEMBL::Utils::Scalar qw(:assert);
 use Bio::EnsEMBL::Utils::Exception;
 
 use Bio::EnsEMBL::Compara::AlignedMember;
@@ -345,6 +345,7 @@ sub get_SimpleAlign {
     foreach my $member (@{$self->get_all_Members}) {
 
         next if $member->source_name eq 'ENSEMBLGENE';
+        next if $member->source_name =~ m/^Uniprot/i and $cdna;
 
         # Print unique sequences only ?
         next if($unique_seqs and $seq_id_hash->{$member->sequence_id});
@@ -759,10 +760,15 @@ sub update_alignment_stats {
         my @aln1 = split(//, $gene1->alignment_string);
         my @aln2 = split(//, $gene2->alignment_string);
 
+        my $seq_length1 = 0;
+        my $seq_length2 = 0;
+
         for (my $i=0; $i <= $#aln1; $i++) {
             next if ($aln1[$i] eq '-' && $aln2[$i] eq '-');
             my $cur_aln1state = ($aln1[$i] eq '-' ? 'D' : 'M');
             my $cur_aln2state = ($aln2[$i] eq '-' ? 'D' : 'M');
+            $seq_length1++ if $cur_aln1state eq 'M';
+            $seq_length2++ if $cur_aln2state eq 'M';
             $aln1cov++ if $cur_aln1state ne 'D';
             $aln2cov++ if $cur_aln2state ne 'D';
             if ($cur_aln1state eq 'M' && $cur_aln2state eq 'M') {
@@ -813,14 +819,12 @@ sub update_alignment_stats {
         } else {
             $new_aln2_cigarline .= $aln2count.$aln2state;
         }
-        my $seq_length1 = $gene1->seq_length;
         unless (0 == $seq_length1) {
             $gene1->cigar_line($new_aln1_cigarline);
             $gene1->perc_id( int((100.0 * $identical_matches / $seq_length1 + 0.5)) );
             $gene1->perc_pos( int((100.0 * $positive_matches  / $seq_length1 + 0.5)) );
             $gene1->perc_cov( int((100.0 * $aln1cov / $seq_length1 + 0.5)) );
         }
-        my $seq_length2 = $gene2->seq_length;
         unless (0 == $seq_length2) {
             $gene2->cigar_line($new_aln2_cigarline);
             $gene2->perc_id( int((100.0 * $identical_matches / $seq_length2 + 0.5)) );
@@ -837,6 +841,7 @@ sub update_alignment_stats {
     my @nmatch_id    = (0) x $ngenes; 
     my @nmatch_pos   = (0) x $ngenes; 
     my @nmatch_cov   = (0) x $ngenes; 
+    my @seq_length   = (0) x $ngenes;
     my @alncount     = (1) x $ngenes;
     my @alnstate     = (undef) x $ngenes;
     my @cur_alnstate = (undef) x $ngenes;
@@ -852,6 +857,7 @@ sub update_alignment_stats {
         my %seen;
         map {$seen{$_}++} @char_i;
         next if $seen{'-'} == $ngenes;
+        my $is_cov_match = ($seen{'-'} <= $ngenes-2);
         delete $seen{'-'};
         
         my %pos_chars = ();
@@ -869,7 +875,8 @@ sub update_alignment_stats {
             if ($char_i[$j] eq '-') {
                 $cur_alnstate[$j] = 'D';
             } else {
-                $nmatch_cov[$j]++;
+                $seq_length[$j]++;
+                $nmatch_cov[$j]++ if $is_cov_match;
                 $cur_alnstate[$j] = 'M';
                 if ($seen{$char_i[$j]} >= $min_seq) {
                     $nmatch_id[$j]++;
@@ -907,11 +914,10 @@ sub update_alignment_stats {
             $new_cigars[$j] .= $alncount[$j].$alnstate[$j];
         }
         $genes->[$j]->cigar_line($new_cigars[$j]);
-        my $seq_length = $genes->[$j]->seq_length;
-        unless (0 == $seq_length) {
-            $genes->[$j]->perc_id( int((100.0 * $nmatch_id[$j] / $seq_length + 0.5)) );
-            $genes->[$j]->perc_pos( int((100.0 * $nmatch_pos[$j] / $seq_length + 0.5)) );
-            $genes->[$j]->perc_cov( int((100.0 * $nmatch_cov[$j] / $seq_length + 0.5)) );
+        unless (0 == $seq_length[$j]) {
+            $genes->[$j]->perc_id( int((100.0 * $nmatch_id[$j] / $seq_length[$j] + 0.5)) );
+            $genes->[$j]->perc_pos( int((100.0 * $nmatch_pos[$j] / $seq_length[$j] + 0.5)) );
+            $genes->[$j]->perc_cov( int((100.0 * $nmatch_cov[$j] / $seq_length[$j] + 0.5)) );
         }
     }
 }

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -932,6 +932,30 @@ sub AUTOLOAD {
 } ## end sub AUTOLOAD
 
 sub DESTROY { }    # required due to AUTOLOAD
+
+=head2 to_hash
+
+  Example    : my $hash = $dba->to_hash();
+               my $new_dba = $dba->new(%{$hash});
+  Description: Provides a hash which is compatible with the 
+               parameters for DBAdaptor's new() method. This can be
+               useful during serialisation but be aware that Registry
+  Returntype : Hash
+  Exceptions : none
+  Caller     : general
+  Status     : New  
+
+=cut
+
+sub to_hash {
+  my ($self) = @_;
+  my $hash = $self->dbc()->to_hash();
+  $hash->{-SPECIES} = $self->species();
+  $hash->{-GROUP} = $self->group();
+  $hash->{-SPECIES_ID} = $self->species_id();
+  $hash->{-MULTISPECIES_DB} = $self->is_multispecies();
+  return $hash;
+}
 
 
 #########################

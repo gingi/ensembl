@@ -43,6 +43,11 @@ if (!defined $assembly_acc)  {
     throw("Please enter -assembly_acc eg. GCA_000001405.4");
 }
 
+if (!defined $coord_system)  {
+    throw("Please enter -coord_system to specify the central coord system eg. supercontig");
+}
+
+
 #connect to the database
 
 my $dba = new Bio::EnsEMBL::DBSQL::DBAdaptor(
@@ -67,6 +72,7 @@ $sth = $dba->dbc->prepare("select count(assembly_exception_id) from assembly_exc
   || die "Could not get number of rows in assembly_exception";
 my $count_assembly_exception_id;
 $sth->execute || die "problem executing";
+$sth->bind_columns(\$count_assembly_exception_id) || die "problem binding";
 $sth->fetch() || die "problem fetching";
 $sth->finish;
 

@@ -1,4 +1,25 @@
-#! perl -w
+#!/usr/bin/env perl
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/legal/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <dev@ensembl.org>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk.org>.
+
+=cut
+
 
 # Script to dump out a table of variation sets that can be used in the documentation
 
@@ -17,9 +38,9 @@ my ($web_colour_file, $web_mapping_colour, $output_file, $help);
 usage() if (!scalar(@ARGV));
  
 GetOptions(
-     'colour_file=s'  => \$web_colour_file,
-     'mapping_file=s' => \$web_mapping_colour,
-     'output_file=s'  => \$output_file,
+     'colour_file|c=s'  => \$web_colour_file,
+     'mapping_file|m=s' => \$web_mapping_colour,
+     'output_file|o=s'  => \$output_file,
      'help!'          => \$help
 );
 
@@ -105,41 +126,49 @@ my $cons_table =
     qq{</th>\n</tr>\n};
 
 my $bg = '';
-
+my $border_top = ';border-top:1px solid #FFF';
+my $not_first = 0;
 for my $d_term (sort {$consequences_rank{$a} <=> $consequences_rank{$b}} keys(%consequences)) {
 
   my $cons_list = $consequences{$d_term};
   my $count = scalar @$cons_list;
   my $rspan = ($count > 1) ? qq{ rowspan="$count"} : '';
   
+	my $first_SO_term = (split(/\|/, $cons_list->[0]))[0];
+	
   my $c = $colour{$d_term};
   
   my $line = 1;
   
   my $cons_line;
-  
+  my $SO_term_id;
+	
   for my $row (sort {$cons_rows{$a} <=> $cons_rows{$b}} @$cons_list) {
-    $row =~ s/\|/<\/td>\n\t<td>/g;
+		my $SO_term = (split(/\|/, $row))[0];
+		   $SO_term_id = $SO_term if (!defined($SO_term_id));
+		$row =~ s/\|/<\/td>\n\t<td>/g;
     
     # Fetch the group colour
     $row =~ /^(\S+)</;
     $c = $colour{lc($1)} if ($colour{lc($1)});
-    
-    $cons_line .= qq{</tr>\n<tr$bg>\n} if ($line !=1 );
-    $cons_line .= (defined($c)) ? qq{\t<td style="padding:0px;margin:0px;background-color:$c"></td>} : qq{<td></td>};
+    my $border = ($not_first == 1) ? $border_top : '';
+		
+    $cons_line .= qq{</tr>\n<tr$bg id="$SO_term">\n} if ($line !=1 );
+		
+    $cons_line .= (defined($c)) ? qq{\t<td style="padding:0px;margin:0px;background-color:$c$border"></td>} : qq{<td></td>};
     $cons_line .= qq{\t<td>$row</td>\n};
     $cons_line .= qq{\t<td$rspan>$d_term</td>\n} if ($line == 1);
     $line ++;
+		$not_first = 1;
   }
-  
-  $cons_table .= qq{<tr$bg>\n$cons_line</tr>\n};
-  
+  $SO_term_id = $first_SO_term if (!defined($SO_term_id));
+  $cons_table .= qq{<tr$bg id="$SO_term_id">\n$cons_line</tr>\n};
+print qq{<tr$bg id="$SO_term_id">\n$cons_line</tr>\n\n};  
   $bg = ($bg eq '') ? qq{ class="bg2"} : '';
-  
 }
 
 $cons_table .= qq{</table>\n};
-$cons_table .= qq{<p>* Corresponding colours for the Ensembl web displays.<p>\n};
+$cons_table .= qq{<p><b>*</b> Corresponding colours for the Ensembl web displays.<p>\n};
 
 open OUT, "> $output_file" or die $!;
 print OUT $cons_table;

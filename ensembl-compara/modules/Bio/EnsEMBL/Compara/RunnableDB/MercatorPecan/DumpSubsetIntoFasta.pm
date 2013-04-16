@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -63,7 +63,7 @@ sub fetch_input {
     $self->param('genome_db_id', $genome_db_id);
 
     # write fasta file:
-    my $members   = $self->compara_dba->get_MemberAdaptor->fetch_all_by_source_genome_db_id('ENSEMBLPEP', $genome_db_id);
+    my $members   = $self->compara_dba->get_SeqMemberAdaptor->fetch_all_by_source_genome_db_id('ENSEMBLPEP', $genome_db_id);
     Bio::EnsEMBL::Compara::MemberSet->new(-members => $members)->print_sequences_to_fasta($fasta_file, 1);
 }
 

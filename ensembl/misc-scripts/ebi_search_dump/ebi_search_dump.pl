@@ -337,7 +337,7 @@ WHERE
         my $DBNAME  = $conf->{$DB}->{$release}
           or warn "$dbspecies $DB $release: no database not found";
         next unless $DBNAME;
-        print "START... $DB";
+        print "START... $DB\n";
         my $file = "$dir/Gene_$DBNAME.xml";
         $file .= ".gz" unless $nogzip;
         my $start_time = time;
@@ -354,7 +354,7 @@ WHERE
         my $dsn = "DBI:mysql:host=$host";
         $dsn .= ";port=$port" if ($port);
 
-        warn "Dumping $DBNAME to $file ... ", format_datetime($start_time),
+        print "Dumping $DBNAME to $file ... ", format_datetime($start_time),
           "\n";
         my $extra = $DB ne 'core' ? ";db=$DB" : '';
 
@@ -369,9 +369,9 @@ WHERE
 $dbh->ping;
         my %exons = ();
         my $get_genes_sth    = $dbh->prepare(
-            "select distinct t.gene_id, esi.stable_id
-         from transcript as t, exon_transcript as et, exon_stable_id as esi
-        where t.transcript_id = et.transcript_id and et.exon_id = esi.exon_id"
+            "select distinct t.gene_id, e.stable_id
+         from ${DBNAME}.transcript as t, ${DBNAME}.exon_transcript as et, ${DBNAME}.exon as e
+        where t.transcript_id = et.transcript_id and et.exon_id = e.exon_id"
         );
 
 
@@ -408,12 +408,14 @@ $dbh->ping;
         };
 
         my $haplotypes = $dbh->selectall_hashref(
-            "select gene_id from gene g, assembly_exception ae where
-g.seq_region_id=ae.seq_region_id and ae.exc_type='HAP'", [qw(gene_id)]
+            "select gene_id, exc_type from ${DBNAME}.gene g, ${DBNAME}.assembly_exception ae where
+g.seq_region_id=ae.seq_region_id and ae.exc_type IN (?,?,?)", 'gene_id', {}, 'HAP', 'PATCH_NOVEL', 'PATCH_FIX'
         ) or die $dbh->errstr;
+        
+        my $alt_alleles = $dbh->selectall_hashref(qq{select gene_id, is_ref from ${DBNAME}.alt_allele}, 'gene_id');
 
         my $taxon_id = $dbh->selectrow_arrayref(
-            "select meta_value from meta where meta_key='species.taxonomy_id'");
+            "select meta_value from ${DBNAME}.meta where meta_key='species.taxonomy_id'");
 
         my %xrefs      = ();
         my %xrefs_desc = ();
@@ -452,8 +454,8 @@ g.seq_region_id=ae.seq_region_id and ae.exc_type='HAP'", [qw(gene_id)]
         my $dbh2 = DBI->connect( "$dsn:$DBNAME", $user, $pass )
           or die "DBI::error";
         my $gene_info = $dbh2->selectall_arrayref( "
-        select gsi.gene_id, tsi.transcript_id, trsi.translation_id,
-             gsi.stable_id as gsid, tsi.stable_id as tsid, trsi.stable_id as trsid,
+        select g.gene_id, t.transcript_id, tr.translation_id,
+             g.stable_id as gsid, t.stable_id as tsid, tr.stable_id as trsid,
              g.description, ed.db_name, x.dbprimary_acc,x.display_label, ad.display_label, ad.description, g.source, g.status, g.biotype
         from ((( $DBNAME.gene as g, 
              $DBNAME.analysis_description as ad,
@@ -461,8 +463,7 @@ g.seq_region_id=ae.seq_region_id and ae.exc_type='HAP'", [qw(gene_id)]
              $DBNAME.translation as tr on t.transcript_id = tr.transcript_id) left join
              $DBNAME.xref as x on g.display_xref_id = x.xref_id) left join
              $DBNAME.external_db as ed on ed.external_db_id = x.external_db_id
-       where t.transcript_id = tr.transcript_id and t.gene_id = g.gene_id
-             and g.analysis_id = ad.analysis_id
+       where t.gene_id = g.gene_id and g.analysis_id = ad.analysis_id
        order by g.stable_id, t.stable_id;
     " );
 
@@ -472,6 +473,8 @@ g.seq_region_id=ae.seq_region_id and ae.exc_type='HAP'", [qw(gene_id)]
         my $ecount = scalar(keys(%hash)). "\n\n";
 
         my %old;
+        
+        my %exception_type_to_description = ('REF' => 'reference', 'HAP' => 'haplotype', 'PATCH_FIX' => 'fix_patch', 'PATCH_NOVEL' => 'novel_patch');
 
         foreach my $row (@$gene_info) {
 
@@ -514,14 +517,21 @@ g.seq_region_id=ae.seq_region_id and ae.exc_type='HAP'", [qw(gene_id)]
                     p geneLineXML( $dbspecies, \%old, $counter );
 
                 }
+                my $alt_allele = 0;
+                if(exists $alt_alleles->{$gene_id}) { #meaning reverses as alt_allele defines the ref alone
+                  $alt_allele = $alt_alleles->{$gene_id} == 1 ? 0 : 1; 
+                }
+                my $hap_type = $haplotypes->{$gene_id} || q{REF};
+                
+                
                 %old = (
-                    'gene_id'   => $gene_id,
-                    'haplotype' => $haplotypes->{$gene_id} ? 'haplotype'
-                    : 'reference',
-                    'gene_stable_id'         => $gene_stable_id,
-                    'description'            => $gene_description,
-                    'taxon_id'               => $taxon_id->[0],
-                    'translation_stable_ids' => {
+                    'gene_id'                 => $gene_id,
+                    'haplotype'               => $exception_type_to_description{$hap_type},
+                    'alt_allele'              => $alt_allele,
+                    'gene_stable_id'          => $gene_stable_id,
+                    'description'             => $gene_description,
+                    'taxon_id'                => $taxon_id->[0],
+                    'translation_stable_ids'  => {
                         $translation_stable_id ? ( $translation_stable_id => 1 )
                         : ()
                     },
@@ -618,7 +628,7 @@ g.seq_region_id=ae.seq_region_id and ae.exc_type='HAP'", [qw(gene_id)]
         p geneLineXML( $dbspecies, \%old, $counter );
 
         footer( $counter->() );
-        warn "FINISHED...... genes $DB ...";
+        print "FINISHED...... genes $DB ...\n";
 
     }
 
@@ -647,24 +657,14 @@ sub geneLineXML {
     my $type        = $xml_data->{'source'} . ' ' . $xml_data->{'biotype'}
       or die "problem setting type";
     my $haplotype        = $xml_data->{'haplotype'};
+    my $alt_allele       = $xml_data->{'alt_allele'};
     my $taxon_id         = $xml_data->{'taxon_id'};
     my $exon_count       = scalar keys %$exons;
     my $transcript_count = scalar keys %$transcripts;
-    $description =~ s/</&lt;/g;
-    $description =~ s/>/&gt;/g;
-    $description =~ s/'/&apos;/g;
-    $description =~ s/&/&amp;/g;
-
-    $gene_name =~ s/</&lt;/g;
-    $gene_name =~ s/>/&gt;/g;
-    $gene_name =~ s/'/&apos;/g;
-    $gene_name =~ s/&/&amp;/g;
-
-    $gene_id =~ s/</&lt;/g;
-    $gene_id =~ s/>/&gt;/g;
-
-    $altid =~ s/</&lt;/g;
-    $altid =~ s/>/&gt;/g;
+    $description = escapeXML($description);
+    $gene_name = escapeXML($gene_name);
+    $gene_id = escapeXML($gene_id);
+    $altid = escapeXML($altid);
 
     my $xml = qq{
  <entry id="$gene_id">
@@ -697,17 +697,18 @@ sub geneLineXML {
                 {
 
                     #		$unique_synonyms->{$ed_key} = 1;
+                    $ed_key = escapeXML($ed_key);
                     $synonyms .= qq{ 
              <field name="${matched_db_name}_synonym">$ed_key</field>};
                 }
 
             }
             else {    # non-synonyms
-
+              
                 map {
                     $cross_references .= qq{
          <ref dbname="$matched_db_name" dbkey="$_"/>};
-                  } keys %{ $external_identifiers->{$ext_db_name} }
+                  } map { $_ = escapeXML($_) } keys %{ $external_identifiers->{$ext_db_name} }
 
             }
 
@@ -716,10 +717,7 @@ sub geneLineXML {
 
             foreach my $key ( keys %{ $external_identifiers->{$ext_db_name} } )
             {
-
-                $key         =~ s/</&lt;/g;
-                $key         =~ s/>/&gt;/g;
-                $key         =~ s/&/&amp;/g;
+                $key = escapeXML($key);
                 $ext_db_name =~ s/^Ens.*/ENSEMBL/;
 
                 if ( $ext_db_name =~ /_synonym/ ) {
@@ -775,7 +773,8 @@ sub geneLineXML {
       <field name="source">$type</field>
       <field name="transcript_count">$transcript_count</field>
       <field name="gene_name">$gene_name</field>
-      <field name="haplotype">$haplotype</field>}
+      <field name="haplotype">$haplotype</field>
+      <field name="alt_allele">$alt_allele</field>}
       . (
         join "",
         (
@@ -1013,19 +1012,16 @@ sub markerXML {
       . ( scalar @keys > 1 ? 's ' : ' ' ) . '('
       . join( " ", @keys ) . ')';
 
-    $desc =~ s/</&lt;/g;
-    $desc =~ s/>/&gt;/g;
+    $desc = escapeXML($desc);
 
     $xml = qq{
 <entry id="$marker">
    <additional_fields>};
 
-    foreach (@keys) {
-        s/</&lt;/g;
-        s/>/&gt;/g;
-
+    foreach my $key (@keys) {
+      $key = escapeXML($key);
         $xml .= qq{
-      <field name="synonym">$_</field>}
+      <field name="synonym">${key}</field>}
 
     }
     $xml .= qq{
@@ -1527,7 +1523,7 @@ sub dumpSNP {
             #	    $vfi2gene_sth->execute($row->[3]);
             #	      my $gsi = $vfi2gene_sth->fetchall_arrayref;
             my $name       = $row->[0];
-            my @synonyms   = split /,/, @$row->[2];
+            my @synonyms   = split /,/, $row->[2];
             my $snp_source = $source_hash->{ $row->[1] }->{name};
 
 #	    my $description =
@@ -1795,4 +1791,13 @@ sub make_counter {
 sub FamilyDumped {
     my $is_dumped;
     return sub { $is_dumped }
+}
+
+sub escapeXML {
+  my ($data) = @_;
+  $data =~ s/</&lt;/g;
+  $data =~ s/>/&gt;/g;
+  $data =~ s/'/&apos;/g;
+  $data =~ s/&/&amp;/g;
+  return $data;
 }

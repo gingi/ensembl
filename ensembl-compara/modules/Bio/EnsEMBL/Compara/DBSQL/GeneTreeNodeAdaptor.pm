@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -40,7 +40,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.33 $
+$Revision: 1.38 $
 
 =head1 APPENDIX
 
@@ -55,11 +55,12 @@ use strict;
 
 use Bio::EnsEMBL::Utils::Exception qw(throw warning deprecate);
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
+use Bio::EnsEMBL::Utils::Scalar qw(:assert);
 
 use Bio::EnsEMBL::Compara::GeneTree;
 use Bio::EnsEMBL::Compara::GeneTreeNode;
 use Bio::EnsEMBL::Compara::GeneTreeMember;
-use Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor;
+use Bio::EnsEMBL::Compara::DBSQL::SeqMemberAdaptor;
 
 use DBI qw(:sql_types);
 
@@ -141,7 +142,6 @@ sub fetch_by_gene_Member_root_id {
   Description: Transforms the member into an AlignedMember. If the member is
                not an ENSEMBLGENE, it has to be canoncal, otherwise, the
                function would return an empty array
-               NB: This function currently returns an array of at most 1 element
   Returntype : arrayref of Bio::EnsEMBL::Compara::AlignedMember
   Exceptions : none
   Caller     : general
@@ -153,7 +153,7 @@ sub fetch_all_AlignedMember_by_Member {
     my ($clusterset_id, $mlss) = rearrange([qw(CLUSTERSET_ID METHOD_LINK_SPECIES_SET)], @args);
 
     # Discard the UNIPROT members
-    return if (ref($member) and not ($member->source_name =~ 'ENSEMBL'));
+    return [] if (ref($member) and not ($member->source_name =~ 'ENSEMBL'));
 
     my $member_id = (ref($member) ? $member->dbID : $member);
     my $constraint = '((m.member_id = ?) OR (m.gene_member_id = ?))';
@@ -178,6 +178,38 @@ sub fetch_all_AlignedMember_by_Member {
 
     my $join = [[['gene_tree_root', 'tr'], 't.root_id = tr.root_id']];
     return $self->generic_fetch($constraint, $join);
+}
+
+
+=head2 fetch_default_AlignedMember_for_Member
+
+  Arg[1]     : Member or member_id
+  Example    : $align_member = $genetreenode_adaptor->fetch_adefault_AlignedMember_for_Member($member);
+  Description: Transforms the member into an AlignedMember. If the member is
+               not an ENSEMBLGENE, it has to be canoncal, otherwise, the
+               function would return undef
+  Returntype : Bio::EnsEMBL::Compara::AlignedMember
+  Exceptions : none
+  Caller     : general
+
+=cut
+
+sub fetch_default_AlignedMember_for_Member {
+    my ($self, $member) = @_;
+
+    # Discard the UNIPROT members
+    return undef if (ref($member) and not ($member->source_name =~ 'ENSEMBL'));
+
+    my $member_id = (ref($member) ? $member->dbID : $member);
+    my $constraint = '((m.member_id = ?) OR (m.gene_member_id = ?))';
+    $self->bind_param_generic_fetch($member_id, SQL_INTEGER);
+    $self->bind_param_generic_fetch($member_id, SQL_INTEGER);
+
+
+    $constraint .= ' AND (tr.clusterset_id = "default")';
+
+    my $join = [[['gene_tree_root', 'tr'], 't.root_id = tr.root_id']];
+    return $self->generic_fetch_one($constraint, $join);
 }
 
 
@@ -292,9 +324,7 @@ sub store_nodes_rec {
 sub store_node {
     my ($self, $node) = @_;
 
-    unless($node->isa('Bio::EnsEMBL::Compara::GeneTreeNode')) {
-        throw("set arg must be a [Bio::EnsEMBL::Compara::GeneTreeNode] not a $node");
-    }
+    assert_ref($node, 'Bio::EnsEMBL::Compara::GeneTreeNode');
 
     my $new_node = 0;
     if (not($node->adaptor and $node->adaptor->isa('Bio::EnsEMBL::Compara::DBSQL::GeneTreeNodeAdaptor') and $node->adaptor eq $self)) {
@@ -326,9 +356,8 @@ sub store_node {
 sub merge_nodes {
   my ($self, $node1, $node2) = @_;
 
-  unless($node1->isa('Bio::EnsEMBL::Compara::GeneTreeNode')) {
-    throw("set arg must be a [Bio::EnsEMBL::Compara::GeneTreeNode] not a $node1");
-  }
+  assert_ref($node1, 'Bio::EnsEMBL::Compara::GeneTreeNode');
+  assert_ref($node2, 'Bio::EnsEMBL::Compara::GeneTreeNode');
 
   # printf("MERGE children from parent %d => %d\n", $node2->node_id, $node1->node_id);
 
@@ -356,12 +385,13 @@ sub delete_node {
   my $node = shift;
 
   my $node_id = $node->node_id;
-  #print("delete node $node_id\n");
   $self->dbc->do("UPDATE gene_tree_node dn, gene_tree_node n SET ".
             "n.parent_id = dn.parent_id WHERE n.parent_id=dn.node_id AND dn.node_id=$node_id");
   $self->dbc->do("DELETE from gene_tree_node_tag    WHERE node_id = $node_id");
   $self->dbc->do("DELETE from gene_tree_node_attr   WHERE node_id = $node_id");
   $self->dbc->do("UPDATE gene_tree_node SET root_id = NULL WHERE node_id = $node_id");
+  $self->dbc->do("DELETE homology_member from homology_member JOIN homology using(homology_id) WHERE ancestor_node_id = $node_id");
+  $self->dbc->do("DELETE from homology WHERE ancestor_node_id = $node_id");
   $self->dbc->do("DELETE from gene_tree_node   WHERE node_id = $node_id");
 }
 
@@ -370,9 +400,7 @@ sub delete_nodes_not_in_tree
   my $self = shift;
   my $tree = shift;
 
-  unless($tree->isa('Bio::EnsEMBL::Compara::GeneTreeNode')) {
-    throw("set arg must be a [Bio::EnsEMBL::Compara::GeneTreeNode] not a $tree");
-  }
+  assert_ref($tree, 'Bio::EnsEMBL::Compara::GeneTreeNode');
   #print("delete_nodes_not_present under ", $tree->node_id, "\n");
   my $dbtree = $self->fetch_node_by_node_id($tree->node_id);
   my @all_db_nodes = $dbtree->get_all_subnodes;
@@ -412,7 +440,7 @@ sub _columns {
 
           'gam.cigar_line',
 
-          Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor->_columns()
+          Bio::EnsEMBL::Compara::DBSQL::SeqMemberAdaptor->_columns()
           );
 }
 
@@ -464,7 +492,7 @@ sub init_instance_from_rowhash {
     $self->SUPER::init_instance_from_rowhash($node, $rowhash);
     if ($node->isa('Bio::EnsEMBL::Compara::GeneTreeMember')) {
         # here is a gene leaf
-        Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor->init_instance_from_rowhash($node, $rowhash);
+        Bio::EnsEMBL::Compara::DBSQL::SeqMemberAdaptor->init_instance_from_rowhash($node, $rowhash);
 
         $node->cigar_line($rowhash->{'cigar_line'});
     } else {

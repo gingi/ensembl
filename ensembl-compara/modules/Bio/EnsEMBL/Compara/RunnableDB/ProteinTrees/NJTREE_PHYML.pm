@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -39,7 +39,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.78 $
+$Revision: 1.82 $
 
 =head1 APPENDIX
 
@@ -100,6 +100,7 @@ sub write_output {
     my @ref_support = qw(phyml_nt nj_ds phyml_aa nj_dn nj_mm);
     $self->store_genetree($self->param('protein_tree'), \@ref_support);
 
+    my @dataflow = ();
     if ($self->param('store_intermediate_trees')) {
         foreach my $filename (glob(sprintf('%s/%s.*.nhx', $self->worker_temp_directory, $self->param('intermediate_prefix')) )) {
             $filename =~ /\.([^\.]*)\.nhx$/;
@@ -108,7 +109,7 @@ sub write_output {
             next if $clusterset_id eq 'phyml';
             print STDERR "Found file $filename for clusterset $clusterset_id\n";
             my $newtree = $self->store_alternative_tree($self->_slurp($filename), $clusterset_id, $self->param('protein_tree'));
-            $self->dataflow_output_id({'gene_tree_id' => $newtree->root_id}, 2);
+            push @dataflow, $newtree->root_id;
         }
     }
 
@@ -119,6 +120,11 @@ sub write_output {
 
     if (defined $self->param('output_dir')) {
         system(sprintf('cd %s; zip -r -9 %s/%d.zip', $self->worker_temp_directory, $self->param('output_dir'), $self->param('gene_tree_id')));
+    }
+
+    # Only dataflows at the end, if everything went fine
+    foreach my $root_id (@dataflow) {
+        $self->dataflow_output_id({'gene_tree_id' => $root_id}, 2);
     }
 }
 
@@ -151,24 +157,24 @@ sub run_njtree_phyml {
     my $starttime = time()*1000;
     
 
-    if (scalar(@{$protein_tree->root->get_all_leaves}) == 2) {
+    if (scalar(@{$protein_tree->get_all_Members}) == 2) {
 
         warn "Number of elements: 2 leaves, N/A split genes\n";
-        my @goodgenes = map {$self->_name_for_prot($_)} @{$protein_tree->root->get_all_leaves};
+        my @goodgenes = map {$self->_name_for_prot($_)} @{$protein_tree->get_all_Members};
         $newick = $self->run_treebest_sdi_genepair(@goodgenes);
     
     } else {
 
         my $input_aln = $self->dumpTreeMultipleAlignmentToWorkdir($protein_tree);
         
-        warn sprintf("Number of elements: %d leaves, %d split genes\n", scalar(@{$protein_tree->root->get_all_leaves}), scalar(keys %{$self->param('split_genes')}));
+        warn sprintf("Number of elements: %d leaves, %d split genes\n", scalar(@{$protein_tree->get_all_Members}), scalar(keys %{$self->param('split_genes')}));
 
-        my $genes_for_treebest = scalar(@{$protein_tree->root->get_all_leaves}) - scalar(keys %{$self->param('split_genes')});
+        my $genes_for_treebest = scalar(@{$protein_tree->get_all_Members}) - scalar(keys %{$self->param('split_genes')});
         $self->throw("Cannot build a tree with $genes_for_treebest genes (exclud. split genes)") if $genes_for_treebest < 2;
 
         if ($genes_for_treebest == 2) {
 
-            my @goodgenes = grep {not exists $self->param('split_genes')->{$_}} (map {$self->_name_for_prot($_)} @{$protein_tree->root->get_all_leaves});
+            my @goodgenes = grep {not exists $self->param('split_genes')->{$_}} (map {$self->_name_for_prot($_)} @{$protein_tree->get_all_Members});
             $newick = $self->run_treebest_sdi_genepair(@goodgenes);
 
         } else {
@@ -197,7 +203,7 @@ sub store_filtered_align {
     if ($self->param('protein_tree')->has_tag('filtered_alignment')) {
         my $gene_align_id = $self->param('protein_tree')->get_tagvalue('filtered_alignment');
         $aln->dbID($gene_align_id);
-        $aln->adaptor($self->compara_dba->get_AlignedMemberAdaptor);
+        $aln->adaptor($self->compara_dba->get_GeneAlignAdaptor);
     } else {
         foreach my $member (@{$self->param('protein_tree')->get_all_Members}) {
             $aln->add_Member($member->copy());
@@ -216,7 +222,7 @@ sub store_filtered_align {
         $sequence_adaptor->store_other_sequence($member, $member->sequence, 'filtered') if $member->sequence;
     }
 
-    $self->compara_dba->get_AlignedMemberAdaptor->store($aln);
+    $self->compara_dba->get_GeneAlignAdaptor->store($aln);
     $self->param('protein_tree')->store_tag('filtered_alignment', $aln->dbID);
 }
 

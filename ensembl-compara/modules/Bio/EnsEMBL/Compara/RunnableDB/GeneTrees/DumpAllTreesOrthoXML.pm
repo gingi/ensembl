@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -44,11 +44,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mm14 $
+$Author: lg4 $
 
 =head VERSION
 
-$Revision: 1.10 $
+$Revision: 1.13 $
 
 =head1 APPENDIX
 
@@ -80,7 +80,7 @@ sub fetch_input {
     # Defines the file handle
     my $file_handle = *STDOUT;
     if (defined $self->param('file')) {
-        $file_handle = IO::File->new($self->param_substitute($self->param('file')), 'w');
+        $file_handle = IO::File->new( $self->param('file'), 'w');
     }
     $self->param('file_handle', $file_handle);
 
@@ -104,7 +104,7 @@ sub fetch_input {
 sub run {
     my ($self) = @_;
 
-    my $member_adaptor = $self->compara_dba->get_MemberAdaptor;
+    my $seq_member_adaptor = $self->compara_dba->get_SeqMemberAdaptor;
     my $callback_list_members = sub {
         my ($species) = @_;
         my $constraint = 'm.genome_db_id = '.($species->dbID);
@@ -112,7 +112,7 @@ sub run {
         $constraint .= ' AND gtr.clusterset_id = "default"';
         $constraint .= ' AND gtr.member_type = "'.($self->param('member_type')).'"' if defined $self->param('member_type');
         my $join = [[['gene_tree_node', 'gtn'], 'm.member_id = gtn.member_id', undef], [['gene_tree_root', 'gtr'], 'gtn.root_id = gtr.root_id', undef]];
-        return $member_adaptor->generic_fetch($constraint, $join);
+        return $seq_member_adaptor->generic_fetch($constraint, $join);
     };
 
     my $list_species = $self->compara_dba->get_GenomeDBAdaptor->fetch_all;

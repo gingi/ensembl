@@ -1,7 +1,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -843,6 +843,24 @@ sub fetch_all_by_external_name {
   my @result = map { $genes_by_dbIDs{$_} } @ids;
 
   return \@result;
+}
+
+=head2 fetch_all_by_description
+
+  Arg [1]    : String of description
+  Example    : $gene_list = $gene_adaptor->fetch_all_by_description('RNA%');
+  Description: Fetches genes by their textual description. Fully supports SQL
+               wildcards, since getting an exact hit is unlikely.
+  Returntype : listref of Bio::EnsEMBL::Gene
+
+=cut
+
+sub fetch_all_by_description {
+    my ($self,$description) = @_;
+    
+    my $constraint = "g.description LIKE ?";
+    $self->bind_param_generic_fetch($description, SQL_VARCHAR);
+    return $self->generic_fetch($constraint);
 }
 
 =head2 fetch_all_by_GOTerm

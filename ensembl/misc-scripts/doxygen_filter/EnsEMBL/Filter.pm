@@ -24,14 +24,10 @@
 # 
 # =======================================================================
 # 
-# @(#) $Id: Filter.pm,v 1.1 2012-07-25 09:10:01 ady Exp $
+# @(#) $Id: Filter.pm,v 1.2 2013-02-07 13:52:12 kt7 Exp $
 # 
-# Revision History:
+# Revision History prior to import into EnsEMBL:
 # 
-# $Log: Filter.pm,v $
-# Revision 1.1  2012-07-25 09:10:01  ady
-# Moved the filters around and made ensembldoxygenfilter.pl a standalone script to avoid having to edit the Doxygen PerlFilter installation which was our only original way of doing this. Namespacing also means dependency management is easier with less to level packages getting in the way
-#
 # Revision 1.1  2011-10-18 13:46:34  kt7
 # Transferring Doxygen filter into EnsEMBL CVS.
 #

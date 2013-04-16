@@ -1,10 +1,10 @@
-/DBManager.pm/1.1/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-70
-/EnsemblIds.pm/1.11/Tue Apr 16 20:39:13 2013//Tbranch-ensembl-70
-/GenericChromosome.pm/1.31/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
-/GenericContig.pm/1.77/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
-/Human.pm/1.11/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-70
-/ImportTask.pm/1.9/Tue Apr 16 20:39:43 2013//Tbranch-ensembl-70
-/MappingChromosome.pm/1.11/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-70
-/Mosquito.pm/1.11/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-70
-/run_task.pl/1.1/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-70
+/DBManager.pm/1.3/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/EnsemblIds.pm/1.12/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/GenericChromosome.pm/1.32/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/GenericContig.pm/1.80/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/Human.pm/1.12/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/ImportTask.pm/1.10/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/MappingChromosome.pm/1.12/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/Mosquito.pm/1.12/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
+/run_task.pl/1.3/Tue Apr 16 20:40:21 2013//Tbranch-ensembl-71
 D

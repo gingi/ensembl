@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -302,12 +302,13 @@ sub _objs_from_sth{
 		while(@genotypes) {
 			my $sample_id = shift @genotypes;
 			my $gt_code = shift @genotypes;
-                        ## temp fix for duplicated 1KG data
+
+                        ## temp fix for duplicated 1KG data   
                         my $ss = $subsnp_id;
                         $ss = 0 unless defined $ss  ;
                         next if $done{$sample_id}{$gt_code}{$ss};
                         $done{$sample_id}{$gt_code}{$ss} = 1;
-
+			
 			my $igtype  = Bio::EnsEMBL::Variation::IndividualGenotype->new_fast({
 				_variation_id => $variation_id,
 				subsnp        => $subsnp_id,

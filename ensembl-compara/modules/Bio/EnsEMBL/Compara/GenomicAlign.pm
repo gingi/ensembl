@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -903,7 +903,6 @@ sub aligned_sequence {
       # ...from the corresponding cigar_line (using a fake seq)
       $aligned_sequence = _get_fake_aligned_sequence_from_cigar_line(
           $self->{'cigar_line'});
-    
     } elsif (defined($self->cigar_line) and defined($self->original_sequence)) {
       my $original_sequence = $self->original_sequence;
       # ...from the corresponding orginial_sequence and cigar_line
@@ -950,19 +949,20 @@ sub length {
     return length($self->{aligned_sequence});
   } elsif ($self->{cigar_line}) {
     my $length = 0;
-    my $cigar_line = $self->{cigar_line};
-    my @cig = ( $cigar_line =~ /(\d*[GMDXI])/g );
-    for my $cigElem ( @cig ) {
-      my $cigType = substr( $cigElem, -1, 1);
-      my $cigCount = substr( $cigElem, 0 , -1);
-      $cigCount = 1 if ($cigCount eq "");
-      $length += $cigCount unless ($cigType eq "I");
+    my $cigar_arrayref = $self->get_cigar_arrayref;
+    foreach my $cigar_element (@$cigar_arrayref ) {
+      my $cigar_type = substr($cigar_element, -1, 1);
+      my $cigar_count = substr($cigar_element, 0 , -1);
+      $cigar_count = 1 if ($cigar_count eq "");
+
+      $length += $cigar_count unless ($cigar_type eq "I");
     }
     return $length;
   }
 
   return undef;
 }
+
 
 =head2 cigar_line
 
@@ -997,6 +997,7 @@ sub cigar_line {
     } else {
       $self->{'cigar_line'} = undef;
     }
+    $self->{'cigar_arrayref'} = undef;
 
   } elsif (!defined($self->{'cigar_line'})) {
     # Try to get the cigar_line from other sources...
@@ -1019,6 +1020,37 @@ sub cigar_line {
 
   return $self->{'cigar_line'};
 }
+
+
+=head2 get_cigar_arrayref
+
+  Arg [1]    : -None-
+  Example    : @cigar_array = @{$genomic_align->get_cigar_arrayref};
+  Description: get for attribute cigar_line, but in a pre-computed array
+               format. Each element is a cigar element like "143M", "D" or
+               "3I".
+               Please refer to cigar_line() method for more information on
+               the cigar_line. Also note that you may want to make a copy
+               of the array if you want to modify it.
+  Returntype : listref of Strings
+  Exceptions : none
+  Caller     : object->methodname
+  Status     : Stable
+
+=cut
+
+
+sub get_cigar_arrayref {
+  my ($self) = @_;
+
+  if (!$self->{'cigar_arrayref'}) {
+    $self->{'cigar_arrayref'} = [ $self->cigar_line =~ /(\d*[GMDXI])/g ];
+  }
+
+  return $self->{'cigar_arrayref'};
+}
+
+
 
 
 =head2 visible
@@ -1082,12 +1114,15 @@ sub node_id {
   if (defined($node_id)) {
     $self->{'node_id'} = $node_id;
   } elsif (!defined($self->{'node_id'})) {
-    if (defined($self->{'dbID'}) and defined($self->{'adaptor'})) {
+    # it may be a restricted genomic_align object with no dbID or node_id
+    if (defined($self->{'adaptor'}) and defined($self->{'_original_dbID'}) and (!defined($self->{'dbID'}))){
+     $self->{'_original_node_id'} = $self->adaptor->fetch_by_dbID($self->{'_original_dbID'})->node_id;
+    } elsif (defined($self->{'dbID'}) and defined($self->{'adaptor'})) {
       # Try to get the values from the database using the dbID of the Bio::EnsEMBL::Compara::GenomicAlign object
       $self->adaptor->retrieve_all_direct_attributes($self);
     }
   }
-  return $self->{'node_id'};
+  return $self->{'node_id'} || $self->{'_original_node_id'};
 }
 
 =head2 genomic_align_group
@@ -1298,9 +1333,12 @@ sub _get_fake_aligned_sequence_from_cigar_line {
   my $seq_pos = 0;
 
   my @cig = ( $cigar_line =~ /(\d*[GMDXI])/g );
-  for my $cigElem ( @cig ) {
-    my $cigType = substr( $cigElem, -1, 1 );
-    my $cigCount = substr( $cigElem, 0 ,-1 );
+  #for my $cigElem ( @cig ) {
+  #    my $cigType = substr( $cigElem, -1, 1 );
+  #    my $cigCount = substr( $cigElem, 0 ,-1 );
+  while ($cigar_line =~ /(\d*)([GMDXI])/g) {
+    my $cigCount = $1;
+    my $cigType = $2;
     $cigCount = 1 if ($cigCount eq "");
 
     if( $cigType eq "M" ) {
@@ -1510,9 +1548,9 @@ sub get_Mapper {
 
       my $insertions = 0;
       my $target_cigar_pieces;
-      @$target_cigar_pieces = $self->{'cigar_line'} =~ /(\d*[GMDXI])/g;
-      my $ref_cigar_pieces;
-      @$ref_cigar_pieces = $ref_cigar_line =~ /(\d*[GMDXI])/g;
+#      @$target_cigar_pieces = $self->{'cigar_line'} =~ /(\d*[GMDXI])/g;
+      $target_cigar_pieces = $self->get_cigar_arrayref;
+      my $ref_cigar_pieces = $self->genomic_align_block->reference_genomic_align->get_cigar_arrayref();
       my $i = 0;
       my $j = 0;
       my ($ref_num, $ref_type) = $ref_cigar_pieces->[$i] =~ /(\d*)([GMDXI])/;
@@ -1601,7 +1639,7 @@ sub get_Mapper {
       } else {
         $sequence_position = $self->dnafrag_end;
       }
-      $mapper = _get_Mapper_from_cigar_line($cigar_line, $alignment_position, $sequence_position, $rel_strand);
+      $mapper = _get_Mapper_from_cigar_arrayref($self->get_cigar_arrayref, $alignment_position, $sequence_position, $rel_strand);
     }
 
     return $mapper if (!$cache);
@@ -1820,7 +1858,7 @@ sub _cigar_element {
     return $elem;
 }
 
-=head2 _get_Mapper_from_cigar_line
+=head2 _get_Mapper_from_cigar_line (deprecated, use _get_Mapper_from_cigar_arrayref)
 
   Arg[1]     : $cigar_line
   Arg[2]     : $alignment_position
@@ -1842,57 +1880,94 @@ sub _get_Mapper_from_cigar_line {
 
   my $mapper = Bio::EnsEMBL::Mapper->new("sequence", "alignment");
 
-  my @cigar_pieces = ($cigar_line =~ /(\d*[GMDXI])/g);
+  my $cigar_pieces = [];
+  my $cigar_elements = [ $cigar_line =~ /(\d*[GMDXI])/g ];
+  foreach my $cigar_piece (@$cigar_elements) {
+    my $cigar_type = substr($cigar_piece, -1, 1);
+    my $cigar_num = substr($cigar_piece, 0, -1);
+    $cigar_num = 1 if ($cigar_num eq "");
+    next if ($cigar_num < 1);
+
+    push(@{$cigar_pieces}, [$cigar_num, $cigar_type]);
+  }
+
+  return _get_Mapper_from_cigar_arrayref($cigar_pieces, $alignment_position, $sequence_position, $rel_strand);
+}
+
+
+=head2 _get_Mapper_from_cigar_arrayref
+
+  Arg[1]     : $cigar_arrayref
+  Arg[2]     : $alignment_position
+  Arg[3]     : $sequence_position
+  Arg[4]     : $relative_strand
+  Example    : $this_mapper = _get_Mapper_from_cigar_arrayref($cigar_arrayref, 
+                $aln_pos, $seq_pos, 1);
+  Description: creates a new Bio::EnsEMBL::Mapper object for mapping between
+               sequence and alignment coordinate systems using the cigar_line
+               decomposed in an arrayref (see get_cigar_arrayref() method)
+               and starting from the $alignment_position and sequence_position.
+  Returntype : Bio::EnsEMBL::Mapper object
+  Exceptions : None
+  Status     : Stable
+
+=cut
+
+sub _get_Mapper_from_cigar_arrayref {
+  my ($cigar_arrayref, $alignment_position, $sequence_position, $rel_strand) = @_;
+
+  my $mapper = Bio::EnsEMBL::Mapper->new("sequence", "alignment");
+
   if ($rel_strand == 1) {
-    foreach my $cigar_piece (@cigar_pieces) {
-      my $cigar_type = substr($cigar_piece, -1, 1);
-      my $cigar_count = substr($cigar_piece, 0, -1);
-      $cigar_count = 1 if ($cigar_count eq "");
-      next if ($cigar_count < 1);
+    foreach my $cigar_element (@$cigar_arrayref) {
+      my $cigar_type = substr($cigar_element, -1, 1);
+      my $cigar_num = substr($cigar_element, 0 , -1);
+      $cigar_num = 1 if ($cigar_num eq "");
+      next if ($cigar_num < 1);
   
       if( $cigar_type eq "M" ) {
          $mapper->add_map_coordinates(
                 "sequence", #$self->dbID,
                 $sequence_position,
-                $sequence_position + $cigar_count - 1,
+                $sequence_position + $cigar_num - 1,
                 $rel_strand,
                 "alignment", #$self->genomic_align_block->dbID,
                 $alignment_position,
-                $alignment_position + $cigar_count - 1
+                $alignment_position + $cigar_num - 1
             );
-        $sequence_position += $cigar_count;
-        $alignment_position += $cigar_count;
+        $sequence_position += $cigar_num;
+        $alignment_position += $cigar_num;
       } elsif( $cigar_type eq "I") {
 	#add to sequence_position but not alignment_position
-	$sequence_position += $cigar_count;
+	$sequence_position += $cigar_num;
       } elsif( $cigar_type eq "G" || $cigar_type eq "D" || $cigar_type eq "X") {
-        $alignment_position += $cigar_count;
+        $alignment_position += $cigar_num;
       }
     }
   } else {
-    foreach my $cigar_piece (@cigar_pieces) {
-      my $cigar_type = substr($cigar_piece, -1, 1);
-      my $cigar_count = substr($cigar_piece, 0 ,-1);
-      $cigar_count = 1 if ($cigar_count eq "");
-      next if ($cigar_count < 1);
+    foreach my $cigar_element (@$cigar_arrayref) {
+      my $cigar_type = substr($cigar_element, -1, 1);
+      my $cigar_num = substr($cigar_element, 0 , -1);
+      $cigar_num = 1 if ($cigar_num eq "");
+      next if ($cigar_num < 1);
   
       if( $cigar_type eq "M" ) {
         $mapper->add_map_coordinates(
                 "sequence", #$self->dbID,
-                $sequence_position - $cigar_count + 1,
+                $sequence_position - $cigar_num + 1,
                 $sequence_position,
                 $rel_strand,
                 "alignment", #$self->genomic_align_block->dbID,
                 $alignment_position,
-                $alignment_position + $cigar_count - 1
+                $alignment_position + $cigar_num - 1
             );
-        $sequence_position -= $cigar_count;
-        $alignment_position += $cigar_count;
+        $sequence_position -= $cigar_num;
+        $alignment_position += $cigar_num;
       } elsif( $cigar_type eq "I") {
 	#add to sequence_position but not alignment_position
-	$sequence_position -= $cigar_count;
+	$sequence_position -= $cigar_num;
       } elsif( $cigar_type eq "G" || $cigar_type eq "D" || $cigar_type eq "X") {
-        $alignment_position += $cigar_count;
+        $alignment_position += $cigar_num;
       }
     }
   }
@@ -1907,53 +1982,53 @@ sub _add_cigar_line_to_Mapper {
   if ($rel_strand == 1) {
     foreach my $cigar_piece (@cigar_pieces) {
       my $cigar_type = substr($cigar_piece, -1, 1 );
-      my $cigar_count = substr($cigar_piece, 0 ,-1 );
-      $cigar_count = 1 unless ($cigar_count =~ /^\d+$/);
-      next if ($cigar_count < 1);
+      my $cigar_num = substr($cigar_piece, 0 ,-1 );
+      $cigar_num = 1 unless ($cigar_num =~ /^\d+$/);
+      next if ($cigar_num < 1);
   
       if( $cigar_type eq "M" ) {
         $mapper->add_map_coordinates(
                 "sequence", #$self->dbID,
                 $sequence_position,
-                $sequence_position + $cigar_count - 1,
+                $sequence_position + $cigar_num - 1,
                 $rel_strand,
                 "alignment", #$self->genomic_align_block->dbID,
                 $alignment_position,
-                $alignment_position + $cigar_count - 1
+                $alignment_position + $cigar_num - 1
             );
-        $sequence_position += $cigar_count;
-        $alignment_position += $cigar_count;
+        $sequence_position += $cigar_num;
+        $alignment_position += $cigar_num;
       } elsif( $cigar_type eq "I") {
 	#add to sequence_position but not alignment_position
-	$sequence_position += $cigar_count;
+	$sequence_position += $cigar_num;
       } elsif( $cigar_type eq "G" || $cigar_type eq "D" || $cigar_type eq "X") {
-        $alignment_position += $cigar_count;
+        $alignment_position += $cigar_num;
       }
     }
   } else {
     foreach my $cigar_piece (@cigar_pieces) {
       my $cigar_type = substr($cigar_piece, -1, 1 );
-      my $cigar_count = substr($cigar_piece, 0 ,-1 );
-      $cigar_count = 1 unless ($cigar_count =~ /^\d+$/);
-      next if ($cigar_count < 1);
+      my $cigar_num = substr($cigar_piece, 0 ,-1 );
+      $cigar_num = 1 unless ($cigar_num =~ /^\d+$/);
+      next if ($cigar_num < 1);
   
       if( $cigar_type eq "M" ) {
         $mapper->add_map_coordinates(
                 "sequence", #$self->dbID,
-                $sequence_position - $cigar_count + 1,
+                $sequence_position - $cigar_num + 1,
                 $sequence_position,
                 $rel_strand,
                 "alignment", #$self->genomic_align_block->dbID,
                 $alignment_position,
-                $alignment_position + $cigar_count - 1
+                $alignment_position + $cigar_num - 1
             );
-        $sequence_position -= $cigar_count;
-        $alignment_position += $cigar_count;
+        $sequence_position -= $cigar_num;
+        $alignment_position += $cigar_num;
       } elsif( $cigar_type eq "I") {
 	#add to sequence_position but not alignment_position
-	$sequence_position -= $cigar_count;
+	$sequence_position -= $cigar_num;
       } elsif( $cigar_type eq "G" || $cigar_type eq "D" || $cigar_type eq "X") {
-        $alignment_position += $cigar_count;
+        $alignment_position += $cigar_num;
       }
     }
   }
@@ -2015,15 +2090,19 @@ sub restrict {
   delete($restricted_genomic_align->{original_sequence});
   delete($restricted_genomic_align->{aligned_sequence});
   delete($restricted_genomic_align->{cigar_line});
-  $restricted_genomic_align->{_original_dbID} = $self->dbID if ($self->dbID);
+  delete($restricted_genomic_align->{cigar_arrayref});
+  $restricted_genomic_align->{_original_dbID} = $self->{dbID} if ($self->{dbID});
 
   # Need to calculate the original aligned sequence length myself
   if (!$aligned_seq_length) {
-    my @cigar = grep {$_} split(/(\d*[GDMXI])/, $self->cigar_line);
-    foreach my $num_type (@cigar) {
-      my $type = substr($num_type, -1, 1, "");
-      $num_type = 1 if ($num_type eq "");
-      $aligned_seq_length += $num_type unless ($type eq "I");
+    my $cigar_arrayref = $self->get_cigar_arrayref;
+    foreach my $cigar_element (@$cigar_arrayref) {
+      my $cigar_type = substr($cigar_element, -1, 1);
+      my $cigar_num = substr($cigar_element, 0 , -1);
+      $cigar_num = 1 if ($cigar_num eq "");
+      next if ($cigar_num < 1);
+
+      $aligned_seq_length += $cigar_num unless ($cigar_type eq "I");
     }
   }
 
@@ -2031,27 +2110,27 @@ sub restrict {
   my $number_of_columns_to_trim_from_the_start = $start - 1;
   my $number_of_columns_to_trim_from_the_end = $aligned_seq_length - $end;
 
-  my @cigar = grep {$_} split(/(\d*[GDMXI])/, $self->cigar_line);
+  my $cigar_arrayref = [@{$self->get_cigar_arrayref}]; # Make a new copy
 
   ## Trim start of cigar_line if needed
   if ($number_of_columns_to_trim_from_the_start >= 0) {
     my $counter_of_trimmed_columns_from_the_start = 0;
     my $counter_of_trimmed_base_pairs = 0; # num of bp we trim (from the start)
     ## Loop through the cigar pieces
-    while (my $cigar = shift(@cigar)) {
-      # Parse each cigar piece
-      my $type = substr( $cigar, -1, 1 );
-      my $num = substr( $cigar, 0 ,-1 );
-      $num = 1 if ($num eq "");
+    while (my $cigar_element = shift(@$cigar_arrayref)) {
+      my $cigar_type = substr($cigar_element, -1, 1);
+      my $cigar_num = substr($cigar_element, 0 , -1);
+      $cigar_num = 1 if ($cigar_num eq "");
+      next if ($cigar_num < 1);
 
       # Insertions are not part of the alignment, don't count them
-      if ($type ne "I") {
-        $counter_of_trimmed_columns_from_the_start += $num;
+      if ($cigar_type ne "I") {
+        $counter_of_trimmed_columns_from_the_start += $cigar_num;
       }
 
       # Matches and insertions are actual base pairs in the sequence
-      if ($type eq "M" || $type eq "I") {
-        $counter_of_trimmed_base_pairs += $num;
+      if ($cigar_type eq "M" || $cigar_type eq "I") {
+        $counter_of_trimmed_base_pairs += $cigar_num;
       }
 
       # If this cigar piece is too long and we overshoot the number of columns we want to trim,
@@ -2061,31 +2140,31 @@ sub restrict {
         # length of the new cigar piece
         my $length = $counter_of_trimmed_columns_from_the_start - $number_of_columns_to_trim_from_the_start;
         if ($length > 1) {
-          $new_cigar_piece = $length.$type;
+          $new_cigar_piece = $length.$cigar_type;
         } elsif ($length == 1) {
-          $new_cigar_piece = $type;
+          $new_cigar_piece = $cigar_type;
         }
-        unshift(@cigar, $new_cigar_piece) if ($new_cigar_piece);
-        if ($type eq "M") {
+        unshift(@$cigar_arrayref, $new_cigar_piece) if ($length > 0);
+        if ($cigar_type eq "M") {
           $counter_of_trimmed_base_pairs -= $length;
         }
 
         ## We don't want to start with an insertion. Trim it!
-        while (@cigar and $cigar[0] =~ /[I]/) {
-	  my ($num, $type) = ($cigar[0] =~ /^(\d*)([DIGMX])/);  
-          #my $type = substr( $cigar, -1, 1 );
-          #my $num = substr( $cigar, 0 ,-1 );
-          $num = 1 if ($num eq "");
-          $counter_of_trimmed_base_pairs += $num;
-          shift(@cigar);
+        while (@$cigar_arrayref and $cigar_arrayref->[0] =~ /I/) {
+          my $cigar_type = substr($cigar_arrayref->[0], -1, 1);
+          my $cigar_num = substr($cigar_arrayref->[0], 0 , -1);
+          $cigar_num = 1 if ($cigar_num eq "");
+
+          $counter_of_trimmed_base_pairs += $cigar_num;
+          shift(@$cigar_arrayref);
         }
         last;
       }
     }
-    if ($self->dnafrag_strand == 1) {
-      $restricted_genomic_align->dnafrag_start($self->dnafrag_start + $counter_of_trimmed_base_pairs);
+    if ($self->{dnafrag_strand} == 1) {
+      $restricted_genomic_align->{dnafrag_start} = ($self->{dnafrag_start} + $counter_of_trimmed_base_pairs);
     } else {
-      $restricted_genomic_align->dnafrag_end($self->dnafrag_end - $counter_of_trimmed_base_pairs);
+      $restricted_genomic_align->{dnafrag_end} = ($self->{dnafrag_end} - $counter_of_trimmed_base_pairs);
     }
   }
 
@@ -2094,20 +2173,20 @@ sub restrict {
     my $counter_of_trimmed_columns_from_the_end = 0;
     my $counter_of_trimmed_base_pairs = 0; # num of bp we trim (from the start)
     ## Loop through the cigar pieces
-    while (my $cigar = pop(@cigar)) {
-      # Parse each cigar piece
-      my $type = substr( $cigar, -1, 1 );
-      my $num = substr( $cigar, 0 ,-1 );
-      $num = 1 if ($num eq "");
+    while (my $cigar_element = pop(@$cigar_arrayref)) {
+      my $cigar_type = substr( $cigar_element, -1, 1);
+      my $cigar_num = substr( $cigar_element, 0 , -1);
+      $cigar_num = 1 if ($cigar_num eq "");
+      next if ($cigar_num < 1);
 
       # Insertions are not part of the alignment, don't count them
-      if ($type ne "I") {
-        $counter_of_trimmed_columns_from_the_end += $num;
+      if ($cigar_type ne "I") {
+        $counter_of_trimmed_columns_from_the_end += $cigar_num;
       }
 
       # Matches and insertions are actual base pairs in the sequence
-      if ($type eq "M" || $type eq "I") {
-        $counter_of_trimmed_base_pairs += $num;
+      if ($cigar_type eq "M" || $cigar_type eq "I") {
+        $counter_of_trimmed_base_pairs += $cigar_num;
       }
       # If this cigar piece is too long and we overshoot the number of columns we want to trim,
       # we substitute this cigar piece by a shorter one
@@ -2116,37 +2195,38 @@ sub restrict {
         # length of the new cigar piece
         my $length = $counter_of_trimmed_columns_from_the_end - $number_of_columns_to_trim_from_the_end;
         if ($length > 1) {
-          $new_cigar_piece = $length.$type;
+          $new_cigar_piece = $length.$cigar_type;
         } elsif ($length == 1) {
-          $new_cigar_piece = $type;
+          $new_cigar_piece = $cigar_type;
         }
-        push(@cigar, $new_cigar_piece) if ($new_cigar_piece);
-        if ($type eq "M") {
+        push(@$cigar_arrayref, $new_cigar_piece) if ($length > 0);
+        if ($cigar_type eq "M") {
           $counter_of_trimmed_base_pairs -= $length;
         }
 
         ## We don't want to end with an insertion. Trim it!
-        while (@cigar and $cigar[-1] =~ /[I]/) {
-	  my ($num, $type) = ($cigar[-1] =~ /^(\d*)([DIGMX])/);
-          #my $type = substr( $cigar, -1, 1 );
-          #my $num = substr( $cigar, 0 ,-1 );
-          $num = 1 if ($num eq "");
-          $counter_of_trimmed_base_pairs += $num;
-          pop(@cigar);
+        while (@$cigar_arrayref and $cigar_arrayref->[-1] =~ "I") {
+          my $cigar_type = substr($cigar_arrayref->[0], -1, 1);
+          my $cigar_num = substr($cigar_arrayref->[0], 0 , -1);
+          $cigar_num = 1 if ($cigar_num eq "");
+
+          $counter_of_trimmed_base_pairs += $cigar_num;
+          pop(@$cigar_arrayref);
         }
         last;
       }
     }
-    if ($self->dnafrag_strand == 1) {
-      $restricted_genomic_align->dnafrag_end($restricted_genomic_align->dnafrag_end - $counter_of_trimmed_base_pairs);
+    if ($self->{dnafrag_strand} == 1) {
+      $restricted_genomic_align->{dnafrag_end} = ($restricted_genomic_align->{dnafrag_end} - $counter_of_trimmed_base_pairs);
     } else {
-      $restricted_genomic_align->dnafrag_start($restricted_genomic_align->dnafrag_start + $counter_of_trimmed_base_pairs);
+      $restricted_genomic_align->{dnafrag_start} = ($restricted_genomic_align->{dnafrag_start} + $counter_of_trimmed_base_pairs);
     }
   }
 
   ## Save genomic_align's cigar_line
-  $restricted_genomic_align->aligned_sequence(0);
-  $restricted_genomic_align->cigar_line(join("", @cigar));
+  $restricted_genomic_align->{aligned_sequence} = undef;
+  $restricted_genomic_align->{cigar_line} = join("", @$cigar_arrayref);
+  $restricted_genomic_align->{cigar_arrayref} = $cigar_arrayref;
 
   return $restricted_genomic_align;
 }

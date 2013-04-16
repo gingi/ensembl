@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
   This software is distributed under a modified Apache license.
   For license details, please see
@@ -269,6 +269,7 @@ sub check_for_stops {
     next TRANS unless ($pseq =~ /\*/);
     next TRANS if ($trans->biotype eq 'polymorphic_pseudogene' or
                    $trans->biotype =~ /processed_pseudogene$/);
+
     # warn sprintf("Stop codon is '%s'\n",substr($trans->translateable_seq,-3));
     #$support->log_verbose("Stops found in $tsi ($tname)\n",1);
     $log_object->_save_log('log_verbose', '', $gsi, '', $tsi, '', "Stops found in $tsi ($tname)");

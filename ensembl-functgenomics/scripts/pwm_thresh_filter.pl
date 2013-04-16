@@ -3,7 +3,7 @@
 =head1 LICENSE
 
 
-  Copyright (c) 1999-2011 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -49,6 +49,9 @@ ensembl-functgenomics/scripts/pwm_mapping_notes
 =head1 CVS
 
  $Log: pwm_thresh_filter.pl,v $
+ Revision 1.4  2013-03-11 14:34:24  nj1
+ updated license
+
  Revision 1.3  2011-01-10 14:25:54  nj1
  added generic #!/usr/bin/env perl
 

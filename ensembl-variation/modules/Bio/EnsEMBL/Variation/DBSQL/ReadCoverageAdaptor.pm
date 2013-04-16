@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -138,15 +138,8 @@ sub fetch_all_by_Slice_Sample_depth{
 		    throw('Bio::EnsEMBL::Variation::Sample arg expected');
 		}
 		
-		# VERY NASTY HACK FOR DUPLICATED MOUSE DATA, REMOVE ASAP!!!
-		if($self->db->species =~ /mus|mouse/ && ($args[0]->dbID == 110 || $args[0]->dbID == 118)) {
-			$constraint = "rc.sample_id in (110,118)";
-		}
-		else {
-			$constraint = "rc.sample_id = " . $args[0]->dbID;
-		}
-		#$constraint = "rc.sample_id = ?";
-		#$self->bind_param_generic_fetch($args[0]->dbID,SQL_INTEGER);
+		$constraint = "rc.sample_id = ?";
+		$self->bind_param_generic_fetch($args[0]->dbID,SQL_INTEGER);
 	    }
 	}
 	$rcs = $self->fetch_all_by_Slice_constraint($slice,$constraint);    

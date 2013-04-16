@@ -34,7 +34,6 @@ package Bio::EnsEMBL::Compara::RunnableDB::LoadMembersFromFiles;
 use strict;
 use warnings;
 
-use Bio::EnsEMBL::Compara::Member;
 
 use Data::Dumper;
 
@@ -44,12 +43,8 @@ use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 sub fetch_input {
 	my $self = shift @_;
 
-	# Adaptors
-	my $compara_dba = $self->compara_dba();
-	$self->param('member_adaptor', $compara_dba->get_MemberAdaptor());
-      $self->param('sequence_adaptor', $compara_dba->get_SequenceAdaptor());
-
-      $self->param('genome_content', $compara_dba->get_GenomeDBAdaptor->fetch_by_dbID($self->param('genome_db_id'))->db_adaptor);
+	# Loads the genome
+      $self->param('genome_content', $self->compara_dba->get_GenomeDBAdaptor->fetch_by_dbID($self->param('genome_db_id'))->db_adaptor);
 
 }
 
@@ -57,7 +52,11 @@ sub write_output {
 	my $self = shift @_;
 
 	my $genome_db_id = $self->param('genome_db_id');
-	my $member_adaptor = $self->param('member_adaptor');
+	
+      my $compara_dba = $self->compara_dba();
+      my $sequence_adaptor = $compara_dba->get_SequenceAdaptor();
+      my $gene_member_adaptor = $compara_dba->get_GeneMemberAdaptor();
+      my $seq_member_adaptor = $compara_dba->get_SeqMemberAdaptor();
 
       print Dumper($self->param('genome_content')) if $self->debug;
       my $prot_seq = $self->param('genome_content')->get_protein_sequences;
@@ -76,13 +75,15 @@ sub write_output {
 		print "sequence $count: description ", $sequence->desc, "\n" if ($self->debug > 1);
 		print "sequence $count: length ", $sequence->length, "\n" if ($self->debug > 1);
 
-		my $gene_member = Bio::EnsEMBL::Compara::Member->new();
-    		$gene_member->stable_id($gene_name);
+		my $gene_member = Bio::EnsEMBL::Compara::GeneMember->new(
+                -stable_id      => $gene_name,
+                -source_name    => 'ENSEMBLGENE',
+                -taxon_id       => $taxon_id,
+                -description    => $sequence->desc,
+                -genome_db_id   => $genome_db_id,
+            );
+
 		$gene_member->display_label($sequence->id);
-		$gene_member->source_name("ENSEMBLGENE");
-		$gene_member->taxon_id($taxon_id);
-		$gene_member->description($sequence->desc);
-		$gene_member->genome_db_id($genome_db_id);
             if (exists $gene_coordinates->{$sequence->id}) {
                 my $coord = $gene_coordinates->{$sequence->id};
                 $gene_member->chr_name($coord->[0]);
@@ -94,15 +95,16 @@ sub write_output {
             }
 
             #print Dumper($gene_member);
-		$member_adaptor->store($gene_member);
+		$gene_member_adaptor->store($gene_member);
 
-		my $pep_member = Bio::EnsEMBL::Compara::Member->new();
-		$pep_member->stable_id($gene_name);
+		my $pep_member = Bio::EnsEMBL::Compara::SeqMember->new(
+                -stable_id      => $gene_name,
+                -source_name    => 'ENSEMBLPEP',
+                -taxon_id       => $taxon_id,
+                -description    => $sequence->desc,
+                -genome_db_id   => $genome_db_id,
+            );
 		$pep_member->display_label($sequence->id);
-		$pep_member->source_name("ENSEMBLPEP");
-		$pep_member->taxon_id($taxon_id);
-		$pep_member->description($sequence->desc);
-		$pep_member->genome_db_id($genome_db_id);
             $pep_member->gene_member_id($gene_member->dbID);
             if (exists $cds_coordinates->{$sequence->id}) {
                 my $coord = $cds_coordinates->{$sequence->id};
@@ -116,12 +118,12 @@ sub write_output {
 		my $seq = $sequence->seq;
 		$seq =~ s/O/X/g;
 		$pep_member->sequence($seq);
-		$member_adaptor->store($pep_member);
-            $member_adaptor->_set_member_as_canonical($pep_member);
+		$seq_member_adaptor->store($pep_member);
+            $seq_member_adaptor->_set_member_as_canonical($pep_member);
 
             if (exists $cds_seq->{$sequence->id}) {
                 $pep_member->sequence_cds( $cds_seq->{$sequence->id}->seq );
-                $self->param('sequence_adaptor')->store_other_sequence($pep_member, $cds_seq->{$sequence->id}->seq, 'cds');
+                $sequence_adaptor->store_other_sequence($pep_member, $cds_seq->{$sequence->id}->seq, 'cds');
             } elsif ($self->param('need_cds_seq')) {
                 die $sequence->id, " does not have cds sequence\n";
             } else {

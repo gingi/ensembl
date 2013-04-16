@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -76,6 +76,7 @@ use Bio::EnsEMBL::Compara::GeneTree;
 use Bio::EnsEMBL::Compara::GeneTreeNode;
 use Bio::EnsEMBL::Compara::GeneTreeMember;
 use Bio::EnsEMBL::Compara::MethodLinkSpeciesSet;
+use Bio::EnsEMBL::Compara::HMMProfile;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::StoreClusters');
 
@@ -141,10 +142,9 @@ sub run_rfamclassify {
     my $counter = 1;
     foreach my $cm_id (keys %{$self->param('rfamcms')->{'model_id'}}) {
         print STDERR "++ $cm_id\n" if ($self->debug);
+        print STDERR Dumper $self->param('rfamclassify');
         next if not defined($self->param('rfamclassify')->{$cm_id});
         my @cluster_list = keys %{$self->param('rfamclassify')->{$cm_id}};
-
-        print STDERR Dumper \@cluster_list if ($self->debug);
         # If it's a singleton, we don't store it as a nc tree
         next if (scalar(@cluster_list < 2));
 
@@ -227,13 +227,13 @@ sub build_hash_cms {
   my $self = shift;
   my $field = shift;
 
-  my $sql = "SELECT $field from hmm_profile";
-  my $sth = $self->compara_dba->dbc->prepare($sql);
-  $sth->execute;
-  while( my $ref  = $sth->fetchrow_arrayref() ) {
-    my ($field_value) = @$ref;
-    $self->param('rfamcms')->{$field}{$field_value} = 1;
+  die "I don't expect a field value different than model_id, but $field has been passed" unless($field eq "model_id");
+
+  my $ids = $self->compara_dba->get_HMMProfileAdaptor()->fetch_all_by_column_names([$field],'infernal');
+  for my $id (@$ids) {
+      $self->param('rfamcms')->{$field}{$id->{$field}} = 1;
   }
+
 }
 
 sub load_names_model_id {
@@ -243,14 +243,12 @@ sub load_names_model_id {
   $self->param('model_id_names', {});
   $self->param('model_name_ids', {});
 
-  my $sql = "SELECT model_id, name from hmm_profile";
-  my $sth = $self->compara_dba->dbc->prepare($sql);
-  $sth->execute;
-  while( my $ref  = $sth->fetchrow_arrayref() ) {
-    my ($model_id, $name) = @$ref;
-    $self->param('model_id_names')->{$model_id} = $name;
-    $self->param('model_name_ids')->{$name} = $model_id;
+  my $ids = $self->compara_dba->get_HMMProfileAdaptor()->fetch_all_by_column_names(['model_id', 'name'],'infernal');
+  for my $id (@$ids) {
+      $self->param('model_id_names')->{$id->{model_id}} = $id->{name};
+      $self->param('model_name_ids')->{$id->{name}} = $id->{model_id};
   }
+
 }
 
 sub load_mirbase_families {
@@ -311,7 +309,7 @@ sub tag_assembly_coverage_depth {
   my @low_coverage  = ();
   my @high_coverage = ();
 
-  foreach my $gdb (@{$self->param('cluster_mlss')->species_set}) {
+  foreach my $gdb (@{$self->param('cluster_mlss')->species_set_obj->genome_dbs()}) {
     my $name = $gdb->name;
     my $coreDBA = $gdb->db_adaptor;
     my $metaDBA = $coreDBA->get_MetaContainerAdaptor;

@@ -438,9 +438,9 @@ sub fetch_protein_tree_with_gene {
   my $self = shift;
   my $gene_stable_id = shift;
 
-  my $member = $self->{'comparaDBA'}->get_MemberAdaptor->fetch_by_source_stable_id('ENSEMBLGENE', $gene_stable_id);
+  my $member = $self->{'comparaDBA'}->get_GeneMemberAdaptor->fetch_by_source_stable_id('ENSEMBLGENE', $gene_stable_id);
   $member->print_member;
-  $member->get_canonical_Member->print_member;
+  $member->get_canonical_SeqMember->print_member;
 
   my $treeDBA = $self->{'comparaDBA'}->get_GeneTreeAdaptor;
   my $tree = $treeDBA->fetch_default_for_Member($member);

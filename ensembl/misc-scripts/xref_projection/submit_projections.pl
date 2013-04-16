@@ -37,9 +37,6 @@ my @config = ( {
 
 my $registryconf = Dumper(\@config);
 
-# load limit for ens-staging MySQL instance above which jobs won't be started
-my $limit = 200;
-
 # -------------------------- end of config ----------------------------
 
 # check that base directory exists
@@ -268,14 +265,16 @@ foreach my $from (@execution_order) {
         my $o = "$dir/names_${from}_$to.out";
         my $e = "$dir/names_${from}_$to.err";
         my $n = substr("n_${from}_$to", 0, 10); # job name display limited to 10 chars
-        my $all = ($from eq "human") ? "" : "--all_sources"; # non-human from species -> use all sources
+        my $all;
+        if ($from eq "human" || $from eq "mouse") { $all = "" ; }
+        else { $all = "--all_sources"; }
         my $wait;
         if ($last_name) { $wait = "-w 'ended(${last_name}*)'";}
         
         print "Submitting name projection from $from to $to\n";
         system "bsub $bsub_opts -o $o -e $e -J $n $wait perl project_display_xrefs.pl $script_opts -from $from -to $to -names -no_database $all\n";
     }
-    $last_name = "n_".$from;
+    $last_name = substr("n_".$from, 0 ,10);
 }
 $last_name = "";
 
@@ -300,7 +299,7 @@ foreach my $from (@execution_order) {
         print "Submitting name projection from $from to $to (1:many)\n";
         system "bsub $bsub_opts -o $o -e $e -J $n $wait perl project_display_xrefs.pl $script_opts -from $from -to $to -names -no_database -one_to_many\n";
     }
-    $last_name = "n_".$from;    
+    $last_name = substr("n_".$from, 0 ,10);
 }
 
 $last_name = "";
@@ -332,7 +331,8 @@ foreach my $from (@execution_order) {
         print "Submitting GO term projection from $from to $to\n";
         system "bsub $bsub_opts -q long -o $o -e $e -J $n $wait perl project_display_xrefs.pl $script_opts -from $from -to $to -go_terms\n";
     }
-    $last_name = "n_".$from;   
+    $last_name = substr("g_".$from, 0 ,10);
+     
 }
 
 

@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -18,10 +18,6 @@
 
 =cut
 
-# Ensembl module for Bio::EnsEMBL::Variation::Variation
-#
-# Copyright (c) 2004 Ensembl
-#
 
 
 =head1 NAME
@@ -106,6 +102,7 @@ use Bio::EnsEMBL::Variation::Utils::Sequence qw(ambiguity_code SO_variation_clas
 use Bio::EnsEMBL::Utils::Exception qw(throw deprecate warning);
 use Bio::EnsEMBL::Variation::Utils::Sequence;
 use Bio::EnsEMBL::Variation::Utils::Constants qw(%VARIATION_CLASSES); 
+use Bio::EnsEMBL::Variation::Utils::Sequence  qw(%EVIDENCE_VALUES); 
 use Bio::EnsEMBL::Variation::Failable;
 use vars qw(@ISA);
 use Scalar::Util qw(weaken);
@@ -175,11 +172,11 @@ sub new {
 
   my ($dbID, $adaptor, $name, $class_so_term, $src, $src_desc, $src_url, $src_type, $is_somatic, $flipped, $syns, $ancestral_allele,
       $alleles, $valid_states, $moltype, $five_seq, $three_seq, $flank_flag, $minor_allele, $minor_allele_frequency, $minor_allele_count, 
-      $clinical_significance) =
+      $clinical_significance, $evidence ) =
         rearrange([qw(dbID ADAPTOR NAME CLASS_SO_TERM SOURCE SOURCE_DESCRIPTION SOURCE_URL SOURCE_TYPE IS_SOMATIC 
                       FLIPPED SYNONYMS ANCESTRAL_ALLELE ALLELES VALIDATION_STATES MOLTYPE FIVE_PRIME_FLANKING_SEQ
                       THREE_PRIME_FLANKING_SEQ FLANK_FLAG MINOR_ALLELE MINOR_ALLELE_FREQUENCY MINOR_ALLELE_COUNT 
-                      CLINICAL_SIGNIFICANCE)],@_);
+                      CLINICAL_SIGNIFICANCE EVIDENCE)],@_);
 
   # convert the validation state strings into a bit field
   # this preserves the same order and representation as in the database
@@ -208,6 +205,7 @@ sub new {
     'minor_allele_frequency' => $minor_allele_frequency,
     'minor_allele_count' => $minor_allele_count,
     'clinical_significance' => $clinical_significance,
+    'evidence' => $evidence
   }, $class;
   
   $self->add_Allele($alleles) if defined($alleles);
@@ -297,6 +295,11 @@ sub name{
   my $self = shift;
   return $self->{'name'} = shift if(@_);
   return $self->{'name'};
+}
+
+sub stable_id {
+  my $self = shift;
+  return $self->name(@_);
 }
 
 
@@ -515,6 +518,27 @@ sub add_synonym {
 }
 
 
+=head2 get_all_evidence_values
+
+  Arg [1]    : none
+  Example    : my @evidence = @{$v->get_all_evidence_values()};
+  Description: Retrieves all evidence values for this variation. Current
+               possible evidence values are 'Multiple_observations',
+              'Frequency','HapMap', '1000Genomes','Cited'
+  Returntype : reference to list of strings
+  Exceptions : none
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub get_all_evidence_values {
+    my $self = shift;
+    return $self->{'evidence'};
+
+}
+
+
 
 =head2 get_all_validation_states
 
@@ -556,6 +580,32 @@ sub add_validation_state {
 }
 
 
+=head2 add_evidence_value
+
+  Arg [1]    : string $state
+  Example    : $v->add_evidence_value('Frequency');
+  Description: Adds an evidence value  to this variation.
+  Returntype : none
+  Exceptions : 
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub add_evidence_value {
+    
+    my $self = shift;
+    my $add_ev = shift if(@_);
+
+    ## do not add evidence value unless it is in the list of permitted values
+    return $self->{'evidence'} unless $EVIDENCE_VALUES{$add_ev};
+
+    push @{$self->{'evidence'}}, $add_ev;
+    my %unique = map { $_ => 1 } @{$self->{'evidence'}};
+    @{$self->{'evidence'}} = keys %unique;
+
+    return $self->{'evidence'};    
+}
 
 =head2 source
 
@@ -1139,26 +1189,26 @@ sub clinical_significance {
     return $self->{clinical_significance}
 }
 
-=head2 get_all_VariationAnnotations
+=head2 get_all_PhenotypeFeatures
 
   Args       : none
-  Example    : my $annotations = $var->get_all_VariationAnnotations()
-  Description: Getter for VariationAnnotations for this Variation, returns empty list if 
+  Example    : my $pfs = $var->get_all_PhenotypeFeatures()
+  Description: Getter for PhenotypeFeatures for this Variation, returns empty list if 
                there are none. 
-  Returntype : listref of VariationAnnotations
+  Returntype : listref of PhenotypeFeatures
   Exceptions : none
   Caller     : general
 
 =cut
 
-sub get_all_VariationAnnotations {
+sub get_all_PhenotypeFeatures {
     my $self = shift;
 
     #ÊAssert the adaptor reference
     assert_ref($self->adaptor(),'Bio::EnsEMBL::Variation::DBSQL::BaseAdaptor');
     
     # Get the annotations from the database
-    return $self->adaptor->db->get_VariationAnnotationAdaptor()->fetch_all_by_Variation($self);
+    return $self->adaptor->db->get_PhenotypeFeatureAdaptor()->fetch_all_by_Variation($self);
 
 }
 

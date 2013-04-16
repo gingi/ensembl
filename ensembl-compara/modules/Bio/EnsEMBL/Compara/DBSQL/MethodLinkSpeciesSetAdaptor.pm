@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -217,7 +217,7 @@ sub store {
 
   $self->sync_tags_to_database( $mlss );
 
-  $self->cache_all(1);
+  $self->{'_cache'}->{$dbID} = $mlss;
 
   return $mlss;
 }
@@ -243,7 +243,7 @@ sub delete {
     $sth->execute($method_link_species_set_id);
     $sth->finish();
 
-    $self->cache_all(1);
+    delete $self->{'_cache'}->{$method_link_species_set_id};
 }
 
 

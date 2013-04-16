@@ -40,6 +40,7 @@ CREATE TABLE term (
   accession     VARCHAR(64) NOT NULL,
   name          VARCHAR(255) NOT NULL,
   definition    TEXT,
+  is_root       INT,
 
   PRIMARY KEY (term_id),
   UNIQUE INDEX accession_idx (accession),
@@ -71,10 +72,11 @@ CREATE TABLE relation (
   parent_term_id    INT UNSIGNED NOT NULL,
   relation_type_id  INT UNSIGNED NOT NULL,
   intersection_of   TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  ontology_id       INT UNSIGNED NOT NULL,
 
   PRIMARY KEY (relation_id),
   UNIQUE INDEX child_parent_idx
-    (child_term_id, parent_term_id, relation_type_id, intersection_of),
+    (child_term_id, parent_term_id, relation_type_id, intersection_of, ontology_id),
   INDEX parent_idx (parent_term_id)
 );
 
@@ -84,10 +86,11 @@ CREATE TABLE closure (
   parent_term_id    INT UNSIGNED NOT NULL,
   subparent_term_id INT UNSIGNED,
   distance          TINYINT UNSIGNED NOT NULL,
+  ontology_id       INT UNSIGNED NOT NULL,
 
   PRIMARY KEY (closure_id),
   UNIQUE INDEX child_parent_idx
-    (child_term_id, parent_term_id, subparent_term_id),
+    (child_term_id, parent_term_id, subparent_term_id, ontology_id),
   INDEX parent_subparent_idx
     (parent_term_id, subparent_term_id)
 );
@@ -96,4 +99,4 @@ CREATE TABLE closure (
 -- "aux_XX_YY_map".  These are created by the "add_subset_maps.pl"
 -- scripts.  Please see the README document for further information.
 
--- $Id: tables.sql,v 1.4 2012-10-31 12:04:48 ady Exp $
+-- $Id: tables.sql,v 1.5 2013-02-14 14:30:44 mr6 Exp $

@@ -64,6 +64,12 @@ while ( chomp( $line = <FH> ) ) {
     ( $context, $depth ) = split "/", $temp[3];
     $defined_contexts{$context} = undef;
     $depth = "gt_100" if $depth > 100;
+    
+# Here I'm checking methylation level for the cytosine and if it is greater than 0, the cytosine is considered to be methylated.
+# However instead of using a 0 value, a better estimate for considering unmethylation would be very useful. This could be probably 
+# done through computing a non-conversion/error rate estimation by aligning raw reads against mitochondrial genome which is not
+# supposed to contain any methylation and the fraction of mitochondrial cytosines found methylated can be used here for unmethylation.  
+
     $temp[4] > 0
       ? $hash{ $context . "_" . $depth }{meth}++
       : $hash{ $context . "_" . $depth }{unmeth}++;

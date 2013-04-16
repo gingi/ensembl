@@ -83,7 +83,7 @@ sub fetch_input {
   print "$nc_tree_id\n";
   $self->param('nc_tree', $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($nc_tree_id));
 
-  $self->param('member_adaptor', $self->compara_dba->get_MemberAdaptor);
+  $self->param('gene_member_adaptor', $self->compara_dba->get_GeneMemberAdaptor);
   $self->param('treenode_adaptor', $self->compara_dba->get_GeneTreeNodeAdaptor);
 
   my $epo_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->go_figure_compara_dba($epo_db);
@@ -271,8 +271,9 @@ sub run_ncrecoverepo {
                             $other_genome_db_id);
               $sth->finish;
               # See if we can match the RFAM name or RFAM id
-              my $gene_member = $self->param('member_adaptor')->fetch_by_source_stable_id('ENSEMBLGENE',$found_gene_stable_id);
+              my $gene_member = $self->param('gene_member_adaptor')->fetch_by_source_stable_id('ENSEMBLGENE',$found_gene_stable_id);
               next unless (defined($gene_member));
+              # FIXME: this code cannot work
               my $other_tree = $self->param('nctree_adaptor')->fetch_by_Member_root_id($gene_member);
               if (defined($other_tree)) {
                 my $other_tree_id = $other_tree->node_id;
@@ -490,10 +491,10 @@ sub add_matching_predictions {
 
   # Insert the members that are found new and have matching Acc
   foreach my $gene_stable_id_to_add (keys %{$self->param('predictions_to_add')}) {
-    my $gene_member = $self->param('member_adaptor')->fetch_by_source_stable_id('ENSEMBLGENE',$gene_stable_id_to_add);
+    my $gene_member = $self->param('gene_member_adaptor')->fetch_by_source_stable_id('ENSEMBLGENE',$gene_stable_id_to_add);
     # Incorporate this member into the cluster
     my $node = new Bio::EnsEMBL::Compara::GeneTreeMember;
-    $node->member_id($gene_member->get_canonical_Member->member_id);
+    $node->member_id($gene_member->get_canonical_SeqMember->member_id);
     $self->param('nc_tree')->root->add_child($node);
 
     #the building method uses member_id's to reference unique nodes

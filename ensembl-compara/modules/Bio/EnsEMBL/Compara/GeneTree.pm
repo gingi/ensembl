@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -38,11 +38,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mm14 $
+$Author: mp12 $
 
 =head VERSION
 
-$Revision: 1.31 $
+$Revision: 1.37 $
 
 =head1 APPENDIX
 
@@ -99,20 +99,6 @@ sub new {
     return $self;
 }
 
-
-=head2 DESTROY
-
-  Description : Deletes the reference to the root node and breaks
-                the circular reference.
-  Returntype  : None
-  Caller      : System
-
-=cut
-
-sub DESTROY {
-    my $self = shift;
-    delete $self->{'_root'};
-}
 
 
 #####################
@@ -290,7 +276,7 @@ sub preload {
         $leaves{$pm->gene_member_id} = $pm if UNIVERSAL::isa($pm, 'Bio::EnsEMBL::Compara::GeneTreeMember');
     }
     my @m_ids = keys(%leaves);
-    my $all_gm = $self->adaptor->db->get_MemberAdaptor->fetch_all_by_dbID_list(\@m_ids);
+    my $all_gm = $self->adaptor->db->get_GeneMemberAdaptor->fetch_all_by_dbID_list(\@m_ids);
     foreach my $gm (@$all_gm) {
         $leaves{$gm->dbID}->gene_member($gm);
     }
@@ -299,39 +285,36 @@ sub preload {
 
 =head2 attach_alignment
 
-  Arg [1]     : String: clusterset_id
-  Description : Method to fetch the alternative tree with the given
-                clusterset_id and attach its multiple alignment to
-                the current tree. The alternative tree is returned.
+  Arg [1]     : Bio::EnsEMBL::Compara::AlignedMemberSet $gene_align
+  Description : Method to attach another multiple alignment of the
+                same members the current tree.
   Returntype  : GeneTree
-  Example     : $supertree->attach_alignment('super-align');
+  Example     : $supertree->attach_alignment($filtered_aln);
   Caller      : General
 
 =cut
 
 sub attach_alignment {
     my $self = shift;
-    my $other_clusterset_id = shift;
-    return unless defined $self->adaptor;
+    my $other_gene_align = shift;
 
-    # Gets the other tree
-    my $others = $self->adaptor->fetch_all_linked_trees($self);
-    my @good_others = grep {$_->clusterset_id eq $other_clusterset_id} @$others;
-    die "'$other_clusterset_id' tree not found\n" unless scalar(@good_others);
+    assert_ref($other_gene_align, 'Bio::EnsEMBL::Compara::AlignedMemberSet');
+
+    $self->preload;
+    $self->seq_type($other_gene_align->seq_type);
 
     # Gets the alignment
     my %cigars;
-
-    foreach my $leaf (@{$self->adaptor->fetch_by_root_id($good_others[0]->root_id)->get_all_Members()}) {
+    foreach my $leaf (@{$other_gene_align->get_all_Members}) {
         $cigars{$leaf->member_id} = $leaf->cigar_line;
     }
 
+    die "The other alignment has a different size\n" if scalar(keys %cigars) != scalar(@{$self->get_all_Members});
+
     # Assigns it
-    foreach my $leaf (@{$self->root->get_all_leaves}) {
+    foreach my $leaf (@{$self->get_all_Members}) {
         $leaf->cigar_line($cigars{$leaf->member_id});
     }
-
-    return $good_others[0];
 }
 
 
@@ -347,22 +330,39 @@ sub attach_alignment {
 
 sub expand_subtrees {
     my $self = shift;
-    return unless defined $self->adaptor;
 
-    # Gets the subtrees
-    my %subtrees;
-    foreach my $subtree (@{$self->adaptor->fetch_subtrees($self)}) {
-        $subtree->preload;
-        $subtrees{$subtree->root->_parent_id} = $subtree->root;
+    unless (defined $self->adaptor) {
+        warn '$self->adaptor() must be defined in expand_subtrees()';
+    }
+    unless ($self->tree_type eq 'supertree') {
+        warn 'expand_subtrees() is only valid on super-trees';
     }
 
-    # Attaches them
-    $self->preload;
-    foreach my $leaf (@{$self->root->get_all_leaves}) {
-        next unless exists $subtrees{$leaf->node_id};
-        $leaf->parent->add_child($subtrees{$leaf->node_id});
-        $leaf->disavow_parent;
+    # The tree is not loaded yet, we can do a fast-loading procedure
+    if (not defined $self->{'_root'}) {
+
+        # The current tree
+        $self->preload;
+
+        # Gets the subtrees
+        my %subtrees;
+        foreach my $subtree (@{$self->adaptor->fetch_subtrees($self)}) {
+            $subtree->preload;
+            $subtrees{$subtree->root->_parent_id} = $subtree->root;
+        }
+
+        # Attaches them
+        foreach my $leaf (@{$self->root->get_all_leaves}) {
+            die "All the leaves of a super-tree should be linkable to a tree" unless exists $subtrees{$leaf->node_id};
+            $leaf->parent->add_child($subtrees{$leaf->node_id});
+            $leaf->disavow_parent;
+        }
     }
+
+    # To update it at the next get_all_Members call
+    delete $self->{'_member_array'};
+    # Gets the global alignment
+    $self->attach_alignment($self->adaptor->db->get_GeneAlignAdaptor->fetch_by_dbID($self->gene_align_id));
 }
 
 
@@ -447,6 +447,28 @@ sub add_Member {
 }
 
 
+=head2 release_tree
+
+  Overview   : Removes the to/from GeneTree reference to
+               allow freeing memory
+  Example    : $self->release_tree;
+  Returntype : undef
+  Exceptions : none
+  Caller     : general
+
+=cut
+
+sub release_tree {
+    my $self = shift;
+
+    $self->root->release_tree;
+    foreach my $member (@{$self->{'_member_array'}}) {
+        delete $member->{'_tree'};
+    }
+}
+
+
+
 ########
 # Misc #
 ########
@@ -458,7 +480,6 @@ sub add_Member {
                               find_leaf_by_node_id find_leaf_by_name find_node_by_node_id
                               find_node_by_name remove_nodes build_leftright_indexing flatten_tree
                               newick_format nhx_format string_tree print_tree
-                              release_tree
                             )) {
         my $full_name = "Bio::EnsEMBL::Compara::GeneTree::$func_name";
         *$full_name = sub {

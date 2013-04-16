@@ -1,4 +1,25 @@
-#!/usr/local/bin/perl -w
+#!/usr/bin/env perl
+
+=head1 LICENSE
+
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/legal/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <dev@ensembl.org>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk.org>.
+
+=cut
+
 
 use strict;
 use warnings;
@@ -32,7 +53,7 @@ my $TMP_DIR  = $ImportUtils::TMP_DIR;
 my $TMP_FILE = $ImportUtils::TMP_FILE;
 
 print "Time starting to import data: ", scalar(localtime),"\n";
-my $call = "bsub -J import_job -o output_import_snps.txt -m bc_hosts /usr/local/bin/perl import_Sanger_database.pl -tmpdir $TMP_DIR -tmpfile $TMP_FILE -species $species";
+my $call = "bsub -J import_job -o output_import_snps.txt -m bc_hosts/usr/bin/env perl import_Sanger_database.pl -tmpdir $TMP_DIR -tmpfile $TMP_FILE -species $species";
 system($call);
 sleep(10);
 $call = "bsub -K -w 'done(import_job)' -J waiting_process sleep 1";

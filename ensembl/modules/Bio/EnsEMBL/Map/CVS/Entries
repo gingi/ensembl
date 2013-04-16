@@ -1,9 +1,9 @@
 D/DBSQL////
-/Ditag.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-70
-/DitagFeature.pm/1.17/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-70
-/MapLocation.pm/1.8/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-70
-/Marker.pm/1.13/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-70
-/MarkerFeature.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-70
-/MarkerSynonym.pm/1.7/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-70
-/Qtl.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-70
-/QtlFeature.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-70
+/Ditag.pm/1.11/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/DitagFeature.pm/1.18/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/MapLocation.pm/1.9/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/Marker.pm/1.14/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/MarkerFeature.pm/1.11/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/MarkerSynonym.pm/1.8/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/Qtl.pm/1.11/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/QtlFeature.pm/1.11/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71

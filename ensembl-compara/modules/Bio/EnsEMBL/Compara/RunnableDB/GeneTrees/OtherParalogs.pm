@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -48,7 +48,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.11 $
+$Revision: 1.14 $
 
 =head1 APPENDIX
 
@@ -81,7 +81,7 @@ sub fetch_input {
     $self->SUPER::fetch_input;
 
     my $alignment_id = $self->param('gene_tree')->tree->gene_align_id;
-    my $aln = Bio::EnsEMBL::Compara::AlignedMemberSet->new(-seq_type => 'seq_with_flanking', -dbID => $alignment_id, -adaptor => $self->compara_dba->get_AlignedMemberAdaptor);
+    my $aln = $self->compara_dba->get_GeneAlignAdaptor->fetch_by_dbID($alignment_id);
 
     my %super_align;
     foreach my $member (@{$aln->get_all_Members}) {
@@ -201,7 +201,9 @@ sub get_ancestor_species_hash
         print "super-tree leaf=", $node->node_id, " children=", $node->get_child_count, "\n";
         my $child = $node->children->[0];
         my $leaves = $self->compara_dba->get_GeneTreeNodeAdaptor->fetch_all_AlignedMember_by_root_id($child->node_id);
-        $self->dataflow_output_id({'gene_tree_id' => $child->node_id}, 2) if ($self->param('dataflow_subclusters'));
+        eval {
+            $self->dataflow_output_id({'gene_tree_id' => $child->node_id}, 2) if ($self->param('dataflow_subclusters'));
+        };
         $child->disavow_parent;
 
         foreach my $leaf (@$leaves) {

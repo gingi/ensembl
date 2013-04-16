@@ -57,22 +57,19 @@ sub pipeline_analyses {
         -parameters => {
           species => $self->o('species'),
           division => $self->o('division'),
-          run_all => $self->o('run_all'),
-          max_run => $self->o('max_run')
-
+          run_all => $self->o('run_all')
         },
         -input_ids  => [ {} ],
-        -max_retry_count  => 1,
+        -max_retry_count  => 10,
         -flow_into  => {
-         '3->B' => ['PercentRepeat'],
-         'B->3' => ['PercentGC'],
-         '3->C' => ['CodingDensity'],
-         'C->3' => ['NonCodingDensity'],
-         '3->A' => ['PercentRepeat', 'CodingDensity', 'NonCodingDensity', 'PercentGC'],
-         '2->A' => ['GeneGC', 'GeneCount', 'ConstitutiveExons'], # Should inclued 'PepStats'
-         'A->1' => ['NotifyCore'],
-         '4->D' => ['SnpDensity', 'SnpCount'],
-         'D->1' => ['NotifyVariation'],
+         '3->B'  => ['PercentRepeat'],
+         'B->3'  => ['PercentGC'],
+         '3->C'  => ['CodingDensity'],
+         'C->3'  => ['NonCodingDensity'],
+         '5->A'  => ['SnpDensity', 'SnpCount', 'NonSense'],
+         '3->A'  => ['PercentRepeat', 'CodingDensity', 'NonCodingDensity', 'PercentGC'],
+         '2->A'  => ['GeneGC', 'PepStats', 'GeneCount', 'ConstitutiveExons'],
+         'A->1'  => ['Notify'],
         },
       },
 
@@ -112,7 +109,6 @@ sub pipeline_analyses {
         -module     => 'Bio::EnsEMBL::Pipeline::Production::NonCodingDensity',
         -parameters => {
           logic_name => 'noncodingdensity', value_type => 'sum',
-          bin_count => $self->o('bin_count'), max_run => $self->o('max_run'),
         },
         -max_retry_count  => 3,
         -hive_capacity    => 100,
@@ -126,7 +122,6 @@ sub pipeline_analyses {
         -module     => 'Bio::EnsEMBL::Pipeline::Production::PseudogeneDensity',
         -parameters => {
           logic_name => 'pseudogenedensity', value_type => 'sum',
-          bin_count => $self->o('bin_count'), max_run => $self->o('max_run'),
         },
         -max_retry_count  => 3,
         -hive_capacity    => 100,
@@ -139,7 +134,6 @@ sub pipeline_analyses {
         -module     => 'Bio::EnsEMBL::Pipeline::Production::CodingDensity',
         -parameters => {
           logic_name => 'codingdensity', value_type => 'sum',
-          bin_count => $self->o('bin_count'), max_run => $self->o('max_run'),
         },
         -max_retry_count  => 3,
         -hive_capacity    => 100,
@@ -160,7 +154,6 @@ sub pipeline_analyses {
         -module     => 'Bio::EnsEMBL::Pipeline::Production::PercentGC',
         -parameters => {
           table => 'repeat', logic_name => 'percentgc', value_type => 'ratio',
-          bin_count => $self->o('bin_count'), max_run => $self->o('max_run'),
         },
         -max_retry_count  => 3,
         -hive_capacity    => 100,
@@ -173,7 +166,6 @@ sub pipeline_analyses {
         -module     => 'Bio::EnsEMBL::Pipeline::Production::PercentRepeat',
         -parameters => {
           logic_name => 'percentagerepeat', value_type => 'ratio',
-          bin_count => $self->o('bin_count'), max_run => $self->o('max_run'),
         },
         -max_retry_count  => 3,
         -hive_capacity    => 100,
@@ -184,9 +176,9 @@ sub pipeline_analyses {
       {
         -logic_name => 'SnpCount',
         -module     => 'Bio::EnsEMBL::Pipeline::Production::SnpCount',
-        -max_retry_count  => 1,
+        -max_retry_count  => 2,
         -hive_capacity    => 10,
-        -rc_name          => 'normal',
+        -rc_name          => 'default',
         -can_be_empty     => 1,
       },
 
@@ -197,29 +189,32 @@ sub pipeline_analyses {
           table => 'gene', logic_name => 'snpdensity', value_type => 'sum',
           bin_count => $self->o('bin_count'), max_run => $self->o('max_run'),
         },
-        -max_retry_count  => 1,
+        -max_retry_count  => 2,
         -hive_capacity    => 10,
-        -rc_name          => 'normal',
+        -rc_name          => 'default',
+        -can_be_empty     => 1,
+      },
+
+      {
+        -logic_name => 'NonSense',
+        -module     => 'Bio::EnsEMBL::Pipeline::Production::NonSense',
+        -parameters => {
+          frequency => 0.1, observation => 20,
+        },
+        -max_retry_count  => 2,
+        -hive_capacity    => 10,
+        -rc_name          => 'default',
         -can_be_empty     => 1,
       },
 
       ####### NOTIFICATION
 
       {
-        -logic_name => 'NotifyCore',
+        -logic_name => 'Notify',
         -module     => 'Bio::EnsEMBL::Pipeline::Production::EmailSummaryCore',
         -parameters => {
           email   => $self->o('email'),
-          subject => $self->o('pipeline_name').' (core) has finished',
-        },
-      },
-
-      {
-        -logic_name => 'NotifyVariation',
-        -module     => 'Bio::EnsEMBL::Pipeline::Production::EmailSummaryVariation',
-        -parameters => {
-          email   => $self->o('email'),
-          subject => $self->o('pipeline_name').' (variation) has finished',
+          subject => $self->o('pipeline_name').' has finished',
         },
       }
 
@@ -232,8 +227,10 @@ sub pipeline_wide_parameters {
     return {
         %{ $self->SUPER::pipeline_wide_parameters() },  # inherit other stuff from the base class
         release => $self->o('release'),
+        bin_count => $self->o('bin_count'),
+        max_run => $self->o('max_run'),
         species => $self->o('species'),
-        species => $self->o('division'),
+        division => $self->o('division'),
     };
 }
 

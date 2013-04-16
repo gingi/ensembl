@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -101,6 +101,7 @@ use Bio::EnsEMBL::CircularSlice;
 use Bio::EnsEMBL::Mapper;
 use Bio::EnsEMBL::LRGSlice;
 use Bio::EnsEMBL::Utils::Exception qw(throw deprecate warning stack_trace_dump);
+use Bio::EnsEMBL::ProjectionSegment;
 use Scalar::Util qw/looks_like_number/;
 
 @ISA = ('Bio::EnsEMBL::DBSQL::BaseAdaptor');
@@ -300,9 +301,9 @@ sub fetch_by_region {
             
       if($syn_sql_sth->fetch){
         $syn_sql_sth->finish;
-        if (not defined($cs)) {
+        if ((not defined($cs)) || ($cs->name eq $new_coord_system)) {
             return $self->fetch_by_region($new_coord_system, $new_name, $start, $end, $strand, $new_version, $no_fuzz);
-        } elsif ($cs->dbID != $new_coord_system) {
+        } elsif ($cs->name ne $new_coord_system) {
             warning("Searched for a known feature on coordinate system: ".$cs->dbID." but found it on: ".$new_coord_system.
             "\n No result returned, consider searching without coordinate system or use toplevel.");
             return;
@@ -465,6 +466,10 @@ sub fetch_by_region {
                 Suppress warnings from this method
   Arg[3]      : boolean $no_fuzz
                 Stop fuzzy matching of sequence regions from occuring
+  Arg[4]      : boolean $ucsc
+                If we are unsuccessful at retriving a location retry taking any 
+                possible chr prefix into account e.g. chrX and X are treated as
+                equivalents
   Example     : my $slice = $sa->fetch_by_toplevel_location('X:1-10000')
                 my $slice = $sa->fetch_by_toplevel_location('X:1-10000:-1')
   Description : Converts an Ensembl location/region into the sequence region
@@ -481,8 +486,8 @@ sub fetch_by_region {
 =cut
 
 sub fetch_by_toplevel_location {
-  my ($self, $location, $no_warnings, $no_fuzz) = @_;
-  return $self->fetch_by_location($location, 'toplevel', undef, $no_warnings, $no_fuzz);
+  my ($self, $location, $no_warnings, $no_fuzz, $ucsc) = @_;
+  return $self->fetch_by_location($location, 'toplevel', undef, $no_warnings, $no_fuzz, $ucsc);
 }
 
 =head2 fetch_by_location
@@ -494,7 +499,7 @@ sub fetch_by_toplevel_location {
                 specification as a +/- or 1/-1. 
                 
                 Location names must be separated by a C<:>. All others can be
-                separated by C<..>, C<:> or C<->.
+                separated by C<..>, C<:>, C<_> or C<->.
   Arg[2]      : String $coord_system_name
                 The coordinate system to retrieve
   Arg[3]      : String $coord_system_version
@@ -503,6 +508,10 @@ sub fetch_by_toplevel_location {
                 Suppress warnings from this method
   Arg[5]      : boolean $no_fuzz
                 Stop fuzzy matching of sequence regions from occuring
+  Arg[6]      : boolean $ucsc
+                If we are unsuccessful at retriving a location retry taking any 
+                possible chr prefix into account e.g. chrX and X are treated as
+                equivalents
   Example     : my $slice = $sa->fetch_by_toplevel_location('X:1-10000')
                 my $slice = $sa->fetch_by_toplevel_location('X:1-10000:-1')
   Description : Converts an Ensembl location/region into the sequence region
@@ -519,7 +528,7 @@ sub fetch_by_toplevel_location {
 =cut
 
 sub fetch_by_location {
-  my ($self, $location, $coord_system_name, $coord_system_version, $no_warnings, $no_fuzz) = @_;
+  my ($self, $location, $coord_system_name, $coord_system_version, $no_warnings, $no_fuzz, $ucsc) = @_;
   
   throw "No coordinate system name specified" unless $coord_system_name;
   
@@ -534,7 +543,22 @@ sub fetch_by_location {
   }
   
   my $slice = $self->fetch_by_region($coord_system_name, $seq_region_name, $start, $end, $strand, $coord_system_version, $no_fuzz);
-  return unless $slice;
+  if(! defined $slice) {
+    if($ucsc) {
+      my $ucsc_seq_region_name = $seq_region_name;
+      $ucsc_seq_region_name =~ s/^chr//;
+      if($ucsc_seq_region_name ne $seq_region_name) {
+        $slice = $self->fetch_by_region($coord_system_name, $ucsc_seq_region_name,  $start, $end, $strand, $coord_system_version, $no_fuzz);
+        return if ! defined $slice; #if we had no slice still then bail
+      }
+      else {
+        return; #If it was not different then we didn't have the prefix so just return (same bail as before)
+      }
+    }
+    else {
+      return; #We didn't have a slice and no UCSC specifics are being triggered
+    }
+  }
   
   my $srl = $slice->seq_region_length();
   my $name = $slice->seq_region_name();
@@ -558,7 +582,7 @@ sub fetch_by_location {
                 specification as a +/- or 1/-1. 
                 
                 Location names must be separated by a C<:>. All others can be
-                separated by C<..>, C<:> or C<->.
+                separated by C<..>, C<:> C<_>, or C<->.
   Arg[2]      : boolean $no_warnings
                 Suppress warnings from this method
   Arg[3]      : boolean $no_errors
@@ -576,10 +600,10 @@ sub parse_location_to_values {
   
   throw 'You must specify a location' if ! $location;
   
-  #cleanup any nomenclature like 1_000 or 1 000 or 1,000
-  my $number_seps_regex = qr/\s+|,|_/;
-  my $separator_regex = qr/(?:-|[.]{2}|\:)?/;
-  my $number_regex = qr/[0-9,_ E]+/xms;
+  #cleanup any nomenclature like 1 000 or 1,000
+  my $number_seps_regex = qr/\s+|,/;
+  my $separator_regex = qr/(?:-|[.]{2}|\:|_)?/;
+  my $number_regex = qr/[0-9, E]+/xms;
   my $strand_regex = qr/[+-1]|-1/xms;
   
   my $regex = qr/^((?:\w|\.|_|-)+) \s* :? \s* ($number_regex)? $separator_regex ($number_regex)? $separator_regex ($strand_regex)? $/xms;
@@ -1102,6 +1126,56 @@ sub fetch_all {
   return \@out;
 }
 
+
+=head2 fetch_all_karyotype
+  Example    : my $top = $slice_adptor->fetch_all_karyotype()
+  Description: returns the list of all slices which are part of the karyotype
+  Returntype : listref of Bio::EnsEMBL::Slices
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub fetch_all_karyotype {
+  my $self = shift;
+
+  my $csa       = $self->db->get_CoordSystemAdaptor();
+
+  my $sth = 
+    $self->prepare( 'SELECT sr.seq_region_id, sr.name, '
+                      . 'sr.length, sr.coord_system_id '
+                      . 'FROM seq_region sr, seq_region_attrib sra, '
+                      . 'attrib_type at, coord_system cs '
+                      . 'WHERE at.code = "karyotype_rank" '
+                      . 'AND at.attrib_type_id = sra.attrib_type_id '
+                      . 'AND sra.seq_region_id = sr.seq_region_id '
+                      . 'AND sr.coord_system_id = cs.coord_system_id '
+                      . 'AND cs.species_id = ?' );
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
+  $sth->execute();
+  my ( $seq_region_id, $name, $length, $cs_id );
+  $sth->bind_columns( \( $seq_region_id, $name, $length, $cs_id ) );
+
+  my @out;
+  while($sth->fetch()) {
+    my $cs = $csa->fetch_by_dbID($cs_id);
+
+    my $slice = Bio::EnsEMBL::Slice->new_fast({
+          'start'           => 1,
+          'end'             => $length,
+          'strand'          => 1,
+         'seq_region_name'  => $name,
+         'seq_region_length'=> $length,
+         'coord_system'     => $cs,
+         'adaptor'          => $self});
+
+    push @out, $slice;
+
+  }
+
+  return \@out;
+}
+
 =head2 is_toplevel
   Arg        : int seq_region_id 
   Example    : my $top = $slice_adptor->is_toplevel($seq_region_id)
@@ -1618,6 +1692,9 @@ sub fetch_by_misc_feature_attribute {
 =head2 fetch_normalized_slice_projection
 
   Arg [1]    : Bio::EnsEMBL::Slice $slice
+  Arg [2]    : boolean $filter_projections 
+               Optionally filter the projections to remove anything 
+               which is the same sequence region as the given slice
   Example    :  ( optional )
   Description: gives back a project style result. The returned slices 
                represent the areas to which there are symlinks for the 
@@ -1634,6 +1711,7 @@ sub fetch_by_misc_feature_attribute {
 sub fetch_normalized_slice_projection {
   my $self = shift;
   my $slice = shift;
+  my $filter_projections = shift;
 
   my $slice_seq_region_id = $self->get_seq_region_id( $slice );
 
@@ -1774,11 +1852,45 @@ sub fetch_normalized_slice_projection {
     }
     $rel_start += $coord->length();
   }
-
+  
+  if($filter_projections) {
+    return $self->_filter_Slice_projections($slice, \@out);
+  }
   return \@out;
 }
 
+=head2 _filter_Slice_projections
 
+    Arg [1]     : Bio::EnsEMBL::Slice The slice the projections were made from
+    Arg [2]     : Array The projections which were fetched from the previous slice
+    Description : Removes any projections which occur within the same sequence 
+                  region as the given Slice object
+    Returntype  : ArrayRef Bio::EnsEMBL::ProjectionSegment; Returns an array
+                  of projected segments
+=cut
+
+sub _filter_Slice_projections {
+  my ($self, $slice, $projections) = @_;
+  my @proj = @{ $projections };
+  if ( !@proj ) {
+    throw('Was not given any projections to filter. Database may have incorrect assembly_exception information loaded');
+  }
+  
+  # Want to get features on the FULL original slice as well as any
+  # symlinked slices.
+  
+  # Filter out partial slices from projection that are on same
+  # seq_region as original slice.
+
+  my $sr_id = $slice->get_seq_region_id();
+
+  @proj = grep { $_->to_Slice->get_seq_region_id() != $sr_id } @proj;
+
+  my $segment = bless( [ 1, $slice->length(), $slice ],
+                       'Bio::EnsEMBL::ProjectionSegment' );
+  push( @proj, $segment );
+  return \@proj;
+}
 
 
 =head2 store

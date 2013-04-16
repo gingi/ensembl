@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -94,7 +94,7 @@ sub dumpMercatorFiles {
 
   my $dfa = $self->compara_dba->get_DnaFragAdaptor;
   my $gdba = $self->compara_dba->get_GenomeDBAdaptor;
-  my $ma = $self->compara_dba->get_MemberAdaptor;
+  my $ma = $self->compara_dba->get_SeqMemberAdaptor;
 
   my $max_gap = $self->param('maximum_gap');
 

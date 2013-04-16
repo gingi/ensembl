@@ -67,16 +67,26 @@ $dbh->do('ALTER TABLE closure DISABLE KEYS');
 $dbh->do(
   q(
 INSERT INTO closure
-  (child_term_id, parent_term_id, distance, subparent_term_id)
-SELECT  term_id, term_id, 0, NULL
+  (child_term_id, parent_term_id, distance, subparent_term_id, ontology_id)
+SELECT  term_id, term_id, 0, NULL, ontology_id
 FROM    term
 ) );
 
 $dbh->do(
   q(
-INSERT INTO closure
-  (child_term_id, parent_term_id, distance, subparent_term_id)
-SELECT DISTINCT child_term_id, parent_term_id, 1, child_term_id
+INSERT IGNORE INTO closure
+  (child_term_id, parent_term_id, distance, subparent_term_id, ontology_id)
+SELECT term_id, term_id, 0, NULL, r.ontology_id
+FROM   term t, relation r
+WHERE  term_id = child_term_id
+AND    t.ontology_id != r.ontology_id
+) );
+
+$dbh->do(
+  q(
+INSERT IGNORE INTO closure
+  (child_term_id, parent_term_id, distance, subparent_term_id, ontology_id)
+SELECT DISTINCT child_term_id, parent_term_id, 1, child_term_id, ontology_id
 FROM    relation r,
         relation_type rt
 WHERE rt.name IN (
@@ -93,19 +103,21 @@ SELECT DISTINCT
         child.child_term_id,
         parent.parent_term_id,
         child.distance + 1,
-        parent.child_term_id
+        parent.child_term_id,
+        child.ontology_id
 FROM    closure child
   JOIN  closure parent
     ON  (parent.child_term_id = child.parent_term_id)
 WHERE   child.distance  = ?
   AND   parent.distance = 1
+  AND   child.ontology_id = parent.ontology_id
 ) );
 
 my $insert_sth = $dbh->prepare(
   q(
 REPLACE INTO closure
-  (child_term_id, parent_term_id, distance, subparent_term_id)
-VALUES (?, ?, ?, ?)
+  (child_term_id, parent_term_id, distance, subparent_term_id, ontology_id)
+VALUES (?, ?, ?, ?, ?)
 ) );
 
 my ($oldsize) =
@@ -142,4 +154,4 @@ $dbh->do('OPTIMIZE TABLE closure');
 
 $dbh->disconnect();
 
-# $Id: compute_closure.pl,v 1.11 2012-11-01 10:23:49 ady Exp $
+# $Id: compute_closure.pl,v 1.12 2013-02-14 14:28:48 mr6 Exp $

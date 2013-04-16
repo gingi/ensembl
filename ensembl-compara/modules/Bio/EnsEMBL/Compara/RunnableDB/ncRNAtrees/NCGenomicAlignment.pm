@@ -257,7 +257,6 @@ sub run_prank {
     my $input_fasta = $self->param('input_fasta');
     my $tree_file = $self->param('raxml_output');
 #    $self->throw("$tree_file does not exist\n") unless (-e $tree_file);
-    print STDERR "Tree file is not given. Prank will generate its own tree (and we have ", $self->param('tag_gene_count'), " genes)\n" if ($self->debug);
 
     ## FIXME -- The alignment has to be passed to NCGenomicTree. We have several options:
     # 1.- Store the alignments in the database
@@ -343,7 +342,7 @@ sub store_fasta_alignment {
         $sequence_adaptor->store_other_sequence($member, $member->sequence, 'seq_with_flanking');
     }
 
-    $self->compara_dba->get_AlignedMemberAdaptor->store($aln);
+    $self->compara_dba->get_GeneAlignAdaptor->store($aln);
 
     $self->param('alignment_id', $aln->dbID);
     return;

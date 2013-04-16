@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -320,6 +320,26 @@ sub _get_individual_population_hash {
 	#}
 	#
 	return \%ip_hash;
+}
+
+sub _get_sample_name_by_dbID {
+  my $self = shift;
+  my $dbID = shift;
+  
+  my $sth = $self->dbc->prepare(qq{
+    SELECT name
+    FROM sample
+    WHERE sample_id = ?
+  });
+  $sth->bind_param(1,$dbID,SQL_INTEGER);
+  $sth->execute();
+  
+  my $sample_name;
+  $sth->bind_columns(\$sample_name);
+  $sth->fetch;
+  $sth->finish;
+  
+  return $sample_name;
 }
 
 1;

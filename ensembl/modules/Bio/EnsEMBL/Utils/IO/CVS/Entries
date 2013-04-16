@@ -1,7 +1,7 @@
-/FASTASerializer.pm/1.17/Tue Apr 16 20:37:27 2013//Tbranch-ensembl-70
-/FeatureSerializer.pm/1.2/Tue Apr 16 20:39:21 2013//Tbranch-ensembl-70
-/GFFParser.pm/1.7/Tue Apr 16 20:39:21 2013//Tbranch-ensembl-70
-/GFFSerializer.pm/1.9/Tue Apr 16 20:39:21 2013//Tbranch-ensembl-70
-/ReportSerializer.pm/1.5/Tue Apr 16 20:39:21 2013//Tbranch-ensembl-70
-/Serializer.pm/1.8/Tue Apr 16 20:39:21 2013//Tbranch-ensembl-70
+/FASTASerializer.pm/1.18/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/FeatureSerializer.pm/1.3/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/GFFParser.pm/1.8/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/GFFSerializer.pm/1.11/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/ReportSerializer.pm/1.6/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
+/Serializer.pm/1.9/Tue Apr 16 20:39:48 2013//Tbranch-ensembl-71
 D

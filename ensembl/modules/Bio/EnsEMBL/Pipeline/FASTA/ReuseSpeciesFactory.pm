@@ -2,7 +2,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -39,6 +39,8 @@ Allowed parameters are:
 =item force_species - Specify species we want to redump even though 
                       our queries of production could say otherwise
 
+=item run_all - Do not check a thing. Schedule every species
+
 =back
 
 The registry should also have a DBAdaptor for the production schema 
@@ -70,12 +72,14 @@ sub param_defaults {
     %{$self->SUPER::param_defaults()},
     
     force_species => [],
+    run_all => 1,
   };
   return $p;
 }
 
 sub fetch_input {
   my ($self) = @_;
+  $self->_add_force_species_to_species();
   $self->SUPER::fetch_input();
   $self->throw("Need to define a release parameter") unless $self->param('release');
   
@@ -123,14 +127,13 @@ join changelog_species cs using (changelog_id)
 join species s using (species_id)
 where c.release_id = ?
 and (c.assembly = ? or c.repeat_masking = ?)
-and c.team = ?
 and c.status = ?
-and production_name = ?
+and s.production_name = ?
 SQL
   my $production_name  = $dba->get_MetaContainer()->get_production_name();
   $dba->dbc()->disconnect_if_idle();
   my $release = $self->param('release');
-  my $params = [ $release, 'Y', 'Y', 'Genebuild', 'handed_over', $production_name ];
+  my $params = [ $release, 'Y', 'Y', 'handed_over', $production_name ];
   my $prod_dba = $self->get_production_DBAdaptor();
   my $result = $prod_dba->dbc()->sql_helper()->execute_single_result(-SQL => $sql, -PARAMS => $params);
   $prod_dba->dbc()->disconnect_if_idle();
@@ -139,6 +142,7 @@ SQL
 
 sub force_run {
   my ($self, $dba) = @_;
+  return 1 if $self->param('run_all');
   my $new = Bio::EnsEMBL::Registry->get_alias($dba->species());
   return ($self->param('force_species_lookup')->{$new}) ? 1 : 0;
 }

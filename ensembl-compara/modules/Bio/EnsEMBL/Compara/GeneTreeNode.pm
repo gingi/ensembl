@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -41,7 +41,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.15 $
+$Revision: 1.18 $
 
 =head1 APPENDIX
 
@@ -100,7 +100,7 @@ sub root {
 sub release_tree {
     my $self = shift;
 
-    if (defined $self->tree) {
+    if (defined $self->{'_tree'}) {
         delete $self->{'_tree'}->{'_root'};
         delete $self->{'_tree'};
     }
@@ -126,8 +126,10 @@ sub get_leaf_by_Member {
 
   if($member->isa('Bio::EnsEMBL::Compara::GeneTreeNode')) {
     return $self->find_leaf_by_node_id($member->node_id);
-  } elsif ($member->isa('Bio::EnsEMBL::Compara::Member')) {
-    return $self->find_leaf_by_name($member->get_canonical_Member->stable_id);
+  } elsif ($member->isa('Bio::EnsEMBL::Compara::GeneMember')) {
+    return $self->find_leaf_by_name($member->get_canonical_SeqMember->stable_id);
+  } elsif ($member->isa('Bio::EnsEMBL::Compara::SeqMember')) {
+    return $self->find_leaf_by_name($member->gene_member->get_canonical_SeqMember->stable_id);
   } else {
     die "Need a Member object!";
   }

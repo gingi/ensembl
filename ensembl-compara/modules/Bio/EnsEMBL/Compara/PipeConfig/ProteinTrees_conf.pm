@@ -1,6 +1,6 @@
 =heada LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -47,7 +47,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.129 $
+$Revision: 1.146 $
 
 =head1 APPENDIX
 
@@ -60,6 +60,9 @@ package Bio::EnsEMBL::Compara::PipeConfig::ProteinTrees_conf;
 
 use strict;
 use warnings;
+
+use Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf;
+
 use base ('Bio::EnsEMBL::Compara::PipeConfig::ComparaGeneric_conf');
 
 
@@ -95,7 +98,6 @@ sub default_options {
         'treebreak_gene_count'      => 400,     # affects msa_chooser
         'mafft_gene_count'          => 200,     # affects msa_chooser
         'mafft_runtime'             => 7200,    # affects msa_chooser
-        'use_exon_boundaries'       => 0,       # affects 'mcoffee' and 'mcoffee_himem'
         'use_genomedb_id'           => 0,       # affects 'njtree_phyml' and 'ortho_tree'
         'species_tree_input_file'   => '',      # you can define your own species_tree for 'njtree_phyml' and 'ortho_tree'
 
@@ -107,9 +109,8 @@ sub default_options {
     # executable locations:
         #'wublastp_exe'              => '/usr/local/ensembl/bin/wublastp',
         #'hcluster_exe'              => '/software/ensembl/compara/hcluster/hcluster_sg',
-        #'mcoffee_exe'               => '/software/ensembl/compara/tcoffee-7.86b/t_coffee',
-        #'mafft_exe'                 => '/software/ensembl/compara/mafft-6.707/bin/mafft',
-        #'mafft_binaries'            => '/software/ensembl/compara/mafft-6.707/binaries',
+        #'mcoffee_home'              => '/software/ensembl/compara/tcoffee/Version_9.03.r1318/',
+        #'mafft_home'                => '/software/ensembl/compara/mafft-7.017/',
         #'sreformat_exe'             => '/usr/local/ensembl/bin/sreformat',
         #'treebest_exe'              => '/software/ensembl/compara/treebest.doubletracking',
         #'quicktree_exe'             => '/software/ensembl/compara/quicktree_1.1/bin/quicktree',
@@ -185,6 +186,10 @@ sub default_options {
 
 sub pipeline_create_commands {
     my ($self) = @_;
+
+    # If the pipeline should use genome_db_ids, the user MUST provide a species tree
+    die if $self->o('use_genomedb_id') and not $self->o('species_tree_input_file');
+
     return [
         @{$self->SUPER::pipeline_create_commands},  # here we inherit creation of database, hive tables and compara tables
 
@@ -213,14 +218,16 @@ sub pipeline_analyses {
                 '1->A'  => [ 'copy_table_factory', 'innodbise_table_factory' ],
                 'A->1'  => [ 'backbone_fire_species_list_prepare' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'backbone_fire_species_list_prepare',
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::Dummy',
             -flow_into  => {
-                '1->A'  => [ 'prepare_species_sets' ],
+                '1->A'  => [ 'create_reuse_ss' ],
                 'A->1'  => [ 'backbone_fire_genome_load' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'backbone_fire_genome_load',
@@ -313,6 +320,7 @@ sub pipeline_analyses {
 
         {   -logic_name => 'backbone_pipeline_finished',
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::Dummy',
+            -meadow_type    => 'LOCAL',
         },
 
 # ---------------------------------------------[copy tables from master]-----------------------------------------------------------------
@@ -320,24 +328,25 @@ sub pipeline_analyses {
         {   -logic_name => 'copy_table_factory',
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::JobFactory',
             -parameters => {
-                'db_conn'      => $self->o('master_db'),
                 'inputlist'    => [ 'ncbi_taxa_node', 'ncbi_taxa_name', 'method_link', 'method_link_species_set', 'species_set' ],
                 'column_names' => [ 'table' ],
-                'input_id'     => { 'src_db_conn' => '#db_conn#', 'table' => '#table#' },
                 'fan_branch_code' => 2,
             },
             -flow_into => {
                 2 => [ 'copy_table'  ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name    => 'copy_table',
             -module        => 'Bio::EnsEMBL::Hive::RunnableDB::MySQLTransfer',
             -parameters    => {
+                'src_db_conn'   => $self->o('master_db'),
                 'mode'          => 'overwrite',
                 'filter_cmd'    => 'sed "s/ENGINE=MyISAM/ENGINE=InnoDB/"',
             },
-            -hive_capacity => -1,
+            -analysis_capacity  => 1,
+            -meadow_type    => 'LOCAL',
         },
 
 # ---------------------------------------------[turn all tables except 'genome_db' to InnoDB]---------------------------------------------
@@ -351,6 +360,7 @@ sub pipeline_analyses {
             -flow_into => {
                 2 => [ 'innodbise_table'  ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name    => 'innodbise_table',
@@ -358,28 +368,44 @@ sub pipeline_analyses {
             -parameters    => {
                 'sql'         => 'ALTER TABLE #table_name# ENGINE=InnoDB',
             },
-            -batch_size     => 100,
-            -hive_capacity => -1,
+            -analysis_capacity => 1,
+            -meadow_type    => 'LOCAL',
         },
 
 # ---------------------------------------------[generate two empty species_sets for reuse / non-reuse (to be filled in at a later stage)]---------
 
-        {   -logic_name => 'prepare_species_sets',
-            -module     => 'Bio::EnsEMBL::Hive::RunnableDB::SqlCmd',
+        {   -logic_name => 'create_reuse_ss',
+            -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ObjectStore',
             -parameters => {
-                'sql' => [
-                    # Creates a new species set id
-                    'INSERT INTO species_set VALUES ()',
-                    'DELETE FROM species_set WHERE species_set_id=#_insert_id_0#',
-                    'INSERT INTO meta (meta_key,meta_value) VALUES ("reuse_ss_id", #_insert_id_0#)',
-                    # Creates a new species set id
-                    'INSERT INTO species_set VALUES ()',
-                    'DELETE FROM species_set WHERE species_set_id=#_insert_id_3#',
-                    'INSERT INTO meta (meta_key,meta_value) VALUES ("nonreuse_ss_id", #_insert_id_3#)',
+                'object_type'   => 'SpeciesSet',
+                'arglist'       => [
+                    -genome_dbs => [],
                 ],
             },
-            -hive_capacity => -1,
-            -flow_into => [ 'load_genomedb_factory' ],
+            -flow_into => {
+                1 => [ 'create_nonreuse_ss' ],
+                2 => {
+                    'mysql:////meta'    => { 'meta_key' => 'reuse_ss_id', 'meta_value' => '#dbID#' },
+                },
+            },
+            -meadow_type    => 'LOCAL',
+        },
+
+        {   -logic_name => 'create_nonreuse_ss',
+            -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ObjectStore',
+            -parameters => {
+                'object_type'   => 'SpeciesSet',
+                'arglist'       => [
+                    -genome_dbs => [],
+                ],
+            },
+            -flow_into => {
+                1 => [ 'load_genomedb_factory' ],
+                2 => {
+                    'mysql:////meta'    => { 'meta_key' => 'nonreuse_ss_id', 'meta_value' => '#dbID#' },
+                },
+            },
+            -meadow_type    => 'LOCAL',
         },
 
 # ---------------------------------------------[load GenomeDB entries from master+cores]---------------------------------------------
@@ -395,11 +421,11 @@ sub pipeline_analyses {
 
                 'fan_branch_code'       => 2,
             },
-            -hive_capacity => -1,
             -flow_into => {
-                '2->A' => [ 'load_genomedb' ],
+                '2->A' => [ 'load_genomedb', 'check_reusability' ],
                 'A->1' => [ 'finish_species_sets' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'load_genomedb',
@@ -409,11 +435,8 @@ sub pipeline_analyses {
                 'db_version'    => $self->o('release'),
                 'registry_files'    => $self->o('curr_file_sources_locs'),
             },
-            -batch_size => 500,
-            -hive_capacity => -1,
-            -flow_into => {
-                1 => [ 'check_reusability' ],
-            },
+            -analysis_capacity => 1,
+            -meadow_type    => 'LOCAL',
         },
 
 # ---------------------------------------------[filter genome_db entries into reusable and non-reusable ones]------------------------
@@ -429,6 +452,7 @@ sub pipeline_analyses {
             },
             -hive_capacity => 10,
             -rc_name => '500Mb_job',
+            -wait_for => [ 'load_genomedb_factory', 'load_genomedb' ],
             -flow_into => {
                 2 => {
                     'mysql:////species_set' => { 'genome_db_id' => '#genome_db_id#', 'species_set_id' => '#reuse_ss_id#' },
@@ -452,12 +476,14 @@ sub pipeline_analyses {
                     'INSERT INTO meta (meta_key,meta_value) SELECT "nonreuse_ss_csv", IFNULL(GROUP_CONCAT(genome_db_id), "-1") FROM species_set WHERE species_set_id=#nonreuse_ss_id#',
                     # Non species-set related query. Speeds up the split-genes search
                     'ALTER TABLE member ADD KEY gene_list_index (source_name, taxon_id, chr_name, chr_strand, chr_start)',
+                    # Counts the number of species
+                    'INSERT INTO meta (meta_key,meta_value) SELECT "species_count", COUNT(*) FROM genome_db',
                 ],
             },
-            -hive_capacity => -1,
             -flow_into => {
                 1 => [ 'make_species_tree' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
 # ---------------------------------------------[load species tree]-------------------------------------------------------------------
@@ -468,7 +494,6 @@ sub pipeline_analyses {
                 'species_tree_input_file' => $self->o('species_tree_input_file'),   # empty by default, but if nonempty this file will be used instead of tree generation from genome_db
                 'mlss_id'                 => $self->o('mlss_id'),
             },
-            -hive_capacity => -1,
             -flow_into  => {
                 3 => { 'mysql:////method_link_species_set_tag' => { 'method_link_species_set_id' => '#mlss_id#', 'tag' => 'species_tree', 'value' => '#species_tree_string#' } },
             },
@@ -482,11 +507,11 @@ sub pipeline_analyses {
                 'inputquery'        => 'SELECT genome_db_id, name FROM species_set JOIN genome_db USING (genome_db_id) WHERE species_set_id = #reuse_ss_id#',
                 'fan_branch_code'   => 2,
             },
-            -hive_capacity => -1,
             -flow_into => {
                 '2->A' => [ 'sequence_table_reuse' ],
                 'A->1' => [ 'genome_loadfresh_factory' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
 
@@ -523,13 +548,14 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::JobFactory',
             -parameters => {
                             'db_conn'    => $self->o('reuse_db'),
-                            'inputquery' => 'SELECT s.member_id, s.seq_type, s.length, s.sequence FROM other_member_sequence s JOIN member USING (member_id) WHERE genome_db_id = #genome_db_id#',
+                            'inputquery' => 'SELECT s.member_id, s.seq_type, s.length, s.sequence FROM other_member_sequence s JOIN member USING (member_id) WHERE genome_db_id = #genome_db_id# AND seq_type IN ("cds", "exon_bounded") AND member_id <= '.$self->o('protein_members_range'),
                             'fan_branch_code' => 2,
             },
             -hive_capacity => $self->o('reuse_capacity'),
             -rc_name => '1Gb_job',
             -flow_into => {
                 2 => [ 'mysql:////other_member_sequence' ],
+                1 => [ 'hc_factory_members_per_genome' ],
             },
         },
 
@@ -542,11 +568,12 @@ sub pipeline_analyses {
                 'inputquery'        => 'SELECT genome_db_id, name FROM species_set JOIN genome_db USING (genome_db_id) WHERE species_set_id = #nonreuse_ss_id# AND locator LIKE "Bio::EnsEMBL::DBSQL::DBAdaptor/%"',
                 'fan_branch_code'   => 2,
             },
-            -hive_capacity => -1,
             -flow_into => {
-                2 => [ 'load_fresh_members' ],
-                1 => [ 'genome_loadfresh_fromfile_factory' ],
+                '2->A' => [ 'load_fresh_members' ],
+                '1->A' => [ 'genome_loadfresh_fromfile_factory' ],
+                'A->1' => [ 'hc_factory_members_globally' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'genome_loadfresh_fromfile_factory',
@@ -555,19 +582,20 @@ sub pipeline_analyses {
                 'inputquery'        => 'SELECT genome_db_id, name FROM species_set JOIN genome_db USING (genome_db_id) WHERE species_set_id = #nonreuse_ss_id# AND locator NOT LIKE "Bio::EnsEMBL::DBSQL::DBAdaptor/%"',
                 'fan_branch_code'   => 2,
             },
-            -hive_capacity => -1,
             -flow_into => {
                 2 => [ 'load_fresh_members_fromfile' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'load_fresh_members',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::LoadMembers',
             -parameters => {
                 'store_related_pep_sequences' => 1,
+                'allow_pyrrolysine'             => 0,
             },
-            -hive_capacity => -1,
             -rc_name => '2Gb_job',
+            -flow_into => [ 'hc_factory_members_per_genome' ],
         },
 
         {   -logic_name => 'load_fresh_members_fromfile',
@@ -575,8 +603,8 @@ sub pipeline_analyses {
             -parameters => {
                 -need_cds_seq   => 1,
             },
-            -hive_capacity => -1,
             -rc_name => '2Gb_job',
+            -flow_into => [ 'hc_factory_members_per_genome' ],
         },
 
 
@@ -588,12 +616,12 @@ sub pipeline_analyses {
                 'inputquery'        => 'SELECT genome_db_id, name FROM species_set JOIN genome_db USING (genome_db_id) WHERE species_set_id = #reuse_ss_id#',
                 'fan_branch_code'   => 2,
             },
-            -hive_capacity => -1,
             -flow_into => {
                 '2->A' => [ 'paf_table_reuse' ],
                 '1->A' => [ 'paf_noreuse_factory' ],
                 'A->1' => [ 'blastdb_factory' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'paf_noreuse_factory',
@@ -602,10 +630,10 @@ sub pipeline_analyses {
                 'inputquery'        => 'SELECT genome_db_id, name FROM species_set JOIN genome_db USING (genome_db_id) WHERE species_set_id = #nonreuse_ss_id#',
                 'fan_branch_code'   => 2,
             },
-            -hive_capacity => -1,
             -flow_into => {
                 2 => [ 'paf_create_empty_table' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'paf_table_reuse',
@@ -626,8 +654,8 @@ sub pipeline_analyses {
                             'ALTER TABLE peptide_align_feature_#name#_#genome_db_id# DISABLE KEYS',
                 ],
             },
-            -batch_size     =>  100,  # they can be really, really short
-            -hive_capacity  => -1,
+            -analysis_capacity => 1,
+            -meadow_type    => 'LOCAL',
         },
 
 #----------------------------------------------[classify canonical members based on HMM searches]-----------------------------------
@@ -692,7 +720,6 @@ sub pipeline_analyses {
                              'cluster_dir'        => $self->o('cluster_dir'),
                              'mlss_id'            => $self->o('mlss_id'),
                             },
-             -hive_capacity => -1,
              -rc_name => '8Gb_job',
              -flow_into => [ 'run_qc_tests' ],
             },
@@ -709,11 +736,11 @@ sub pipeline_analyses {
 
                 'fan_branch_code'       => 2,
             },
-            -rc_name       => '250Mb_job',
             -flow_into  => {
                 '2->A'  => [ 'dump_subset_create_blastdb' ],
                 'A->1'  => [ 'blast_species_factory' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'dump_subset_create_blastdb',
@@ -721,21 +748,22 @@ sub pipeline_analyses {
             -parameters => {
                 'fasta_dir'                 => $self->o('fasta_dir'),
             },
-            -batch_size    =>  20,  # they can be really, really short
-            -hive_capacity => -1,
+            -rc_name       => '250Mb_job',
+            -hive_capacity => $self->o('reuse_capacity'),
         },
 
         {   -logic_name => 'blast_species_factory',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ObjectFactory',
             -parameters => {
                 'call_list'             => [ 'compara_dba', 'get_GenomeDBAdaptor', 'fetch_all'],
-                'column_names2getters'  => { 'genome_db_id' => 'dbID' },
+                'column_names2getters'  => { 'genome_db_id' => 'dbID', 'name' => 'name' },
 
                 'fan_branch_code'       => 2,
             },
             -flow_into  => {
                 '2'  => [ 'blast_factory' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
 
@@ -747,7 +775,8 @@ sub pipeline_analyses {
             },
             -hive_capacity => $self->o('blast_factory_capacity'),
             -flow_into => {
-                2 => [ 'blastp_with_reuse' ],
+                'A->1' => [ 'hc_factory_pafs' ],
+                '2->A' => [ 'blastp_with_reuse' ],
             },
         },
 
@@ -780,6 +809,7 @@ sub pipeline_analyses {
                 '2->A' => [ 'hcluster_dump_input_per_genome' ],
                 'A->1' => [ 'hcluster_merge_factory' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'hcluster_dump_input_per_genome',
@@ -794,13 +824,13 @@ sub pipeline_analyses {
 
         {   -logic_name    => 'hcluster_merge_factory',
             -module         => 'Bio::EnsEMBL::Hive::RunnableDB::Dummy',
-            -hive_capacity => -1,
             -flow_into => {
                 '1->A' => {
                     'hcluster_merge_inputs' => [{'ext' => 'txt'}, {'ext' => 'cat'}],
                 },
                 'A->1' => [ 'hcluster_run' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name    => 'hcluster_merge_inputs',
@@ -809,7 +839,6 @@ sub pipeline_analyses {
                 'cluster_dir'   => $self->o('cluster_dir'),
                 'cmd'           => 'cat #cluster_dir#/*.hcluster.#ext# > #cluster_dir#/hcluster.#ext#',
             },
-            -hive_capacity => -1,
         },
 
         {   -logic_name    => 'hcluster_run',
@@ -820,7 +849,6 @@ sub pipeline_analyses {
                 'hcluster_exe'                  => $self->o('hcluster_exe'),
                 'cmd'                           => '#hcluster_exe# -m #clustering_max_gene_halfcount# -w 0 -s 0.34 -O -C #cluster_dir#/hcluster.cat -o #cluster_dir#/hcluster.out #cluster_dir#/hcluster.txt',
             },
-            -hive_capacity => -1,
             -flow_into => {
                 1 => [ 'hcluster_parse_output' ],
             },
@@ -834,7 +862,6 @@ sub pipeline_analyses {
                 'cluster_dir'               => $self->o('cluster_dir'),
                 'additional_clustersets'    => [qw(phyml-aa phyml-nt nj-dn nj-ds nj-mm)],
             },
-            -hive_capacity => -1,
             -rc_name => '2Gb_job',
             -flow_into => [ 'run_qc_tests' ],
         },
@@ -844,19 +871,16 @@ sub pipeline_analyses {
         {   -logic_name => 'run_qc_tests',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ObjectFactory',
             -parameters => {
-                'mlss_id'               => $self->o('mlss_id'),
-
                 'call_list'             => [ 'compara_dba', 'get_GenomeDBAdaptor', 'fetch_all'],
                 'column_names2getters'  => { 'genome_db_id' => 'dbID' },
-
-                'input_id'              => {'genome_db_id' => '#genome_db_id#'},
-
                 'fan_branch_code'       => 2,
             },
             -flow_into => {
-                2 => [ 'per_genome_qc' ],
-                1 => [ 'overall_qc' ],
+                '2->A' => [ 'per_genome_qc' ],
+                '1->A' => [ 'overall_qc' ],
+                'A->1' => [ 'clusterset_backup' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'overall_qc',
@@ -879,6 +903,16 @@ sub pipeline_analyses {
             -failed_job_tolerance => 0,
         },
 
+        {   -logic_name    => 'clusterset_backup',
+            -module        => 'Bio::EnsEMBL::Hive::RunnableDB::SqlCmd',
+            -parameters    => {
+                'sql'         => 'INSERT INTO protein_tree_backup (member_id, root_id) SELECT member_id, root_id FROM gene_tree_node WHERE member_id IS NOT NULL',
+            },
+            -analysis_capacity => 1,
+            -meadow_type    => 'LOCAL',
+        },
+
+
 # ---------------------------------------------[main tree fan]-------------------------------------------------------------
 
         {   -logic_name => 'cluster_factory',
@@ -888,8 +922,10 @@ sub pipeline_analyses {
                 'fan_branch_code'   => 2,
             },
             -flow_into  => {
-                '2' => [ 'msa_chooser' ],
+                '2->A' => [ 'msa_chooser' ],
+                'A->1' => [ 'hc_factory_global_trees' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'msa_chooser',
@@ -899,8 +935,8 @@ sub pipeline_analyses {
                 'mafft_gene_count'      => $self->o('mafft_gene_count'),
                 'mafft_runtime'         => $self->o('mafft_runtime'),
             },
-            -batch_size => 1000,
-            -hive_capacity => 500,
+            -batch_size => 50,
+            -hive_capacity => 100,
             -rc_name => '500Mb_job',
             -flow_into => {
                 '2->A' => [ 'mcoffee' ],
@@ -918,12 +954,13 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::MCoffee',
             -parameters => {
                 'method'                => 'cmcoffee',
-                'use_exon_boundaries'   => $self->o('use_exon_boundaries'),
-                'mcoffee_exe'           => $self->o('mcoffee_exe'),
+                'mcoffee_home'          => $self->o('mcoffee_home'),
+                'mafft_home'            => $self->o('mafft_home'),
             },
             -hive_capacity        => $self->o('mcoffee_capacity'),
             -rc_name => 'msa',
             -flow_into => {
+                1 => [ 'hc_factory_align' ],
                -1 => [ 'mcoffee_himem' ],  # MEMLIMIT
                -2 => [ 'mafft' ],
             },
@@ -932,13 +969,12 @@ sub pipeline_analyses {
         {   -logic_name => 'mafft',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::Mafft',
             -parameters => {
-                'use_exon_boundaries'       => $self->o('use_exon_boundaries'),
-                'mafft_exe'                 => $self->o('mafft_exe'),
-                'mafft_binaries'            => $self->o('mafft_binaries'),
+                'mafft_home'                 => $self->o('mafft_home'),
             },
             -hive_capacity        => $self->o('mcoffee_capacity'),
             -rc_name => 'msa',
             -flow_into => {
+                1 => [ 'hc_factory_align' ],
                -1 => [ 'mafft_himem' ],  # MEMLIMIT
             },
         },
@@ -947,13 +983,14 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::MCoffee',
             -parameters => {
                 'method'                => 'cmcoffee',
-                'use_exon_boundaries'   => $self->o('use_exon_boundaries'),
-                'mcoffee_exe'           => $self->o('mcoffee_exe'),
+                'mcoffee_home'          => $self->o('mcoffee_home'),
+                'mafft_home'            => $self->o('mafft_home'),
                 'escape_branch'         => -2,
             },
             -hive_capacity        => $self->o('mcoffee_capacity'),
             -rc_name => 'msa_himem',
             -flow_into => {
+                1 => [ 'hc_factory_align' ],
                -2 => [ 'mafft_himem' ],
             },
         },
@@ -961,12 +998,13 @@ sub pipeline_analyses {
         {   -logic_name => 'mafft_himem',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::Mafft',
             -parameters => {
-                'use_exon_boundaries'       => $self->o('use_exon_boundaries'),
-                'mafft_exe'                 => $self->o('mafft_exe'),
-                'mafft_binaries'            => $self->o('mafft_binaries'),
+                'mafft_home'                 => $self->o('mafft_home'),
             },
             -hive_capacity        => $self->o('mcoffee_capacity'),
             -rc_name => 'msa_himem',
+            -flow_into => {
+                1 => [ 'hc_factory_align' ],
+            },
         },
 
 # ---------------------------------------------[main tree creation loop]-------------------------------------------------------------
@@ -975,7 +1013,7 @@ sub pipeline_analyses {
             -hive_capacity  => $self->o('split_genes_capacity'),
             -rc_name        => '250Mb_job',
             -batch_size     => 20,
-            -flow_into      => [ 'njtree_phyml' ],
+            -flow_into      => [ 'njtree_phyml', 'build_HMM_aa', 'build_HMM_cds' ],
         },
 
         {   -logic_name => 'njtree_phyml',
@@ -992,8 +1030,14 @@ sub pipeline_analyses {
             -hive_capacity        => $self->o('njtree_phyml_capacity'),
             -rc_name => '2Gb_job',
             -flow_into => {
-                1 => [ 'ortho_tree', 'build_HMM_aa', 'build_HMM_cds', 'ktreedist' ],
-                2 => [ 'ortho_tree_annot' ],
+                '1->A' => {
+                    'hc_factory_align' => {'gene_tree_id' => '#gene_tree_id#', 'post_treebest' => 1},
+                    'hc_factory_trees' => undef,
+                },
+                'A->1' => [ 'ortho_tree' ],
+                 1     => [ 'ktreedist' ],
+                '2->B' => [ 'hc_factory_trees' ],
+                'B->2' => [ 'ortho_tree_annot' ],
             }
         },
 
@@ -1006,11 +1050,11 @@ sub pipeline_analyses {
             },
             -hive_capacity      => $self->o('ortho_tree_capacity'),
             -rc_name => '500Mb_job',
+            -flow_into  => [ 'hc_factory_tree_attributes', 'hc_factory_homologies' ],
         },
 
         {   -logic_name    => 'ktreedist',
             -module        => 'Bio::EnsEMBL::Compara::RunnableDB::GeneTrees::Ktreedist',
-            -hive_capacity => -1,
             -parameters    => {
                                'treebest_exe'  => $self->o('treebest_exe'),
                                'ktreedist_exe' => $self->o('ktreedist_exe'),
@@ -1029,6 +1073,7 @@ sub pipeline_analyses {
             },
             -hive_capacity        => $self->o('ortho_tree_annot_capacity'),
             -rc_name => '500Mb_job',
+            -flow_into  => [ 'hc_factory_tree_attributes' ],
         },
 
         {   -logic_name => 'build_HMM_aa',
@@ -1039,6 +1084,7 @@ sub pipeline_analyses {
             },
             -hive_capacity        => $self->o('build_hmm_capacity'),
             -batch_size           => 10,
+            -priority             => -10,
             -rc_name => '250Mb_job',
         },
 
@@ -1051,6 +1097,7 @@ sub pipeline_analyses {
             },
             -hive_capacity        => $self->o('build_hmm_capacity'),
             -batch_size           => 10,
+            -priority             => -10,
             -rc_name => '500Mb_job',
         },
 
@@ -1079,10 +1126,22 @@ sub pipeline_analyses {
             -hive_capacity  => $self->o('other_paralogs_capacity'),
             -rc_name        => '250Mb_job',
             -flow_into => {
-                '2->A' => [ 'mafft' ],
+                '2->A' => [ 'tree_backup' ],
                 'A->2' => [ 'split_genes' ],
             },
         },
+
+        {   -logic_name    => 'tree_backup',
+            -module        => 'Bio::EnsEMBL::Hive::RunnableDB::SqlCmd',
+            -parameters    => {
+                'sql'         => 'INSERT INTO protein_tree_backup (member_id, root_id) SELECT member_id, root_id FROM gene_tree_node WHERE member_id IS NOT NULL AND root_id = #gene_tree_id#',
+            },
+            -analysis_capacity => 1,
+            -meadow_type    => 'LOCAL',
+            -flow_into      => [ 'mafft' ],
+        },
+
+
 
 # ---------------------------------------------[homology step]-----------------------------------------------------------------------
 
@@ -1093,10 +1152,10 @@ sub pipeline_analyses {
                 'taxlevels'             => $self->o('taxlevels'),
                 'filter_high_coverage'  => $self->o('filter_high_coverage'),
             },
-            -hive_capacity => -1,
             -flow_into => {
                 2 => [ 'mlss_factory' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'mlss_factory',
@@ -1104,10 +1163,10 @@ sub pipeline_analyses {
             -parameters => {
                 'method_link_types'  => ['ENSEMBL_ORTHOLOGUES', 'ENSEMBL_PARALOGUES'],
             },
-            -hive_capacity => -1,
             -flow_into => {
                 2 => [ 'homology_factory' ],
             },
+            -meadow_type    => 'LOCAL',
         },
 
         {   -logic_name => 'homology_factory',
@@ -1134,6 +1193,18 @@ sub pipeline_analyses {
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::Threshold_on_dS',
             -hive_capacity => $self->o('homology_dNdS_capacity'),
         },
+
+
+# --------------------------------------------- [health-checks] -----------------------------------------------------------------------
+
+        @{Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf::analysis_members_per_genome($self)},
+        @{Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf::analysis_members_globally($self)},
+        @{Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf::analysis_pafs($self)},
+        @{Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf::analysis_alignment($self)},
+        @{Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf::analysis_tree_structure($self)},
+        @{Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf::analysis_tree_attr($self)},
+        @{Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf::analysis_homologies($self)},
+        @{Bio::EnsEMBL::Compara::PipeConfig::GeneTreeHealthChecks_conf::analysis_tree_globally($self)},
 
     ];
 }

@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -79,8 +79,6 @@ sub fetch_input {
 
     if (my $alignment_id = $self->param('alignment_id')) {
         $self->_load_and_dump_alignment();
-        # $self->param('aln_fasta') and/or $self->param('aln_file') are now set
-#        $self->param('input_aln', $self->_load_and_dump_alignment());
         return;
     }
     if (my $input_aln = $self->_dumpMultipleAlignmentStructToWorkdir($nc_tree) ) {
@@ -157,12 +155,10 @@ sub _run_fasttree {
     $cmd .= " $aln_file";
     $cmd .= " > $fasttree_output";
 
-    print STDERR "$cmd\n" if ($self->debug);
-    $self->compara_dba->dbc->disconnect_when_inactive(1);
-    unless(system("$cmd") == 0) {
-        $self->throw("error running FastTree\n$cmd\n");
+    my $runCmd = $self->run_command($cmd);
+    if ($runCmd->exit_code) {
+        $self->throw("error running parsimonator\n$cmd\n");
     }
-    $self->compara_dba->dbc->disconnect_when_inactive(0);
 
     $self->_store_newick_into_nc_tree_tag_string($tag, $fasttree_output);
 
@@ -333,8 +329,15 @@ sub _load_and_dump_alignment {
     my $aln_file = $file_root . ".aln";
     open my $outaln, ">", "$aln_file" or $self->throw("Error opening $aln_file for writing");
 
-    my $aln = Bio::EnsEMBL::Compara::AlignedMemberSet->new(-seq_type => 'seq_with_flanking', -dbID => $alignment_id, -adaptor => $self->compara_dba->get_AlignedMemberAdaptor);
-    my $bioaln = $aln->get_SimpleAlign(-ID_TYPE => 'MEMBER');
+    my $aln = $self->compara_dba->get_GeneAlignAdaptor->fetch_by_dbID($alignment_id);
+
+    my %sa_params = ($self->param('use_genomedb_id')) ?	('-APPEND_GENOMEDB_ID', 1) : ('-APPEND_TAXON_ID', 1);
+    my $bioaln = $aln->get_SimpleAlign(
+                                       -ID_TYPE => 'MEMBER',
+                                       %sa_params,
+                                      );
+
+
     my @all_aln_seq;
     foreach my $seq ($bioaln->each_seq) {
         push @all_aln_seq, $seq;

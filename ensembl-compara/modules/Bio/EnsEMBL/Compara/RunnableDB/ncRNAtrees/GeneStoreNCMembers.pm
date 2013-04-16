@@ -46,7 +46,6 @@ Internal methods are usually preceded with a _
 package Bio::EnsEMBL::Compara::RunnableDB::ncRNAtrees::GeneStoreNCMembers;
 
 use strict;
-use Bio::EnsEMBL::Compara::Member;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
@@ -125,7 +124,8 @@ sub store_ncrna_gene {
     my $gene_member;
     my $gene_member_not_stored = 1;
 
-    my $member_adaptor = $self->compara_dba->get_MemberAdaptor();
+    my $gene_member_adaptor = $self->compara_dba->get_GeneMemberAdaptor();
+    my $seq_member_adaptor = $self->compara_dba->get_SeqMemberAdaptor();
 
     my $pseudo_stableID_prefix = $self->param('pseudo_stableID_prefix');
 
@@ -147,7 +147,7 @@ sub store_ncrna_gene {
 
         my $fasta_description = $self->fasta_description($gene, $transcript) or next TRANSCRIPT;
 
-        my $ncrna_member = Bio::EnsEMBL::Compara::Member->new_from_transcript(
+        my $ncrna_member = Bio::EnsEMBL::Compara::SeqMember->new_from_transcript(
             -transcript  => $transcript,
             -genome_db   => $self->param('genome_db'),
             -translate   => 'ncrna',
@@ -162,14 +162,14 @@ sub store_ncrna_gene {
         if($self->param('store_genes') and $gene_member_not_stored) {
             print("     gene       " . $gene->stable_id ) if($self->debug);
 
-            $gene_member = Bio::EnsEMBL::Compara::Member->new_from_gene(
+            $gene_member = Bio::EnsEMBL::Compara::GeneMember->new_from_gene(
                 -gene      => $gene,
                 -genome_db => $self->param('genome_db'),
             );
             print(" => member " . $gene_member->stable_id) if($self->debug);
 
             eval {
-                $member_adaptor->store($gene_member);
+                $gene_member_adaptor->store($gene_member);
                 print(" : stored") if($self->debug);
             };
 
@@ -178,7 +178,7 @@ sub store_ncrna_gene {
         }
 
         $ncrna_member->gene_member_id($gene_member->dbID);
-        $member_adaptor->store($ncrna_member);
+        $seq_member_adaptor->store($ncrna_member);
         print(" : stored\n") if($self->debug);
 
         if(length($transcript_spliced_seq) > $max_ncrna_length) {
@@ -188,7 +188,7 @@ sub store_ncrna_gene {
     }
 
     if($longest_ncrna_member) {
-        $member_adaptor->_set_member_as_canonical($longest_ncrna_member);
+        $seq_member_adaptor->_set_member_as_canonical($longest_ncrna_member);
     }
 }
 

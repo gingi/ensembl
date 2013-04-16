@@ -2,7 +2,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -33,6 +33,8 @@ Allowed parameters are:
 
 =item types - The types to use; defaults to embl and genbank
 
+=item species - The species to create a dump type for. Only can specify one
+
 =back
 
 =cut
@@ -43,11 +45,13 @@ use strict;
 use warnings;
 
 use base qw/Bio::EnsEMBL::Hive::RunnableDB::JobFactory/;
+use Bio::EnsEMBL::Utils::Scalar qw/wrap_array/;
 
 sub param_defaults {
   my ($self) = @_;
   return {
-    column_names => ['type'],
+    %{$self->SUPER::param_defaults()},
+    column_names => ['type','species'],
     default_types => [qw/embl genbank/],
   };
 }
@@ -55,12 +59,10 @@ sub param_defaults {
 sub fetch_input {
   my ($self) = @_;
   my $user_types = $self->param('types');
-  if($user_types && @{$user_types}) {
-    $self->param('inputlist', $user_types);
-  }
-  else {
-    $self->param('inputlist', $self->param('default_types'));
-  }
+  my $types = (defined $user_types && @{$user_types}) ? $user_types : $self->param('default_types');
+  $types = wrap_array($types);
+  my @inputlist = map { [ $_, $self->param('species') ] } @{$types};
+  $self->param('inputlist', \@inputlist);
   return;
 }
 

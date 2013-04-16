@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -504,7 +504,7 @@ sub fetch_all_by_Slice_constraint {
 
 =head2 fetch_all_by_logic_name
 
-  Arg [3]    : string $logic_name
+  Arg [1]    : string $logic_name
                the logic name of the type of features to obtain
   Example    : $fs = $a->fetch_all_by_logic_name('foobar');
   Description: Returns a listref of features created from the database.
@@ -534,6 +534,31 @@ sub fetch_all_by_logic_name {
   }
 
   return $self->generic_fetch($constraint);
+}
+
+=head2 fetch_all_by_stable_id_list
+
+  Arg [1]    : string $logic_name
+               the logic name of the type of features to obtain
+  Arg [2]    : Bio::EnsEMBL::Slice $slice
+               the slice from which to obtain features
+  Example    : $fs = $a->fetch_all_by_stable_id_list(["ENSG00001","ENSG00002", ...]);
+  Description: Returns a listref of features identified by their stable IDs.
+               This method only fetches features of the same type as the calling
+               adaptor. 
+               Results are constrained to a slice if the slice is provided.
+  Returntype : listref of Bio::EnsEMBL::Feature
+  Exceptions : thrown if no stable ID list is provided.
+  Caller     : General
+  Status     : Stable
+
+=cut
+
+# Adapted from BaseAdaptor->uncached_fetch_all_by_dbID_list
+sub fetch_all_by_stable_id_list {
+  my ( $self, $id_list_ref, $slice ) = @_;
+
+  return $self->_uncached_fetch_all_by_id_list($id_list_ref,$slice,"stable_id");
 }
 
 # Method that creates an object.  Called by the _objs_from_sth() method
@@ -637,9 +662,8 @@ sub count_by_Slice_constraint {
 =head2 _get_and_filter_Slice_projections
 
     Arg [1]     : Bio::EnsEMBL::Slice
-    Description : Finds all features with at least partial overlap to the given
-                  slice and sums them up
-    Example     : my $proj= $self->_get_and_filter_Slice_projections($slice);
+    Description : Delegates onto SliceAdaptor::fetch_normalized_slice_projection() 
+                  with filtering on
     Returntype  : ArrayRef Bio::EnsEMBL::ProjectionSegment; Returns an array
                   of projected segments
 =cut
@@ -647,27 +671,8 @@ sub count_by_Slice_constraint {
 sub _get_and_filter_Slice_projections {
   my ($self, $slice) = @_;
   my $sa = $slice->adaptor();
-  my @proj = @{ $sa->fetch_normalized_slice_projection($slice) };
-  if ( !@proj ) {
-    throw( 'Could not retrieve normalized Slices. '
-         . 'Database contains incorrect assembly_exception information.'
-    );
-  }
-  
-  # Want to get features on the FULL original slice as well as any
-  # symlinked slices.
-  
-  # Filter out partial slices from projection that are on same
-  # seq_region as original slice.
-
-  my $sr_id = $slice->get_seq_region_id();
-
-  @proj = grep { $_->to_Slice->get_seq_region_id() != $sr_id } @proj;
-
-  my $segment = bless( [ 1, $slice->length(), $slice ],
-                       'Bio::EnsEMBL::ProjectionSegment' );
-  push( @proj, $segment );
-  return \@proj;
+  my $filter_projections = 1;
+  return $sa->fetch_normalized_slice_projection($slice, $filter_projections);
 }
 
 =head2 _generate_feature_bounds

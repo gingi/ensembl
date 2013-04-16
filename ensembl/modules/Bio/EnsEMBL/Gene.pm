@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -858,7 +858,7 @@ sub get_all_homologous_Genes {
   }
 
   # Get the compara 'member' corresponding to self
-  my $member_adaptor   = $compara_dba->get_adaptor('Member');
+  my $member_adaptor   = $compara_dba->get_adaptor('GeneMember');
   my $query_member = $member_adaptor->fetch_by_source_stable_id
       ("ENSEMBLGENE",$self->stable_id);
   unless( $query_member ){ return $self->{'homologues'} };
@@ -870,7 +870,7 @@ sub get_all_homologous_Genes {
 
   # Get the ensembl 'genes' corresponding to 'homologies'
   foreach my $homolo( @homolos ){
-    foreach my $member ( @{$homolo->get_all_GeneMembers} ){
+    foreach my $member( @{$homolo->get_all_GeneMembers} ){
       my $hstable_id = $member->stable_id;
       next if ($hstable_id eq $query_member->stable_id); # Ignore self     
       my $hgene = undef;
@@ -1447,6 +1447,22 @@ sub load {
   if ($load_xrefs) {
     $self->get_all_DBEntries();
   }
+}
+
+=head2 flush_Transcripts
+
+  Description : Empties out caches and unsets fields of this Gene.
+                Beware of further actions without adding some new transcripts.
+  Example     : $gene->flush_Transcripts();
+
+=cut
+
+sub flush_Transcripts {
+    my $self = shift;
+    $self->{'_transcript_array'} = [];
+    $self->{'canonical_transcript_id'} = undef;
+    $self->{'canonical_transcript'} = undef;
+    return;
 }
 
 =head2 is_ref

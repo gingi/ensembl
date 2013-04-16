@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -23,9 +23,7 @@ Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::Mafft
 =head1 DESCRIPTION
 
 This RunnableDB implements Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::MSA
-by calling Mafft. It needs the following pararameters:
- - mafft_exe
- - mafft_binaries
+by calling Mafft. It only needs the 'mafft_home' pararameters
 
 =head1 AUTHORSHIP
 
@@ -37,7 +35,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.3 $
+$Revision: 1.6 $
 
 =head1 APPENDIX
 
@@ -52,6 +50,15 @@ use strict;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::MSA');
 
+sub param_defaults {
+    my $self = shift;
+    return {
+        %{$self->SUPER::param_defaults},
+        'mafft_exe'         => '/bin/mafft'             # where to find the mafft executable from $mafft_home
+    };
+}
+
+
 
 #
 # Abstract methods from the base class (MSA) 
@@ -60,13 +67,11 @@ use base ('Bio::EnsEMBL::Compara::RunnableDB::ProteinTrees::MSA');
 sub get_msa_command_line {
     my $self = shift;
 
+    my $mafft_home = $self->param('mafft_home') or die "'mafft_home' is an obligatory parameter";
     my $mafft_exe = $self->param('mafft_exe') or die "'mafft_exe' is an obligatory parameter";
-    die "Cannot execute '$mafft_exe'" unless(-x $mafft_exe);
+    die "Cannot execute '$mafft_exe' in '$mafft_home'" unless(-x $mafft_home.'/'.$mafft_exe);
 
-    my $mafft_binaries = $self->param('mafft_binaries') or die "'mafft_binaries' is an obligatory parameter";
-    $ENV{MAFFT_BINARIES} = $mafft_binaries;
-
-    return sprintf('%s --auto %s > %s', $mafft_exe, $self->param('input_fasta'), $self->param('msa_output'));
+    return sprintf('%s/%s --anysymbol --auto %s > %s', $mafft_home, $mafft_exe, $self->param('input_fasta'), $self->param('msa_output'));
 }
 
 1;

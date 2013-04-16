@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -122,7 +122,7 @@ sub default_options {
 
         # options controlling the number of workers used for the parallelisable analyses
 
-        variant_qc_capacity        => 20,
+        variant_qc_capacity        => 60,
         unmapped_var_capacity      => 10,
 
 
@@ -134,7 +134,7 @@ sub default_options {
         run_flip_population_genotype     => 1,
         run_update_population_genotype   => 1,
 
-        run_PAR_check                    => 1,
+        run_PAR_check                    => 1, 
         run_Pubmed_check                 => 1,
 
 
@@ -280,7 +280,7 @@ sub pipeline_analyses {
         },
         -input_ids      => [],
         -hive_capacity  => -1,
-        -rc_name        => 'default',
+        -rc_name        => 'long',
         -wait_for       => [  'variant_qc' ],
         -flow_into      => {},
     },

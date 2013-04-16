@@ -107,7 +107,7 @@ sub update{
   $sth->bind_columns(\$name,\$count);
 
   my $synonym_sth  =  $self->core->dbc->prepare('DELETE external_synonym FROM external_synonym, xref WHERE external_synonym.xref_id = xref.xref_id AND xref.external_db_id = ?');
-  my $go_sth       =  $self->core->dbc->prepare('DELETE FROM ontology_xref');
+  my $go_sth       =  $self->core->dbc->prepare('DELETE ontology_xref.* FROM ontology_xref, object_xref, xref WHERE ontology_xref.object_xref_id = object_xref.object_xref_id AND object_xref.xref_id = xref.xref_id  AND xref.external_db_id = ?');
   my $identity_sth =  $self->core->dbc->prepare('DELETE identity_xref FROM identity_xref, object_xref, xref WHERE identity_xref.object_xref_id = object_xref.object_xref_id AND object_xref.xref_id = xref.xref_id AND xref.external_db_id = ?');
   my $object_sth   =  $self->core->dbc->prepare('DELETE object_xref FROM object_xref, xref WHERE object_xref.xref_id = xref.xref_id AND xref.external_db_id = ?');
   my $dependent_sth = $self->core->dbc->prepare('DELETE d FROM dependent_xref d, xref x WHERE d.dependent_xref_id = x.xref_id and x.external_db_id = ?');
@@ -137,9 +137,7 @@ sub update{
 
     print "Deleting data for $name from core before updating from new xref database\n" if ($verbose);
     $synonym_sth->execute($ex_id);
-    if($name eq "GO"){
-      $go_sth->execute();
-    }
+    $go_sth->execute();
     $identity_sth->execute($ex_id);
     $object_sth->execute($ex_id);  
     $dependent_sth->execute($ex_id);
@@ -242,6 +240,15 @@ GSQL
 
      $go_sth = $self->xref->dbc->prepare($go_sql);
 
+  my $go_count_sql = (<<GCNTSQL);
+  SELECT  count(*)
+    FROM (xref x, object_xref ox, go_xref g)
+      WHERE ox.ox_status = "DUMP_OUT" and
+            g.object_xref_id = ox.object_xref_id and
+            x.xref_id = ox.xref_id and
+            x.source_id = ? and x.info_type = ?
+GCNTSQL
+   
      my $seq_sth   =   $self->xref->dbc->prepare('select x.xref_id, x.accession, x.label, x.version, x.description, x.info_text, ox.object_xref_id, ox.ensembl_id, ox.ensembl_object_type, i.query_identity, i.target_identity, i.hit_start, i.hit_end, i.translation_start, i.translation_end, i.cigar_line, i.score, i.evalue from xref x, object_xref ox, identity_xref i  where ox.ox_status = "DUMP_OUT" and i.object_xref_id = ox.object_xref_id and ox.xref_id = x.xref_id and x.source_id = ? and x.info_type = ? order by x.xref_id');
 
      ########################
@@ -276,6 +283,10 @@ GSQL
 
     my @xref_list=();  # process at end. Add synonyms and set dumped = 1;
 
+    my $go_count_sth = $self->xref->dbc->prepare($go_count_sql);
+    $go_count_sth->execute($source_id, $type);
+    my ($go_data_present) = $go_count_sth->fetchrow_array;
+    $go_count_sth->finish;
    
     # dump SEQUENCE_MATCH, DEPENDENT, DIRECT, COORDINATE_OVERLAP, INFERRED_PAIR, (MISC?? same as direct come from official naming)  
 
@@ -285,7 +296,7 @@ GSQL
 
     
     if($type eq "DIRECT" or $type eq "INFERRED_PAIR" or $type eq "MISC"){
-     if($name eq "GO"){
+      if ($go_data_present) {
        my $count = 0;
        $go_sth->execute($source_id, $type);
        my ($xref_id, $acc, $label, $version, $desc, $info,  $object_xref_id, $ensembl_id, $ensembl_type, $master_xref_id, $linkage_type); 
@@ -347,7 +358,7 @@ GSQL
     ### If DEPENDENT,       xref, object_xref , dependent_xref  (order by xref_id)  # maybe linked to more than one?
  
    elsif($type eq "DEPENDENT"){
-     if($name eq "GO"){
+     if ($go_data_present) {
        my $count = 0;
        $go_sth->execute($source_id, $type);
        my ($xref_id, $acc, $label, $version, $desc, $info,  $object_xref_id, $ensembl_id, $ensembl_type, $master_xref_id, $linkage_type); 

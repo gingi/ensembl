@@ -8,7 +8,7 @@ use base ('Bio::EnsEMBL::Hive::PipeConfig::HiveGeneric_conf');
 sub default_options {
     my ($self) = @_;
     
-    return {
+    my $h = {
       # inherit other stuff from the base class
       %{ $self->SUPER::default_options() }, 
       
@@ -17,12 +17,11 @@ sub default_options {
       
       ### Defaults 
       
-      pipeline_name => 'flatfile_dump_check_'.$self->o('format'),
+      pipeline_name => 'flatfile_dump_check_'.$self->o('type'),
       
-      pipeline_db => {
-        -driver => 'sqlite',
-      }
     };
+    $h->{pipeline_db}->{-driver} = 'sqlite';
+    return $h;
 }
 
 sub pipeline_create_commands {
@@ -43,19 +42,17 @@ sub pipeline_analyses {
       -parameters => {
         inputcmd => 'find '.$self->o('base_path').q{ -type f -name '*.dat.gz'},
         column_names => ['file'],
-        randomize => 1,
-        input_id => '{ file => "#file#" }'
+        randomize => 1
       },
       -input_ids  => [ {} ],
       -flow_into  => {
-        # 1 => 'Notify',
-        2 => ['CheckFlatfile'],
+        2 =>  { CheckFlatfile => { file => '#file#'} }
       },
     },
     {
       -logic_name => 'CheckFlatfile',
       -module     => 'Bio::EnsEMBL::Pipeline::Flatfile::CheckFlatfile',
-      -hive_capacity => 15,
+      -analysis_capacity => 15,
       -rc_name => 'dump',
     },
   ];
@@ -65,7 +62,7 @@ sub pipeline_wide_parameters {
   my ($self) = @_;
   return {
     %{ $self->SUPER::pipeline_wide_parameters() },
-    format => $self->o('type'),
+    type => $self->o('type'),
   };
 }
 

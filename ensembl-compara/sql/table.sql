@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS meta (
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
 
-
 #
 # Table structure for tables 'ncbi_taxa_node' and 'ncbi_taxa_name'
 #
@@ -436,6 +435,38 @@ CREATE TABLE member (
 
 
 #
+# Table structure for table 'external_db'
+#
+
+CREATE TABLE `external_db` (
+  `external_db_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `db_name` varchar(100) NOT NULL,
+  `db_release` varchar(255) DEFAULT NULL,
+  `status` enum('KNOWNXREF','KNOWN','XREF','PRED','ORTH','PSEUDO') NOT NULL,
+  `priority` int(11) NOT NULL,
+  `db_display_name` varchar(255) DEFAULT NULL,
+  `type` enum('ARRAY','ALT_TRANS','ALT_GENE','MISC','LIT','PRIMARY_DB_SYNONYM','ENSEMBL') DEFAULT NULL,
+  `secondary_db_name` varchar(255) DEFAULT NULL,
+  `secondary_db_table` varchar(255) DEFAULT NULL,
+  `description` text,
+  PRIMARY KEY (`external_db_id`),
+  UNIQUE KEY `db_name_db_release_idx` (`db_name`,`db_release`)
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
+
+#
+# Table structure for table 'member_xref'
+#
+
+CREATE TABLE `member_xref` (
+  `member_id` int(10) unsigned NOT NULL,
+  `dbprimary_acc` varchar(10) NOT NULL,
+  `external_db_id` int(10) unsigned NOT NULL,
+  PRIMARY KEY (`member_id`,`dbprimary_acc`,`external_db_id`),
+  FOREIGN KEY (member_id) REFERENCES member(member_id),
+  FOREIGN KEY (external_db_id) REFERENCES external_db(external_db_id)
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
+
+#
 # Table structure for table 'subset'
 #
 
@@ -475,13 +506,12 @@ CREATE TABLE other_member_sequence (
   member_id                   int(10) unsigned NOT NULL, # unique internal id
   seq_type                    VARCHAR(40) NOT NULL,
   length                      int(10) NOT NULL,
-  sequence                    longtext NOT NULL,
+  sequence                    mediumtext NOT NULL,
 
   FOREIGN KEY (member_id) REFERENCES member(member_id),
 
-  PRIMARY KEY (member_id, seq_type),
-  KEY (seq_type, member_id),
-  KEY sequence (sequence(18))
+  PRIMARY KEY (member_id, seq_type)
+
 ) MAX_ROWS = 10000000 AVG_ROW_LENGTH = 60000 COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
 
@@ -819,7 +849,7 @@ CREATE TABLE hmm_profile (
   hc_profile                  mediumtext,
   consensus                   mediumtext,
 
-  PRIMARY KEY (model_id)
+  PRIMARY KEY (model_id,type)
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
@@ -1103,23 +1133,33 @@ CREATE TABLE `CAFE_species_gene` (
   KEY `cafe_gene_family_id` (`cafe_gene_family_id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
--- Table structure for table `CAFE_data`                                              
-                                                                                      
-SET @saved_cs_client     = @@character_set_client;                                    
-SET character_set_client = utf8;                                                      
-CREATE TABLE `CAFE_data` (                                                            
-  `fam_id` varchar(20) NOT NULL,                                                      
-  `tree` mediumtext NOT NULL,                                                         
-  `tabledata` mediumtext NOT NULL,                                                    
-  PRIMARY KEY (`fam_id`)                                                              
-) ENGINE=MyISAM DEFAULT CHARSET=latin1;                                               
-SET character_set_client = @saved_cs_client;
-
 
 # ------------------------ End of CAFE tables --------------------------------------
 
 # Auto add schema version to database (this will override whatever hive puts there)
-REPLACE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_version', '70');
+DELETE FROM meta WHERE meta_key='schema_version';
+INSERT INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_version', '71');
 
 #Add schema type
 INSERT INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_type', 'compara');
+
+# Patch identifier
+INSERT INTO meta (species_id, meta_key, meta_value)
+  VALUES (NULL, 'patch', 'patch_70_71_a.sql|other_member_sequence_keys');
+
+# Patch identifier
+INSERT INTO meta (species_id, meta_key, meta_value)
+  VALUES (NULL, 'patch', 'patch_70_71_b.sql|member_xref');
+
+# Patch identifier
+INSERT INTO meta (species_id, meta_key, meta_value)
+  VALUES (NULL, 'patch', 'patch_70_71_c.sql|schema_version');
+
+# Patch identifier
+INSERT INTO meta (species_id, meta_key, meta_value)
+  VALUES (NULL, 'patch', 'patch_70_71_d.sql|hmm_profile_key');
+
+# Patch identifier
+INSERT INTO meta (species_id, meta_key, meta_value)
+  VALUES (NULL, 'patch', 'patch_70_71_e.sql|drop_cafe_data');
+

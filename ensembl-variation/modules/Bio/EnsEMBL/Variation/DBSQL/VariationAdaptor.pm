@@ -1,12 +1,12 @@
 =head1 LICENSE
 
- Copyright (c) 1999-2012 The European Bioinformatics Institute and
+ Copyright (c) 1999-2013 The European Bioinformatics Institute and
  Genome Research Limited.  All rights reserved.
 
  This software is distributed under a modified Apache license.
  For license details, please see
 
-   http://www.ensembl.org/info/about/code_licence.html
+   http://www.ensembl.org/info/about/legal/code_licence.html
 
 =head1 CONTACT
 
@@ -125,8 +125,9 @@ sub store {
             minor_allele,
             minor_allele_freq,
             minor_allele_count,
-            clinical_significance_attrib_id
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            clinical_significance_attrib_id,
+            evidence
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     });
     
     $sth->execute(
@@ -135,12 +136,13 @@ sub store {
         (join ",", @{$var->get_all_validation_states}) || undef,
         $var->ancestral_allele,
         $var->{flipped},
-        $var->{class_attrib_id} || $self->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $var->{class_SO_term}) || 18,
+        $var->{class_attrib_id} || ( $var->{class_SO_term} && $self->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $var->{class_SO_term})) || 18,
         $var->is_somatic,
         $var->minor_allele,
         $var->minor_allele_frequency,
         $var->minor_allele_count,
-        $var->{clinical_significance_attrib_id}
+        $var->{clinical_significance_attrib_id},
+        $var->{evidence} ? (join ",", @{$var->{evidence}}) : undef
     );
     
     $sth->finish;
@@ -184,7 +186,8 @@ sub update {
                minor_allele = ?,
                minor_allele_freq = ?,
                minor_allele_count = ?,
-               clinical_significance_attrib_id = ?
+               clinical_significance_attrib_id = ?,
+               evidence = ?
          WHERE variation_id = ?
     });
     
@@ -200,6 +203,7 @@ sub update {
         $var->minor_allele_frequency,
         $var->minor_allele_count,
         $var->{clinical_significance_attrib_id},
+        join(",",@{$var->{evidence}}) || undef,
         $var->dbID
     );
     
@@ -386,6 +390,7 @@ sub _columns {
         "v.minor_allele_freq",
         "v.minor_allele_count",
         "v.clinical_significance_attrib_id",
+        "v.evidence"
     );
     
     
@@ -489,6 +494,12 @@ sub fetch_by_name {
     # Return the result
     return undef unless (scalar(@{$result}));
     return $result->[0];
+}
+
+# alias for fetch_by_name
+sub fetch_by_stable_id {
+		my $self = shift;
+		return $self->fetch_by_name(@_);
 }
 
 # Internal method for getting the internal dbIDs for a list of names. Will also query the variation_synonym and allele (for subsnp_ids) tables
@@ -1413,7 +1424,10 @@ sub _obj_from_row {
         if (defined($row->{v_validation_status})) {
             @states = split(/,/,$row->{v_validation_status}); 
         } 
-    
+        my @evidence;
+        if (defined($row->{evidence})) {
+            @evidence = split(/,/,$row->{evidence}); 
+        } 
         # Create the variation object
         $obj = Bio::EnsEMBL::Variation::Variation->new(
             -dbID   => $row->{variation_id},
@@ -1434,6 +1448,7 @@ sub _obj_from_row {
             -MINOR_ALLELE => $row->{minor_allele},
             -MINOR_ALLELE_FREQUENCY => $row->{minor_allele_freq},
             -MINOR_ALLELE_COUNT => $row->{minor_allele_count},
+            -EVIDENCE => \@evidence,
         );
         
         $self->{_temp_objs}{$row->{variation_id}} = $obj;

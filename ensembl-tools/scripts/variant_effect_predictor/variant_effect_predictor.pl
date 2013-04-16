@@ -26,7 +26,7 @@ Variant Effect Predictor - a script to predict the consequences of genomic varia
 
 http://www.ensembl.org/info/docs/variation/vep/vep_script.html
 
-Version 2.8
+Version 71
 
 by Will McLaren (wm2@ebi.ac.uk)
 =cut
@@ -34,6 +34,7 @@ by Will McLaren (wm2@ebi.ac.uk)
 use strict;
 use Getopt::Long;
 use FileHandle;
+use CGI qw/:standard/;
 use FindBin qw($Bin);
 use lib $Bin;
 
@@ -57,7 +58,7 @@ use Bio::EnsEMBL::Variation::Utils::VEP qw(
 );
 
 # global vars
-my $VERSION = '2.8';
+my $VERSION = '71';
 
  
 # define headers that would normally go in the extra field
@@ -79,7 +80,9 @@ my %extra_headers = (
     check_svs       => ['SV'],
     check_frequency => ['FREQS'],
     gmaf            => ['GMAF'],
+    maf_1kg         => ['AFR_MAF','AMR_MAF','ASN_MAF','EUR_MAF'],
     user            => ['DISTANCE'],
+    check_existing  => ['CLIN_SIG'],
 );
 
 my %extra_descs = (
@@ -102,8 +105,77 @@ my %extra_descs = (
     'IND'          => 'Individual name',
     'SV'           => 'IDs of overlapping structural variants',
     'FREQS'        => 'Frequencies of overlapping variants used in filtering',
-    'GMAF'         => 'Minor allele and frequency of existing variation in 1000 Genomes Phase 1',
+    'GMAF'         => 'Minor allele and frequency of existing variation in 1000 Genomes Phase 1 combined population',
+    'AFR_MAF'      => 'Minor allele and frequency of existing variation in 1000 Genomes Phase 1 combined African population',
+    'AMR_MAF'      => 'Minor allele and frequency of existing variation in 1000 Genomes Phase 1 combined American population',
+    'ASN_MAF'      => 'Minor allele and frequency of existing variation in 1000 Genomes Phase 1 combined Asian population',
+    'EUR_MAF'      => 'Minor allele and frequency of existing variation in 1000 Genomes Phase 1 combined European population',
     'DISTANCE'     => 'Shortest distance from variant to transcript',
+    'CLIN_SIG'     => 'Clinical significance of variant from dbSNP',
+);
+
+my %ts_tv = (
+  'A/G' => 'Ts',
+  'G/A' => 'Ts',
+  'C/T' => 'Ts',
+  'T/C' => 'Ts',
+  'A/C' => 'Tv',
+  'C/A' => 'Tv',
+  'G/T' => 'Tv',
+  'T/G' => 'Tv',
+  'C/G' => 'Tv',
+  'G/C' => 'Tv',
+  'A/T' => 'Tv',
+  'T/A' => 'Tv',
+);
+
+my %colour_keys = (
+  'polyphen' => {
+    'unknown' => 'blue',
+    'benign' => 'green',
+    'possibly damaging' => 'orange',
+    'probably damaging' => 'red',
+  },
+  'sift' => {
+    'tolerated' => 'green',
+    'deleterious' => 'red',
+  },
+  
+  # copied from COLOUR.ini in web code via browser to check colours
+  'consequences' => {
+    'intergenic_variant'                => 'gray',
+    'intron_variant'                    => '#02599c',
+    'upstream_gene_variant'             => '#a2b5cd',
+    'downstream_gene_variant'           => '#a2b5cd',
+    '5_prime_utr_variant'               => '#7ac5cd',
+    '3_prime_utr_variant'               => '#7ac5cd',
+    'splice_region_variant'             => '#ff7f50',
+    'splice_donor_variant'              => '#ff7f50',
+    'splice_acceptor_variant'           => '#ff7f50',
+    'frameshift_variant'                => '#ff69b4',
+    'transcript_ablation'               => '#ff0000',
+    'transcript_amplification'          => '#ff69b4',
+    'inframe_insertion'                 => '#ff69b4',
+    'inframe_deletion'                  => '#ff69b4',
+    'synonymous_variant'                => '#76ee00',
+    'stop_retained_variant'             => '#76ee00',
+    'missense_variant'                  => '#ffd700',
+    'initiator_codon_variant'           => '#ffd700',
+    'stop_gained'                       => '#ff0000',
+    'stop_lost'                         => '#ff0000',
+    'mature_mirna_variant'              => '#458b00',
+    'non_coding_exon_variant'           => '#32cd32',
+    'nc_transcript_variant'             => '#32cd32',
+    'incomplete_terminal_codon_variant' => '#ff00ff',
+    'nmd_transcript_variant'            => '#ff4500',
+    'coding_sequence_variant'           => '#458b00',
+    'tfbs_ablation'                     => 'brown',
+    'tfbs_amplification'                => 'brown',
+    'tf_binding_site_variant'           => 'brown',
+    'regulatory_region_variant'         => 'brown',
+    'regulatory_region_ablation'        => 'brown',
+    'regulatory_region_amplification'   => 'brown',
+  },
 );
 
 # set output autoflush for progress bars
@@ -121,8 +193,12 @@ sub main {
     
     debug("Starting...") unless defined $config->{quiet};
     
+    # this is for counting seconds
     $config->{start_time} = time();
     $config->{last_time} = time();
+    
+    # this is for stats
+    $config->{stats}->{start_time} = get_time();
     
     my $tr_cache = {};
     my $rf_cache = {};
@@ -277,9 +353,27 @@ sub main {
         debug("Processed $total_vf_count total variants ($rate, $total_rate total)") unless defined($config->{quiet});
     }
     
-    debug($config->{filter_count}, "/$total_vf_count variants remain after filtering") if (defined($config->{filter}) || defined($config->{check_frequency})) && !defined($config->{quiet});
+    debug($config->{stats}->{filter_count}, "/$total_vf_count variants remain after filtering") if (defined($config->{filter}) || defined($config->{check_frequency})) && !defined($config->{quiet});
     
     debug("Executed ", defined($Bio::EnsEMBL::DBSQL::StatementHandle::count_queries) ? $Bio::EnsEMBL::DBSQL::StatementHandle::count_queries : 'unknown number of', " SQL statements") if defined($config->{count_queries}) && !defined($config->{quiet});
+    
+    # finalise run-time stats
+    $config->{stats}->{var_count} = $total_vf_count;
+    $config->{stats}->{end_time} = get_time();
+    $config->{stats}->{run_time} = time() - $config->{start_time};
+    
+    # write stats
+    unless(defined($config->{no_stats})) {
+      summarise_stats($config);
+      debug("Wrote stats summary to ".$config->{stats_file}) unless defined($config->{quiet});
+    }
+    
+    # close HTML output
+    if(defined($config->{html}) && defined($config->{html_file_handle})) {
+      my $fh = $config->{html_file_handle};
+      print $fh "</tbody><tfoot><tr>".$config->{_th}."</tr></tfoot></table><p>&nbsp;</p></div></html></body>\n</html>\n";
+      $fh->close;
+    }
     
     debug("Finished!") unless defined $config->{quiet};
 }
@@ -289,6 +383,9 @@ sub configure {
     my $args = shift;
     
     my $config = {};
+    
+    my @ARGV_copy = @ARGV;
+    $config->{stats}->{options} = \@ARGV_copy;
     
     GetOptions(
         $config,
@@ -327,6 +424,7 @@ sub configure {
         'check_alleles',           # only attribute co-located if alleles are the same
         'check_frequency',         # enable frequency checking
         'gmaf',                    # add global MAF of existing var
+        'maf_1kg',                 # add 1KG MAFs of existing vars
         'freq_filter=s',           # exclude or include
         'freq_freq=f',             # frequency to filter on
         'freq_gt_lt=s',            # gt or lt (greater than or less than)
@@ -345,6 +443,9 @@ sub configure {
         # output options
         'everything|e',            # switch on EVERYTHING :-)
         'output_file|o=s',         # output file name
+        'html',                    # generate an HTML version of output
+        'stats_file|sf=s',         # stats file name
+        'no_stats',                # don't write stats file
         'force_overwrite',         # force overwrite of output file if already exists
         'terms|t=s',               # consequence terms to use e.g. NCBI, SO
         'coding_only',             # only return results for consequences in coding regions
@@ -372,6 +473,7 @@ sub configure {
         'numbers',                 # include exon and intron numbers
         
         # cache stuff
+        'database',                # must specify this to use DB now
         'cache',                   # use cache
         'write_cache',             # enables writing to the cache
         'build=s',                 # builds cache from DB from scratch; arg is either all (all top-level seqs) or a list of chrs
@@ -466,6 +568,9 @@ sub configure {
     # check convert format
     if(defined $config->{convert}) {
         die "ERROR: Unrecognised output format for conversion specified \"".$config->{convert}."\"\n" unless $config->{convert} =~ /vcf|ensembl|pileup|hgvs/i;
+        
+        # disable stats
+        $config->{no_stats} = 1;
     }
     
     
@@ -565,6 +670,33 @@ sub configure {
         $config->{core_type} = 'core';
     }
     
+    # check one of database/cache/offline/build
+    if(!grep {defined($config->{$_})} qw(database cache offline build convert)) {
+      die qq{
+IMPORTANT INFORMATION:
+
+The VEP can read gene data from either a local cache or local/remote databases.
+
+Using a cache is the fastest and most efficient way to use the VEP. The
+included INSTALL.pl script can be used to fetch and set up cache files from the
+Ensembl FTP server. Simply run "perl INSTALL.pl" and follow the instructions, or
+see the documentation pages listed below.
+
+If you have already set up a cache, use "--cache" or "--offline" to use it.
+
+It is possible to use the public databases hosted at ensembldb.ensembl.org, but
+this is slower than using the cache and concurrent and/or long running VEP jobs
+can put strain on the Ensembl servers, limiting availability to other users.
+
+To enable using databases, add the flag "--database".
+
+Documentation
+Installer: http://www.ensembl.org/info/docs/variation/vep/vep_script.html#installer
+Cache: http://www.ensembl.org/info/docs/variation/vep/vep_script.html#cache
+
+      }
+    };
+    
     # output term
     if(defined $config->{terms}) {
         die "ERROR: Unrecognised consequence term type specified \"".$config->{terms}."\" - must be one of ensembl, so, ncbi\n" unless $config->{terms} =~ /ensembl|display|so|ncbi/i;
@@ -602,7 +734,7 @@ sub configure {
     foreach my $tool(grep {defined $config->{lc($_)}} qw(SIFT PolyPhen Condel)) {
         die "ERROR: Unrecognised option for $tool \"", $config->{lc($tool)}, "\" - must be one of p (prediction), s (score) or b (both)\n" unless $config->{lc($tool)} =~ /^(s|p|b)/;
         
-        die "ERROR: $tool not available for this species\n" unless $config->{species} =~ /human|homo/i;
+        #die "ERROR: $tool not available for this species\n" unless $config->{species} =~ /human|homo/i;
         
         die "ERROR: $tool functionality is now available as a VEP Plugin - see http://www.ensembl.org/info/docs/variation/vep/vep_script.html#plugins\n" if $tool eq 'Condel';
     }
@@ -731,7 +863,7 @@ INTRO
         
         $config->{filter} = \%filters;
         
-        $config->{filter_count} = 0;
+        $config->{stats}->{filter_count} = 0;
     }
     
     # set defaults
@@ -739,6 +871,7 @@ INTRO
     $config->{buffer_size}       ||= 5000;
     $config->{chunk_size}        ||= '50kb';
     $config->{output_file}       ||= "variant_effect_output.txt";
+    $config->{stats_file}        ||= $config->{output_file}."_summary.html";
     $config->{tmpdir}            ||= '/tmp';
     $config->{format}            ||= 'guess';
     $config->{terms}             ||= 'SO';
@@ -779,7 +912,7 @@ INTRO
         $config->{check_existing} = 1;
     }
     
-    $config->{check_existing} = 1 if defined $config->{check_alleles} || defined $config->{gmaf};
+    $config->{check_existing} = 1 if defined $config->{check_alleles} || defined $config->{gmaf} || defined $config->{maf_1kg};
     
     # warn users still using whole_genome flag
     if(defined($config->{whole_genome})) {
@@ -1008,16 +1141,24 @@ INTRO
         
         # get 1KG freqs
         if(defined($config->{'freq_file'})) {
-            debug("Loading extra frequencies from ".$config->{'freq_file'}) unless defined($config->{quiet});
+            my ($freq_file, @file_pops) = split /\,/, $config->{'freq_file'};
+            debug("Loading extra frequencies from $freq_file") unless defined($config->{quiet});
             
-            open IN, $config->{'freq_file'} or die "ERROR: Could not open frequencies file ".$config->{'freq_file'}."\n";
+            open IN, $freq_file or die "ERROR: Could not open frequencies file $freq_file\n";
             while(<IN>) {
                 chomp;
                 my @data = split /\t/;
                 my $id = shift @data;
+                
+                # sanity check
+                die("ERROR: column count in frequency file $freq_file does not match specified populations ".(join ",", @file_pops)."\n") unless scalar @data == scalar @file_pops;
+                
                 $config->{'freqs'}->{$id} = join(" ", @data);
             }
             close IN;
+            
+            # add pops to $config
+            $config->{'freq_file_pops'} = \@file_pops;
         }
         
         # build the cache
@@ -1363,11 +1504,37 @@ sub get_out_file_handle {
         die("ERROR: Output file ", $config->{output_file}, " already exists. Specify a different output file with --output_file or overwrite existing file with --force_overwrite\n");
     }
     
+    # do same for stats file
+    if(-e $config->{stats_file} && !defined($config->{force_overwrite})) {
+        die("ERROR: Stats file ", $config->{stats_file}, " already exists. Specify a different output file with --stats_file or overwrite existing file with --force_overwrite\n");
+    }
+    
     if($config->{output_file} =~ /stdout/i) {
         $out_file_handle = *STDOUT;
     }
     else {
         $out_file_handle->open(">".$config->{output_file}) or die("ERROR: Could not write to output file ", $config->{output_file}, "\n");
+    }
+    
+    # get stats file handle
+    die("ERROR: Stats file name ", $config->{stats_file}, " doesn't end in \".htm\" or \".html\" - some browsers may not be able to open this file\n") unless $config->{stats_file} =~ /htm(l)?$/;
+    my $stats_file_handle = new FileHandle;
+    $stats_file_handle->open(">".$config->{stats_file}) or die("ERROR: Could not write to stats file ", $config->{stats_file}, "\n");
+    $config->{stats_file_handle} = $stats_file_handle;
+    
+    # HTML output?
+    my $html_file_handle;
+    
+    if(defined($config->{html})) {
+      if(-e $config->{output_file}.'.html' && !defined($config->{force_overwrite})) {
+          die("ERROR: Stats file ", $config->{stats_file}, " already exists. Specify a different output file with --stats_file or overwrite existing file with --force_overwrite\n");
+      }
+      
+      $html_file_handle = new FileHandle;
+      $html_file_handle->open(">".$config->{output_file}.'.html') or die("ERROR: Could not write to HTML file ", $config->{output_file}, ".html\n");
+      $config->{html_file_handle} = $html_file_handle;
+      
+      print $html_file_handle html_head();
     }
     
     # define headers for a VCF file
@@ -1396,7 +1563,10 @@ sub get_out_file_handle {
     
     # GVF output, no header
     elsif(defined($config->{gvf}) || defined($config->{original})) {
-        print $out_file_handle join "\n", @{$config->{headers}} if defined($config->{headers}) && defined($config->{original});
+        if(defined($config->{headers}) && defined($config->{original})) {
+            print $out_file_handle join "\n", @{$config->{headers}};
+            print $html_file_handle join("\n", @{$config->{headers}})."\n</pre>" if defined($config->{html});
+        }
         return $out_file_handle;
     }
     
@@ -1455,6 +1625,14 @@ sub get_out_file_handle {
             
             print $out_file_handle join "\n", @{$config->{headers}};
             print $out_file_handle "\n";
+            
+            if(defined($config->{html})) {
+                my @tmp = @{$config->{headers}};
+                my @cols = split /\s+/, pop @tmp;
+                print $html_file_handle join "\n", @tmp;
+                print $html_file_handle "\n";
+                print $html_file_handle html_table_headers($config, \@cols);
+            }
         }
         
         else {
@@ -1463,6 +1641,13 @@ sub get_out_file_handle {
             print $out_file_handle "\n";
             print $out_file_handle join "\t", @vcf_headers;
             print $out_file_handle "\n";
+            
+            if(defined($config->{html})) {
+                print $html_file_handle "##fileformat=VCFv4.0\n";
+                print $html_file_handle join "\n", @vcf_info_strings;
+                print $html_file_handle "\n";
+                print $html_file_handle html_table_headers($config, \@vcf_headers);
+            }
         }
         
         return $out_file_handle;
@@ -1510,17 +1695,23 @@ HEAD
     
     # add headers
     print $out_file_handle $header;
+    print $html_file_handle $header if defined($config->{html});
     
     # add custom data defs
     if(defined($config->{custom})) {
         foreach my $custom(@{$config->{custom}}) {
             print $out_file_handle '## '.$custom->{name}."\t: ".$custom->{file}.' ('.$custom->{type}.")\n";
+            print $html_file_handle '## '.$custom->{name}."\t: ".$custom->{file}.' ('.$custom->{type}.")\n" if defined($config->{html});
         }
     }
     
     # add column headers
     print $out_file_handle '#', (join "\t", @{$config->{fields}});
     print $out_file_handle "\n";
+    
+    if(defined($config->{html})) {
+        print $html_file_handle html_table_headers($config, $config->{fields});
+    }
     
     return $out_file_handle;
 }
@@ -1670,6 +1861,7 @@ sub print_line {
     return unless defined($line);
     
     my $output;
+    my $html_fh = $config->{html_file_handle};
     
     # normal
     if(ref($line) eq 'HASH') {
@@ -1682,6 +1874,17 @@ sub print_line {
         $output = join "\t", map {
             (defined $line->{$_} ? $line->{$_} : (defined $extra{$_} ? $extra{$_} : '-'))
         } @{$config->{fields}};
+        
+        if(defined($config->{html})) {
+          print $html_fh Tr(
+            map {td($_)}
+            map {linkify($config, $_)}
+            map {
+              (defined $line->{$_} ? $line->{$_} : (defined $extra{$_} ? $extra{$_} : '-'))
+            }
+            @{$config->{fields}}
+          );
+        }
     }
     
     # gvf/vcf
@@ -1691,6 +1894,620 @@ sub print_line {
     
     my $fh = $config->{out_file_handle};
     print $fh "$output\n";
+}
+
+sub summarise_stats {
+    my $config = shift;
+    
+    # convert gene and transcript hashes to counts
+    for my $type(qw(genes transcripts regfeats)) {
+      $config->{stats}->{$type} = scalar keys %{$config->{stats}->{$type}} if defined $config->{stats}->{$type};
+    }
+    
+    # tot up chromosome counts
+    foreach my $chr(keys %{$config->{stats}->{chr}}) {
+      $config->{stats}->{chr_totals}->{$chr} += $config->{stats}->{chr}->{$chr}->{$_} for keys %{$config->{stats}->{chr}->{$chr}};
+      
+      my $start = 0;
+      my %tmp;
+      
+      while($start <= $config->{chr_lengths}->{$chr}) {
+        $tmp{$start / 1e6} = $config->{stats}->{chr}->{$chr}->{$start} || 0;
+        $start += 1e6;
+      }
+      
+      $config->{stats}->{chr}->{$chr} = \%tmp;
+    }
+    
+    # convert allele changes to Ts/Tv
+    map {$config->{stats}->{ts_tv}->{$ts_tv{$_}} += $config->{stats}->{allele_changes}->{$_}} keys %{$config->{stats}->{allele_changes}} if defined($config->{stats}->{allele_changes});
+    
+    # flesh out protein_pos
+    if(defined($config->{stats}->{protein_pos})) {
+      if(defined($config->{stats}->{protein_pos}->{10})) {
+        $config->{stats}->{protein_pos}->{9} += $config->{stats}->{protein_pos}->{10};
+        delete $config->{stats}->{protein_pos}->{10};
+      }
+      $config->{stats}->{protein_pos}->{$_} ||= 0 for (0..9);
+      
+      my %tmp = map {$_.'0-'.($_+1).'0%' => $config->{stats}->{protein_pos}->{$_}} keys %{$config->{stats}->{protein_pos}};
+      $config->{stats}->{protein_pos} = \%tmp;
+    }
+    
+    # coding cons
+    foreach my $con(qw(missense_variant synonymous_variant coding_sequence_variant stop_lost stop_gained frameshift_variant inframe_insertion inframe_deletion)) {
+      $config->{stats}->{coding}->{$con} = $config->{stats}->{consequences}->{$con} if defined($config->{stats}->{consequences}->{$con});
+    }
+    
+    # get ranks to sort
+    my %cons_ranks = map { $_->{SO_term} => $_->{rank} } values %Bio::EnsEMBL::Variation::Utils::Constants::OVERLAP_CONSEQUENCES;
+    
+    # create pie chart hashes
+    my @charts = (
+      {
+        id => 'var_class',
+        title => 'Variant classes',
+        header => ['Variant class', 'Count'],
+        data => $config->{stats}->{classes},
+        type => 'pie',
+        sort => 'value',
+        height => 200,
+      },
+      {
+        id => 'consequences',
+        title => 'Variant consequences',
+        header => ['Consequence type', 'Count'],
+        data => $config->{stats}->{consequences},
+        type => 'pie',
+        sort => \%cons_ranks,
+        colours => $colour_keys{consequences},
+      },
+      {
+        id => 'coding',
+        title => 'Coding consequences',
+        header => ['Consequence type', 'Count'],
+        data => $config->{stats}->{coding},
+        type => 'pie',
+        sort => \%cons_ranks,
+        colours => $colour_keys{consequences},
+      }
+    );
+    
+    foreach my $tool(qw(SIFT PolyPhen)) {
+      my $lc_tool = lc($tool);
+      
+      push @charts, {
+        id => $lc_tool,
+        title => $tool.' summary',
+        header => ['Prediction', 'Count'],
+        data => $config->{stats}->{$tool},
+        type => 'pie',
+        height => 200,
+        sort => 'value',
+        colours => $colour_keys{$lc_tool},
+      } if defined($config->{$lc_tool});
+    }
+    
+    push @charts, {
+      id => 'chr',
+      title => 'Variants by chromosome',
+      header => ['Chromosome','Count'],
+      data => $config->{stats}->{chr_totals},
+      sort => 'chr',
+      type => 'bar',
+      options => '{legend: {position: "none"}}',
+    };
+    
+    foreach my $chr(sort {($a !~ /^\d+$/ || $b !~ /^\d+/) ? $a cmp $b : $a <=> $b} keys %{$config->{stats}->{chr}}) {
+      push @charts, {
+        id => 'chr_'.$chr,
+        title => 'Distribution of variants on chromosome '.$chr,
+        header => ['Position (mb)', 'Count'],
+        data => $config->{stats}->{chr}->{$chr},
+        sort => 'chr',
+        type => 'line',
+        options => '{hAxis: {title: "Position (mb)"}, legend: {position: "none"}}',
+        no_table => 1,
+        no_link => 1,
+      };
+    }
+    
+    push @charts, {
+      id => 'protein',
+      title => 'Position in protein',
+      header => ['Position in protein (percentile)','Count'],
+      data => $config->{stats}->{protein_pos},
+      sort => 'chr',
+      type => 'bar',
+      no_table => 1,
+      options => '{hAxis: {title: "Position in protein (percentile)", textStyle: {fontSize: 10}}, legend: {position: "none"}}',
+    };
+    
+    my $fh = $config->{stats_file_handle};
+    print $fh stats_html_head($config, \@charts);
+    
+    # create menu
+    print $fh div(
+      {class => 'sidemenu'},
+      div(
+        {class => 'sidemenu_head'},
+        "Links"
+      ),
+      div(
+        {class => 'sidemenu_body'},
+        ul(
+          li([
+            a({href => '#masthead'}, "Top of page"),
+            a({href => '#run_stats'}, "VEP run statistics"),
+            a({href => '#gen_stats'}, "General statistics"),
+            map {
+              a({href => '#'.$_->{id}}, $_->{title})
+            } grep { !$_->{no_link} } @charts,
+          ])
+        ),
+      )
+    );
+    
+    print $fh "<div class='main_content'>";
+    
+    # run stats
+    print $fh h3({id => 'run_stats'}, "VEP run statistics");
+    
+    my @rows = (
+      ['VEP version (API)', $VERSION.' ('.$config->{reg}->software_version.')'],
+      ['Cache/Database', ($config->{cache} ? $config->{dir} : ($config->{mca} ? $config->{mca}->dbc->dbname." on ".$config->{mca}->dbc->host : '?'))],
+      ['Species', $config->{species}],
+      ['Command line options', pre(join(" ", @{$config->{stats}->{options}}))],
+      ['Start time', $config->{stats}->{start_time}],
+      ['End time', $config->{stats}->{end_time}],
+      ['Run time', $config->{stats}->{run_time}." seconds"],
+      ['Input file (format)', $config->{input_file}.' ('.uc($config->{format}).')'],
+      [
+        'Output file',
+        $config->{output_file}.
+        (defined($config->{html}) ? ' '.a({href => $config->{output_file}.'.html'}, '[HTML]') : '').
+        ' '.a({href => $config->{output_file}}, '[text]')
+      ],
+    );
+    print $fh table({class => 'stats_table'}, Tr([map {td($_)} @rows]));
+    
+    # vars in/out stats
+    print $fh h3({id => 'gen_stats'}, "General statistics");
+    
+    @rows = (
+      ['Lines of input read', $config->{line_number}],
+      ['Variants processed', $config->{stats}->{var_count}],
+      ['Variants remaining after filtering', $config->{stats}->{filter_count}],
+      [
+        'Novel / known variants',
+        defined($config->{stats}->{existing}) ?
+        sprintf("%s (%.1f\%) / %s (%.1f\%)",
+          $config->{stats}->{var_count} - $config->{stats}->{existing},
+          100 * (($config->{stats}->{var_count} - $config->{stats}->{existing}) / $config->{stats}->{var_count}),
+          $config->{stats}->{existing},
+          100 * ($config->{stats}->{existing} / $config->{stats}->{var_count}),
+        )
+        : '-'
+      ],
+      ['Overlapped genes', $config->{stats}->{genes}],
+      ['Overlapped transcripts', $config->{stats}->{transcripts}],
+      ['Overlapped regulatory features', $config->{stats}->{regfeats} || '-'],
+    );
+    print $fh table({class => 'stats_table'}, Tr([map {td($_)} @rows]));
+    
+    foreach my $chart(@charts) {
+      my $height = $chart->{height} || ($chart->{type} eq 'pie' ? '400' : '200');
+      
+      print $fh hr();
+      print $fh h3({id => $chart->{id}}, $chart->{title});
+      print $fh div({id => $chart->{id}."_".$chart->{type}, style => 'width: 800px; height: '.$height.'px'}, '&nbsp;');
+      print $fh div({id => $chart->{id}."_table", style => 'width: 800px; height: 200px'}, '&nbsp;') unless $chart->{no_table};
+    }
+    
+    print $fh '</div>';
+    print $fh stats_html_tail();
+    $config->{stats_file_handle}->close;
+}
+
+sub stats_html_head {
+    my $config = shift;
+    my $charts = shift;
+    
+    my ($js);
+    foreach my $chart(@$charts) {
+      my @keys;
+      
+      # sort data
+      if(defined($chart->{sort})) {
+        if($chart->{sort} eq 'chr') {
+          @keys = sort {($a !~ /^\d+$/ || $b !~ /^\d+/) ? $a cmp $b : $a <=> $b} keys %{$chart->{data}};
+        }
+        elsif($chart->{sort} eq 'value') {
+          @keys = sort {$chart->{data}->{$a} <=> $chart->{data}->{$b}} keys %{$chart->{data}};
+        }
+        elsif(ref($chart->{sort}) eq 'HASH') {
+          @keys = sort {$chart->{sort}->{$a} <=> $chart->{sort}->{$b}} keys %{$chart->{data}};
+        }
+      }
+      else {
+        @keys = keys %{$chart->{data}};
+      }
+      
+      my $type = ucfirst($chart->{type});
+      
+      # add colour
+      if(defined($chart->{colours})) {
+        my $co = 'slices: ['.join(", ", map { $chart->{colours}->{$_} ? '{color: "'.$chart->{colours}->{$_}.'"}' : '{}' } @keys).']';
+        
+        if(defined($chart->{options})) {
+          $chart->{options} =~ s/}$/, $co}/;
+        }
+        else {
+          $chart->{options} = "{$co}";
+        }
+      }
+      
+      # code to draw chart
+      $js .= sprintf(
+        "var %s = draw$type('%s', '%s', google.visualization.arrayToDataTable([['%s','%s'],%s]), %s);\n",
+        $chart->{id}.'_'.$chart->{type},
+        $chart->{id}.'_'.$chart->{type},
+        $chart->{title},
+        $chart->{header}->[0], $chart->{header}->[1],
+        join(",", map {"['".$_."',".$chart->{data}->{$_}."]"} @keys),
+        $chart->{options} || 'null',
+      );
+      
+      unless($chart->{no_table}) {
+        
+        # code to draw table
+        $js .= sprintf(
+          "var %s = drawTable('%s', '%s', google.visualization.arrayToDataTable([['%s','%s'],%s]));\n",
+          $chart->{id}.'_table',
+          $chart->{id}.'_table',
+          $chart->{title},
+          $chart->{header}->[0], $chart->{header}->[1],
+          join(",", map {"['".$_."',".$chart->{data}->{$_}."]"} @keys)
+        );
+        
+        # interaction between table/chart
+        $js .= sprintf(
+          qq{
+            google.visualization.events.addListener(%s, 'select', function() {
+              %s.setSelection(%s.getSelection());
+            });
+            google.visualization.events.addListener(%s, 'select', function() {
+              %s.setSelection(%s.getSelection());
+            });
+          },
+          $chart->{id}.'_'.$chart->{type},
+          $chart->{id}.'_table',
+          $chart->{id}.'_'.$chart->{type},
+          $chart->{id}.'_table',
+          $chart->{id}.'_'.$chart->{type},
+          $chart->{id}.'_table',
+        );
+      }
+    }
+    
+    my $html =<<SHTML;
+<html>
+<head>
+  <title>VEP summary</title>
+  <script type="text/javascript" src="http://www.google.com/jsapi"></script>
+  <script type="text/javascript">
+    google.load('visualization', '1', {packages: ['corechart','table']});
+  </script>
+  <script type="text/javascript">
+    
+    function init() {
+      // charts
+      $js
+    }
+    
+    function drawPie(id, title, data, options) {    
+      var pie = new google.visualization.PieChart(document.getElementById(id));
+      pie.draw(data, options);
+      return pie;
+    }
+    function drawBar(id, title, data, options) {
+      var bar = new google.visualization.ColumnChart(document.getElementById(id));
+      bar.draw(data, options);
+      return bar;
+    }
+    function drawTable(id, title, data) {
+      var table = new google.visualization.Table(document.getElementById(id));
+      table.draw(data, null);
+      return table;
+    }
+    function drawLine(id, title, data, options) {
+      var line = new google.visualization.LineChart(document.getElementById(id));
+      line.draw(data, options);
+      return line;
+    }
+    google.setOnLoadCallback(init);
+  </script>
+  
+  
+  <style type="text/css">
+    body {
+      font-family: arial, sans-serif;
+      margin: 0px;
+      padding: 0px;
+    }
+    
+    a {color: #36b;}
+    a.visited {color: #006;}
+    
+    .stats_table {
+      margin: 5px;
+    }
+    
+    tr:nth-child(odd) {
+      background-color: rgb(238, 238, 238);
+    }
+    
+    td {
+      padding: 5px;
+    }
+    
+    td:nth-child(odd) {
+      font-weight: bold;
+    }
+    
+    h3 {
+      color: #666;
+    }
+    
+    .masthead {
+      background-color: rgb(51, 51, 102);
+      color: rgb(204, 221, 255);
+      height: 80px;
+      width: 100%;
+      padding: 0px;
+    }
+    
+    .main {
+      padding: 10px;
+    }
+    
+    .gradient {
+      background: #333366; /* Old browsers */
+      background: -moz-linear-gradient(left,  #333366 0%, #ffffff 100%); /* FF3.6+ */
+      background: -webkit-gradient(linear, left top, right top, color-stop(0%,#333366), color-stop(100%,#ffffff)); /* Chrome,Safari4+ */
+      background: -webkit-linear-gradient(left,  #333366 0%,#ffffff 100%); /* Chrome10+,Safari5.1+ */
+      background: -o-linear-gradient(left,  #333366 0%,#ffffff 100%); /* Opera 11.10+ */
+      background: -ms-linear-gradient(left,  #333366 0%,#ffffff 100%); /* IE10+ */
+      background: linear-gradient(to right,  #333366 0%,#ffffff 100%); /* W3C */
+      filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#333366', endColorstr='#ffffff',GradientType=1 ); /* IE6-9 */
+      
+      padding: 0px;
+      height: 80px;
+      width: 500px;
+      float: right;
+      display: inline;
+    }
+    
+    .main_content {
+      margin-left: 300px;
+    }
+    
+    .sidemenu {
+      width: 260px;
+      position: fixed;
+      border-style: solid;
+      border-width: 2px;
+      border-color: rgb(51, 51, 102);
+    }
+    
+    .sidemenu_head {
+      width: 250px;
+      background-color: rgb(51, 51, 102);
+      color: rgb(204, 221, 255);
+      padding: 5px;
+    }
+    
+    .sidemenu_body {
+      width: 250px;
+      padding: 5px;
+    }
+  </style>
+</head>
+<body>
+<div id="masthead" class="masthead">
+  <div style="float: left; display: inline; padding: 10px; height: 80px;">
+    <a href="http://www.ensembl.org/"><img src="http://static.ensembl.org/i/e-ensembl.png"></a>
+  </div>
+  
+  <div style="float: right; display: inline; height: 80px; background: white; padding: 10px;">
+    <a href="http://www.ensembl.org/info/docs/variation/vep/vep_script.html"><img src="http://www.ensembl.org/img/vep_logo.png"></a>
+  </div>
+  <div class="gradient">
+  </div>
+</div>
+<div class="main">
+SHTML
+
+    return $html;
+}
+
+sub stats_html_tail {
+  return "\n</div></body>\n</html>\n";
+}
+
+sub html_head {
+    my $txt_file = $config->{output_file};
+    my $stats_file = $config->{stats_file};
+    my $html =<<HTML;
+<html>
+<head>
+  <title>VEP output</title>
+  <script type="text/javascript" language="javascript" src="http://www.datatables.net/media/javascript/complete.min.js"></script>
+  <script class="jsbin" src="http://datatables.net/download/build/jquery.dataTables.nightly.js"></script>
+  <script type="text/javascript" language="javascript">
+    \$(document).ready(function() {
+      \$('#data').dataTable({
+        "sPaginationType": "full_numbers"
+      });
+    });
+    
+    function fnShowHide( iCol ) {
+      /* Get the DataTables object again - this is not a recreation, just a get of the object */
+      var oTable = \$('#data').dataTable();
+       
+      var bVis = oTable.fnSettings().aoColumns[iCol].bVisible;
+      oTable.fnSetColumnVis( iCol, bVis ? false : true );
+    }
+    
+    function showAllCols() {
+      var oTable = \$('#data').dataTable();
+      for (var i=0;i<oTable.fnSettings().aoColumns.length;i++) { 
+        oTable.fnSetColumnVis(i, true);
+      }
+    }
+    
+    function showHide(lyr) {
+      var lyrobj = document.getElementById(lyr);
+      
+      if(lyrobj.style.height == "0px") {
+        lyrobj.style.height = "";
+        lyrobj.style.display = "";
+      }
+      
+      else {
+        lyrobj.style.height = "0px";
+        lyrobj.style.display = "none";
+      }
+    }
+  </script>
+  <style type="text/css">
+    \@import "http://www.datatables.net/release-datatables/media/css/demo_table.css";
+    body {
+      font-family: arial, sans-serif;
+      margin: 0px;
+      padding: 0px;
+    }
+    
+    a {color: #36b;}
+    a.visited {color: #006;}
+    
+    th {
+      font-size: 11px;
+    }
+    td {
+      font-size: 11px;
+    }
+    
+    .masthead {
+      background-color: rgb(51, 51, 102);
+      color: rgb(204, 221, 255);
+      height: 80px;
+      width: 100%;
+      padding: 0px;
+    }
+    
+    .main {
+      padding: 10px;
+    }
+    
+    .gradient {
+      background: #333366; /* Old browsers */
+      background: -moz-linear-gradient(left,  #333366 0%, #ffffff 100%); /* FF3.6+ */
+      background: -webkit-gradient(linear, left top, right top, color-stop(0%,#333366), color-stop(100%,#ffffff)); /* Chrome,Safari4+ */
+      background: -webkit-linear-gradient(left,  #333366 0%,#ffffff 100%); /* Chrome10+,Safari5.1+ */
+      background: -o-linear-gradient(left,  #333366 0%,#ffffff 100%); /* Opera 11.10+ */
+      background: -ms-linear-gradient(left,  #333366 0%,#ffffff 100%); /* IE10+ */
+      background: linear-gradient(to right,  #333366 0%,#ffffff 100%); /* W3C */
+      filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#333366', endColorstr='#ffffff',GradientType=1 ); /* IE6-9 */
+      
+      padding: 0px;
+      height: 80px;
+      width: 500px;
+      float: right;
+      display: inline;
+    }
+  </style>
+  </head>
+  <body>
+  <div id="masthead" class="masthead">
+    <div style="float: left; display: inline; padding: 10px; height: 80px;">
+      <a href="http://www.ensembl.org/"><img src="http://static.ensembl.org/i/e-ensembl.png"></a>
+    </div>
+    
+    <div style="float: right; display: inline; height: 80px; background: white; padding: 10px;">
+      <a href="http://www.ensembl.org/info/docs/variation/vep/vep_script.html"><img src="http://www.ensembl.org/img/vep_logo.png"></a>
+    </div>
+    <div class="gradient">
+    </div>
+  </div>
+  <div class="main">
+  <p>
+    View: <a href="$stats_file">Summary statistics</a> |
+    <a href="$txt_file">as text</a> |
+    <a href="javascript:void();" onclick="showHide('header')">Show/hide header</a> |
+    <a href="javascript:void();" onclick="showAllCols()">Restore columns</a>
+  </p>
+  <hr/>
+  <pre id="header" style="height:0px; display: none;">
+HTML
+  return $html;
+}
+
+sub html_table_headers {
+  my $config = shift;
+  my $cols = shift;
+  
+  my @cols_copy = @$cols;
+  
+  my $html = qq{</pre><table id="data" class="display"><thead><tr>};
+  
+  $config->{_th} = join("", map {
+    $cols_copy[$_] =~ s/\_/ /g;
+    '<th>'.$cols_copy[$_].' '.a({href => 'javascript:void();', onclick => "fnShowHide($_);"}, img({src => 'http://www.ensembl.org/i/16/cross.png', height => 6, width => 6, style => 'border: 1px solid gray; padding: 1px;'})).'</th>'
+  } (0..$#cols_copy));
+  
+  $html .= $config->{_th};
+  $html .= qq{</thead></tr><tbody>};
+  
+  return $html;
+}
+
+sub linkify {
+  my $config = shift;
+  my $string = shift;
+  
+  my $species = ucfirst($config->{species});
+  
+  # Ensembl genes
+  $string =~ s/(ENS.{0,3}G\d+|CCDS\d+\.?\d+?|N[MP]_\d+\.?\d+?)/a({href => "http:\/\/www.ensembl.org\/$species\/Gene\/Summary\?g=$1", target => "_blank"}, $1)/ge;
+  
+  # Ensembl transcripts
+  $string =~ s/(ENS.{0,3}T\d+)/a({href => "http:\/\/www.ensembl.org\/$species\/Transcript\/Summary\?t=$1", target => "_blank"}, $1)/ge;
+  
+  # Ensembl regfeats
+  $string =~ s/(ENS.{0,3}R\d+)/a({href => "http:\/\/www.ensembl.org\/$species\/Regulation\/Summary\?rf=$1", target => "_blank"}, $1)/ge;
+  
+  # variant identifiers
+  $string =~ s/(rs\d+|COSM\d+|C[DMIX]\d+)/a({href => "http:\/\/www.ensembl.org\/$species\/Variation\/Summary\?v=$1", target => "_blank"}, $1)/gie;
+  
+  # locations
+  while($string =~ m/(^[A-Z\_\d]+?:[1-9]\d+)(\-\d+)?/g) {
+    my $loc = $1.($2 ? $2 : '');
+    my ($chr, $start, $end) = split /\-|\:/, $loc;
+    $end ||= $start;
+    
+    # adjust +/- 1kb
+    $start -= 1000;
+    $end   += 1000;
+    
+    my $link = a({href => "http://www.ensembl.org/$species/Location/View?r=$chr:$start\-$end", target => "_blank"}, $string);
+    $string =~ s/$loc/$link/;
+  }
+  
+  # split strings
+  $string =~ s/([,;])/$1 /g;
+  
+  return $string;
 }
 
 # outputs usage message
@@ -1737,6 +2554,9 @@ Options
                        since no consequence data is added [default: off]
 --vcf                  Write output as VCF [default: off]
 --gvf                  Write output as GVF [default: off]
+--html                 Write output also as HTML (filename: [output_file].html)
+--stats_file           Specify stats summary file [default: [output_file]_summary.html]
+--no_stats             Don't write stats summary file
 --fields [field list]  Define a custom output format by specifying a comma-separated
                        list of field names. Field names normally present in the
                        "Extra" field may also be specified, including those added by
@@ -1837,6 +2657,8 @@ NB: Regulatory consequences are currently available for human and mouse only
   [exclude|include]    or excluded from analysis
 --gmaf                 Include global MAF of existing variant from 1000 Genomes
                        Phase 1 in output
+--maf_1kg              Include MAF from continental populations (AFR,AMR,ASN,EUR) of
+                       1000 Genomes Phase 1 in output
   
 --individual [id]      Consider only alternate alleles present in the genotypes of the
                        specified individual(s). May be a single individual, a comma-
@@ -1860,10 +2682,22 @@ NB: Regulatory consequences are currently available for human and mouse only
   [ensembl|vcf|pileup] Converted output is written to the file specified in
                        --output_file. No consequence calculation is carried out when
                        doing file conversion. [default: off]
+                       
+--cache                Enables read-only use of cache [default: off]
+--dir [directory]      Specify the base cache directory to use [default: "\$HOME/.vep/"]
+--fasta [file|dir]     Specify a FASTA file or a directory containing FASTA files
+                       to use to look up reference sequence. The first time you
+                       run the script with this parameter an index will be built
+                       which can take a few minutes. This is required if
+                       fetching HGVS annotations (--hgvs) or checking reference
+                       sequences (--check_ref) in offline mode (--offline), and
+                       optional with some performance increase in cache mode
+                       (--cache). See documentation for more details
 
 --refseq               Use the otherfeatures database to retrieve transcripts - this
                        database contains RefSeq transcripts (as well as CCDS and
                        Ensembl EST alignments) [default: off]
+--database             Enable using databases [default: off]
 --host                 Manually define database host [default: "ensembldb.ensembl.org"]
 -u | --user            Database username [default: "anonymous"]
 --port                 Database port [default: 5306]
@@ -1873,28 +2707,12 @@ NB: Regulatory consequences are currently available for human and mouse only
                        Defining a registry file overrides above connection settings.
 --db_version=[number]  Force script to load DBs from a specific Ensembl version. Not
                        advised due to likely incompatibilities between API and DB
-
---no_whole_genome      Run in old-style, non-whole genome mode [default: off]
---buffer_size          Sets the number of variants sent in each batch [default: 5000]
-                       Increasing buffer size can retrieve results more quickly
-                       but requires more memory. Only applies to whole genome mode.
                        
---cache                Enables read-only use of cache [default: off]
---dir [directory]      Specify the base cache directory to use [default: "\$HOME/.vep/"]
 --write_cache          Enable writing to cache [default: off]
 --build [all|list]     Build a complete cache for the selected species. Build for all
                        chromosomes with --build all, or a list of chromosomes (see
                        --chr). DO NOT USE WHEN CONNECTED TO PUBLIC DB SERVERS AS THIS
                        VIOLATES OUR FAIR USAGE POLICY [default: off]
-                       
---fasta [file|dir]     Specify a FASTA file or a directory containing FASTA files
-                       to use to look up reference sequence. The first time you
-                       run the script with this parameter an index will be built
-                       which can take a few minutes. This is required if
-                       fetching HGVS annotations (--hgvs) or checking reference
-                       sequences (--check_ref) in offline mode (--offline), and
-                       optional with some performance increase in cache mode
-                       (--cache). See documentation for more details
                        
 --compress             Specify utility to decompress cache files - may be "gzcat" or
                        "gzip -dc" Only use if default does not work [default: zcat]
@@ -1905,6 +2723,11 @@ NB: Regulatory consequences are currently available for human and mouse only
                        useastdb.ensembl.org) [default: off]
 --cache_region_size    ADVANCED! The size in base-pairs of the region covered by one
                        file in the cache. [default: 1MB]
+                       
+--buffer_size          Sets the number of variants sent in each batch [default: 5000]
+                       Increasing buffer size can retrieve results more quickly
+                       but requires more memory. Only applies to whole genome mode.
+--no_whole_genome      Run in old-style, non-whole genome mode [default: off]
 END
 
     print $usage;

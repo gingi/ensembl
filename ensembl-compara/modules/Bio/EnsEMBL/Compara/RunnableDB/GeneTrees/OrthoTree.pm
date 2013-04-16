@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -54,7 +54,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.37 $
+$Revision: 1.39 $
 
 =head1 APPENDIX
 
@@ -73,7 +73,6 @@ use List::Util qw(max);
 use Scalar::Util qw(looks_like_number);
 
 use Bio::EnsEMBL::Compara::Homology;
-use Bio::EnsEMBL::Compara::Member;
 use Bio::EnsEMBL::Compara::MethodLinkSpeciesSet;
 use Bio::EnsEMBL::Compara::Graph::Link;
 use Bio::EnsEMBL::Compara::Graph::Node;

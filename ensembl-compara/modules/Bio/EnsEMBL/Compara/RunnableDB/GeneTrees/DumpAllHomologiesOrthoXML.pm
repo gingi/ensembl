@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -42,11 +42,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mm14 $
+$Author: lg4 $
 
 =head VERSION
 
-$Revision: 1.5.2.1 $
+$Revision: 1.8 $
 
 =head1 APPENDIX
 
@@ -79,7 +79,7 @@ sub fetch_input {
     # Defines the file handle
     my $file_handle = *STDOUT;
     if (defined $self->param('file')) {
-        $file_handle = IO::File->new($self->param_substitute($self->param('file')), 'w');
+        $file_handle = IO::File->new( $self->param('file'), 'w');
     }
     $self->param('file_handle', $file_handle);
 }
@@ -110,7 +110,7 @@ sub run {
 
     $sql = "SELECT homology_id, peptide_member_id, homology.description FROM homology_member JOIN homology USING (homology_id) JOIN method_link_species_set USING (method_link_species_set_id) WHERE method_link_id=".$self->param('ortholog_method_link_id');
     if (defined $self->param('id_range')) {
-        my $range = $self->param_substitute($self->param('id_range'));
+        my $range = $self->param('id_range');
         $range =~ s/-/ AND /;
         $sql .= " AND homology_id BETWEEN $range";
     }

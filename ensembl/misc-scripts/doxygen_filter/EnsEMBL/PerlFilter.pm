@@ -22,7 +22,7 @@
  
   ------------------------------------------------
   This completely rewritten version of Doxygen::PerlFilter 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
   
   This software is distributed under a modified Apache license.
@@ -348,7 +348,7 @@ sub pod_method_parser {
                 $code = undef;
             }
 		    if (/Example\s+:(.*)/) { #starts code section at Example : in POD
-		        $_ =~ s#(Example\s+:)(.*)#$1</pre>\@code$2#;
+		        $_ =~ s#(Examples?\s+:)(.*)#$1</pre>\@code$2#;
 		        $code = 1;
 		    }
 		}

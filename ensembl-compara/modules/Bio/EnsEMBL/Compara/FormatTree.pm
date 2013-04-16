@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2012 The European Bioinformatics Institute and
+  Copyright (c) 1999-2013 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -200,7 +200,7 @@ my $label_ext_cb = sub {
     my ($self) = @_;
     my $display_label = $self->{tree}->gene_member->display_label;
     if (!defined($display_label) || $display_label eq '') {
-        my $display_xref = $self->gene_member->get_Gene->display_xref;
+        my $display_xref = $self->{tree}->gene_member->get_Gene->display_xref;
         $display_label = $display_xref->display_id if (defined($display_xref));
     }    
     if (defined($display_label) && $display_label =~ /^\w+$/) {
@@ -227,10 +227,10 @@ my $stable_id_cb = sub {  ## only if we are in a leaf?
   return $self->{tree}->gene_member->stable_id;
 };
 
-# C(get_canonical_Member,stable_id)
+# C(get_canonical_SeqMember,stable_id)
 my $prot_id_cb = sub {
   my ($self) = @_;
-  return $self->{tree}->get_canonical_Member->stable_id;
+  return $self->{tree}->get_canonical_SeqMember->stable_id;
 };
 
 # C(member_id)
@@ -252,7 +252,7 @@ my $sp_name_cb = sub {
       $species_name = $self->{tree}->genome_db->name;
       $species_name =~ s/\ /\_/g;
       return $species_name;
-  } elsif ($self->{tree}->isa('Bio::EnsEMBL::Compara::CAFETreeNode')){
+  } elsif ($self->{tree}->isa('Bio::EnsEMBL::Compara::CAFEGeneFamily')){
       my $taxon_id = $self->{tree}->taxon_id();
       my $genome_db_adaptor = $self->{tree}->adaptor->db->get_GenomeDBAdaptor;
       my $genome_db;
@@ -271,7 +271,7 @@ my $sp_name_cb = sub {
 my $n_members_cb = sub {
     my ($self) = @_;
     my $n_members;
-    if ($self->{tree}->isa('Bio::EnsEMBL::Compara::CAFETreeNode')) {
+    if ($self->{tree}->isa('Bio::EnsEMBL::Compara::CAFEGeneFamily')) {
         return $self->{tree}->n_members();
     }
     return undef;
@@ -281,8 +281,8 @@ my $n_members_cb = sub {
 my $pvalue_cb = sub {
     my ($self) = @_;
     my $pval;
-    if ($self->{tree}->isa('Bio::EnsEMBL::Compara::CAFETreeNode')) {
-        return $self->{tree}->p_value();
+    if ($self->{tree}->isa('Bio::EnsEMBL::Compara::CAFEGeneFamily')) {
+        return $self->{tree}->pvalue();
     }
     return undef;
 };
@@ -441,7 +441,7 @@ sub _internal_format_newick {
 # %{l} --> display_label ($self->gene_member->display_label)
 # %{h} --> genome short name ($self->genome_db->short_name)
 # %{s} --> stable_id ($self->gene_member->stable_id)
-# %{p} --> peptide Member ($self->get_canonical_Member->stable_id)
+# %{p} --> peptide Member ($self->get_canonical_SeqMember->stable_id)
 # %{t} --> taxon_id ($self->taxon_id)
 # %{m} --> member_id ($self->member_id)
 # %{g} --> genome_db name ($self->genome_db->name)

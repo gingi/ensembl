@@ -46,7 +46,6 @@ package Bio::EnsEMBL::Compara::RunnableDB::LoadMembers;
 use strict;
 use warnings;
 
-use Bio::EnsEMBL::Compara::Member;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
@@ -56,6 +55,7 @@ sub param_defaults {
         'include_reference'     => 1,
         'include_nonreference'  => 0,
         'store_genes'           => 1, # whether the genes are also stored as members
+        'allow_pyrrolysine'     => 1,
     };
 }
 
@@ -212,7 +212,8 @@ sub store_gene_and_all_transcripts {
   my $self = shift;
   my $gene = shift;
 
-  my $member_adaptor = $self->compara_dba->get_MemberAdaptor();
+  my $gene_member_adaptor = $self->compara_dba->get_GeneMemberAdaptor();
+  my $seq_member_adaptor = $self->compara_dba->get_SeqMemberAdaptor();
   my $sequence_adaptor = $self->compara_dba->get_SequenceAdaptor();
   
   my @canonicalPeptideMember;
@@ -268,7 +269,7 @@ sub store_gene_and_all_transcripts {
 
     my $description = $self->fasta_description($gene, $transcript);
 
-    my $pep_member = Bio::EnsEMBL::Compara::Member->new_from_transcript(
+    my $pep_member = Bio::EnsEMBL::Compara::SeqMember->new_from_transcript(
          -transcript=>$transcript,
          -genome_db=>$self->param('genome_db'),
          -translate=>'yes',
@@ -286,12 +287,12 @@ sub store_gene_and_all_transcripts {
     # the gene.
     if($self->param('store_genes') && $gene_member_not_stored) {
       print("     gene       " . $gene->stable_id ) if($self->param('verbose'));
-      $gene_member = Bio::EnsEMBL::Compara::Member->new_from_gene(
+      $gene_member = Bio::EnsEMBL::Compara::GeneMember->new_from_gene(
                                                                   -gene=>$gene,
                                                                   -genome_db=>$self->param('genome_db'));
       print(" => member " . $gene_member->stable_id) if($self->param('verbose'));
 
-      $member_adaptor->store($gene_member);
+      $gene_member_adaptor->store($gene_member);
       print(" : stored") if($self->param('verbose'));
 
       print("\n") if($self->param('verbose'));
@@ -299,7 +300,12 @@ sub store_gene_and_all_transcripts {
     }
 
     $pep_member->gene_member_id($gene_member->dbID);
-    $member_adaptor->store($pep_member);
+    if ($pep_member->sequence =~ /O/ and not $self->param('allow_pyrrolysine')) {
+        my $seq = $pep_member->sequence;
+        $seq =~ s/O/X/g;
+        $pep_member->sequence($seq);
+    }
+    $seq_member_adaptor->store($pep_member);
     if ($self->param('store_related_pep_sequences')) {
         $sequence_adaptor->store_other_sequence($pep_member, $pep_member->sequence_cds, 'cds');
         $pep_member->sequence_cds('');
@@ -317,7 +323,7 @@ sub store_gene_and_all_transcripts {
 
   if(@canonicalPeptideMember) {
     my ($transcript, $member) = @canonicalPeptideMember;
-    $member_adaptor->_set_member_as_canonical($member);
+    $seq_member_adaptor->_set_member_as_canonical($member);
     # print("     LONGEST " . $transcript->stable_id . "\n");
   }
   return 1;
@@ -331,7 +337,7 @@ sub store_all_coding_exons {
 
   my $min_exon_length = $self->param('min_length') or die "'min_length' is an obligatory parameter";
 
-  my $member_adaptor = $self->compara_dba->get_MemberAdaptor();
+  my $seq_member_adaptor = $self->compara_dba->get_SeqMemberAdaptor();
   my $genome_db = $self->param('genome_db');
   my @exon_members = ();
 
@@ -351,21 +357,22 @@ sub store_all_coding_exons {
         }
         my $description = $self->fasta_description($exon, $transcript);
         
-        my $exon_member = new Bio::EnsEMBL::Compara::Member;
+        my $exon_member = new Bio::EnsEMBL::Compara::SeqMember(
+            -source_name    => 'ENSEMBLPEP',
+            -genome_db_id   => $genome_db->dbID,
+            -stable_id      => $exon->stable_id
+        );
         $exon_member->taxon_id($genome_db->taxon_id);
         if(defined $description ) {
           $exon_member->description($description);
         } else {
           $exon_member->description("NULL");
         }
-        $exon_member->genome_db_id($genome_db->dbID);
         $exon_member->chr_name($exon->seq_region_name);
         $exon_member->chr_start($exon->seq_region_start);
         $exon_member->chr_end($exon->seq_region_end);
         $exon_member->chr_strand($exon->seq_region_strand);
         $exon_member->version($exon->version);
-        $exon_member->stable_id($exon->stable_id);
-        $exon_member->source_name("ENSEMBLPEP");
 
 	#Not sure what this should be but need to set it to something or else the members do not get added
 	#to the member table in the store method of MemberAdaptor
@@ -409,7 +416,7 @@ sub store_all_coding_exons {
 
     eval {
 	    #print "New member\n";
-	    $member_adaptor->store($exon_member);
+	    $seq_member_adaptor->store($exon_member);
 	    print(" : stored\n") if($self->param('verbose'));
     };
   }
