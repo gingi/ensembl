@@ -1,0 +1,83 @@
+D/Analysis////
+D/DB////
+D/DBFile////
+D/DBSQL////
+D/DensityPlot////
+D/External////
+D/IdMapping////
+D/Map////
+D/Mapper////
+D/Pipeline////
+D/Utils////
+/AlignStrainSlice.pm/1.18/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Analysis.pm/1.33/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/ApiVersion.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/ArchiveStableId.pm/1.28/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/AssemblyExceptionFeature.pm/1.9/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/AssemblyMapper.pm/1.50/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Attribute.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/BaseAlignFeature.pm/1.65/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/ChainedAssemblyMapper.pm/1.21/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/CircularSlice.pm/1.11/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/CoordSystem.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/DBEntry.pm/1.52/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/DBLoader.pm/1.19/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/DataFile.pm/1.7/Tue Apr 24 12:03:35 2012//Tbranch-ensembl-67
+/DensityFeature.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/DensityFeatureSet.pm/1.11/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/DensityType.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/DnaDnaAlignFeature.pm/1.27/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/DnaPepAlignFeature.pm/1.18/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Exon.pm/1.183.2.1/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Feature.pm/1.69/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/FeaturePair.pm/1.68/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Gene.pm/1.180/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/IdentityXref.pm/1.19/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/IndividualSlice.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/IndividualSliceFactory.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Intron.pm/1.20/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/IntronSupportingEvidence.pm/1.2/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/KaryotypeBand.pm/1.11/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/LRGSlice.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/MappedSlice.pm/1.13/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/MappedSliceContainer.pm/1.11/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Mapper.pm/1.60/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/MiscFeature.pm/1.19/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/MiscSet.pm/1.10/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/OntologyTerm.pm/1.18/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/OntologyXref.pm/1.5/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Operon.pm/1.2/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/OperonTranscript.pm/1.3/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/PaddedSlice.pm/1.3/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/PepDnaAlignFeature.pm/1.13/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/PredictionExon.pm/1.11/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/PredictionTranscript.pm/1.50/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/ProjectionSegment.pm/1.8/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/ProteinFeature.pm/1.18/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Registry.pm/1.224/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/RepeatConsensus.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/RepeatFeature.pm/1.29/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/RepeatMaskedSlice.pm/1.21/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Root.pm/1.18/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SNP.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SeqEdit.pm/1.8/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SeqFeature.pm/1.87/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SeqFeatureI.pm/1.21/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SeqRegionSynonym.pm/1.4/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SimpleFeature.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Slice.pm/1.298/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SplicingEvent.pm/1.6/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SplicingEventFeature.pm/1.5/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SplicingTranscriptPair.pm/1.5/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/StableIdEvent.pm/1.8/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/StableIdHistoryTree.pm/1.15/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Storable.pm/1.27/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/StrainSlice.pm/1.49/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/TopLevelAssemblyMapper.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Transcript.pm/1.334/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/TranscriptFactory.pm/1.20/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/TranscriptMapper.pm/1.19/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Translation.pm/1.94/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/UnconventionalTranscriptAssociation.pm/1.6/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/UnmappedObject.pm/1.15/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Upstream.pm/1.8/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67

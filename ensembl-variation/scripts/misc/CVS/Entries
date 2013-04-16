@@ -1,0 +1,10 @@
+/add_attrib_entries.pl/1.3/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+/create_attrib_sql.pl/1.7/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+/create_config_consts.pl/1.6/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+/generate_classes_table.pl/1.1/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+/generate_reg_file.pl/1.4/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+/generate_variation_set_table.pl/1.5/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+/patch_transcript_variation.pl/1.1/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+/patch_var_class.pl/1.1/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+/sources2html.pl/1.13/Tue Apr 16 20:36:55 2013//Tbranch-ensembl-67
+D

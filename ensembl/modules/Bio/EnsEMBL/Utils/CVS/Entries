@@ -1,0 +1,36 @@
+D/Converter////
+D/IO////
+D/VegaCuration////
+/Argument.pm/1.13/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/AssemblyProjector.pm/1.9/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/BiotypeMapper.pm/1.9/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/BitString.pm/1.6/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Cache.pm/1.3/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/CigarString.pm/1.7/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/CliHelper.pm/1.3/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Collector.pm/1.7/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/ConfParser.pm/1.15/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/ConfigRegistry.pm/1.37/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/ConversionSupport.pm/1.46.8.3/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Converter.pm/1.12/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/EasyArgv.pm/1.8/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Eprof.pm/1.17/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/EprofStack.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Exception.pm/1.13/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/IO.pm/1.9/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Iterator.pm/1.12/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Logger.pm/1.14/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/PolyA.pm/1.13/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Proxy.pm/1.2/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/Scalar.pm/1.12/Tue Apr 16 20:36:31 2013//Tbranch-ensembl-67
+/SchemaConversion.pm/1.12/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/ScriptUtils.pm/1.11/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/SeqDumper.pm/1.42/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/SeqRegionCache.pm/1.10/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/Sequence.pm/1.7/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/Slice.pm/1.10/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/SqlHelper.pm/1.24/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/TranscriptAlleles.pm/1.50/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/TranscriptSNPs.pm/1.12/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/URI.pm/1.8/Tue Apr 16 20:36:32 2013//Tbranch-ensembl-67
+/ensembl_init.example/1.2/Fri Oct 28 08:52:23 2011//Tbranch-ensembl-67

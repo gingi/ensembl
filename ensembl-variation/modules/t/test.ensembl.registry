@@ -1,0 +1,18 @@
+#!/usr/local/bin/perl
+
+use Bio::EnsEMBL::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Registry;
+
+Bio::EnsEMBL::DBSQL::DBAdaptor->new( 
+    '-species' => 'Homo_sapiens',
+    '-group'   => 'core',
+    '-port'    => 3306,
+    '-host'    => 'ens-variation',
+    '-user'    => 'ensro',
+    '-pass'    => '',
+    '-dbname'  => 'test_core_db',
+);
+
+Bio::EnsEMBL::Registry->add_alias('Homo_sapiens', 'human');
+
+1;
