@@ -30,10 +30,6 @@ $nc_recover_epo->write_output(); #writes to DB
 
 =head1 DESCRIPTION
 
-This Analysis will take the sequences from a cluster, the cm from
-nc_profile and run a profiled alignment, storing the results as
-cigar_lines for each sequence.
-
 =cut
 
 
@@ -61,11 +57,6 @@ use Bio::EnsEMBL::Registry;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
-sub param_defaults {
-    return {
-        'clusterset_id'  => 1,
-    };
-}
 
 =head2 fetch_input
 
@@ -81,18 +72,22 @@ sub param_defaults {
 sub fetch_input {
   my $self = shift @_;
 
+  return if ($self->param('skip'));
+
   $self->input_job->transient_error(0);
   my $mlss_id    = $self->param('mlss_id')    || die "'mlss_id' is an obligatory numeric parameter\n";
   my $epo_db     = $self->param('epo_db')     || die "'epo_db' is an obligatory hash parameter\n";
   my $nc_tree_id = $self->param('nc_tree_id') || die "'nc_tree_id' is an obligatory numeric parameter\n";
   $self->input_job->transient_error(1);
 
-  $self->param('nc_tree', $self->compara_dba->get_NCTreeAdaptor->fetch_node_by_node_id($nc_tree_id));
+
+  print "$nc_tree_id\n";
+  $self->param('nc_tree', $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($nc_tree_id));
 
   $self->param('member_adaptor', $self->compara_dba->get_MemberAdaptor);
-  $self->param('nctree_adaptor', $self->compara_dba->get_NCTreeAdaptor);
+  $self->param('treenode_adaptor', $self->compara_dba->get_GeneTreeNodeAdaptor);
 
-  my $epo_dba = $self->go_figure_compara_dba($epo_db);
+  my $epo_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->go_figure_compara_dba($epo_db);
   $self->param('epo_gab_adaptor', $epo_dba->get_GenomicAlignBlockAdaptor);
   $self->param('epo_mlss_adaptor', $epo_dba->get_MethodLinkSpeciesSetAdaptor);
 
@@ -137,6 +132,8 @@ sub fetch_input {
 sub run {
   my $self = shift @_;
 
+  return if ($self->param('skip'));
+
   $self->run_ncrecoverepo;
   $self->run_low_coverage_best_in_alignment;
 }
@@ -156,6 +153,8 @@ sub run {
 sub write_output {
   my $self = shift @_;
 
+  return if ($self->param('skip'));
+
   $self->param('predictions_to_add', {});
   $self->remove_low_cov_predictions;
   $self->add_matching_predictions;
@@ -171,7 +170,7 @@ sub write_output {
 sub run_ncrecoverepo {
   my $self = shift;
 
-  my $root_id = $self->param('nc_tree')->node_id;
+  my $root_id = $self->param('nc_tree')->root_id;
 
   my %present_gdbs     = ();
   my %absent_gdbs      = ();
@@ -284,8 +283,8 @@ sub run_ncrecoverepo {
               my $description = $gene_member->description;
               $description =~ /Acc:(\w+)/;
               my $acc_description = $1 if (defined($1));
-              my $clustering_id = $self->param('nc_tree')->tree->get_tagvalue('clustering_id');
-              my $model_id = $self->param('nc_tree')->tree->get_tagvalue('model_id');
+              my $clustering_id = $self->param('nc_tree')->get_tagvalue('clustering_id');
+              my $model_id = $self->param('nc_tree')->get_tagvalue('model_id');
               if ($acc_description eq $clustering_id || $acc_description eq $model_id) {
                 $self->param('predictions_to_add')->{$found_gene_stable_id} = 1;
               } else {
@@ -446,7 +445,7 @@ sub run_low_coverage_best_in_alignment {
 
 sub remove_low_cov_predictions {
   my $self = shift;
-  my $root_id = $self->param('nc_tree')->node_id;
+  my $root_id = $self->param('nc_tree')->root_id;
 
   # Remove low cov members that are not best in alignment
   foreach my $leaf (@{$self->param('nc_tree')->get_all_leaves}) {
@@ -454,7 +453,7 @@ sub remove_low_cov_predictions {
       print STDERR "removing low_cov prediction $removed_stable_id\n" if($self->debug);
       my $removed_genome_db_id = $leaf->genome_db_id;
       $leaf->disavow_parent;
-      $self->param('nctree_adaptor')->delete_flattened_leaf($leaf);
+      $self->param('treenode_adaptor')->delete_flattened_leaf($leaf);
       my $sth = $self->compara_dba->dbc->prepare
         ("INSERT IGNORE INTO removed_member 
                            (node_id,
@@ -468,7 +467,7 @@ sub remove_low_cov_predictions {
   }
   #calc residue count total
   my $leafcount = scalar(@{$self->param('nc_tree')->get_all_leaves});
-  $self->param('nc_tree')->tree->store_tag('gene_count', $leafcount);
+  $self->param('nc_tree')->store_tag('gene_count', $leafcount);
 
   return 1;
 }
@@ -480,23 +479,20 @@ sub add_matching_predictions {
   foreach my $gene_stable_id_to_add (keys %{$self->param('predictions_to_add')}) {
     my $gene_member = $self->param('member_adaptor')->fetch_by_source_stable_id('ENSEMBLGENE',$gene_stable_id_to_add);
     # Incorporate this member into the cluster
-    my $node = new Bio::EnsEMBL::Compara::GeneTreeNode;
-    $self->param('nc_tree')->add_child($node);
-    #leaves are GeneTreeNode objects, bless to make into GeneTreeMember objects
-    bless $node, "Bio::EnsEMBL::Compara::GeneTreeMember";
+    my $node = new Bio::EnsEMBL::Compara::GeneTreeMember;
+    $node->member_id($gene_member->get_canonical_Member->member_id);
+    $self->param('nc_tree')->root->add_child($node);
 
     #the building method uses member_id's to reference unique nodes
     #which are stored in the node_id value, copy to member_id
-    $node->member_id($gene_member->get_canonical_Member->member_id);
-    $node->method_link_species_set_id($self->param('mlss_id'));
     # We won't do the store until the end, otherwise it will affect the main loop
     print STDERR "adding matching prediction $gene_stable_id_to_add\n" if($self->debug);
-    $self->param('nctree_adaptor')->store($node);
+    $self->param('treenode_adaptor')->store($node);
   }
 
   #calc residue count total
   my $leafcount = scalar(@{$self->param('nc_tree')->get_all_leaves});
-  $self->param('nc_tree')->tree->store_tag('gene_count', $leafcount);
+  $self->param('nc_tree')->store_tag('gene_count', $leafcount);
 
   return 1;
 }

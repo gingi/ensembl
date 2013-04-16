@@ -35,24 +35,12 @@ on the species chromosomes. The jobs are split into $split_size chunks
 package Bio::EnsEMBL::Compara::RunnableDB::DumpMultiAlign::CreateChrJobs;
 
 use strict;
-use Bio::EnsEMBL::Hive::DBSQL::AnalysisDataAdaptor;
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Registry;
 
 use POSIX qw(ceil);
-
-=head2 strict_hash_format
-
-    Description : Implements strict_hash_format() interface method of Bio::EnsEMBL::Hive::Process that is used to set the strictness level of the parameters' parser.
-                  Here we return 0 in order to indicate that neither input_id() nor parameters() is required to contain a hash.
-
-=cut
-
-sub strict_hash_format {
-    return 0;
-}
 
 sub fetch_input {
     my $self = shift;
@@ -83,7 +71,8 @@ sub write_output {
 	Bio::EnsEMBL::Registry->load_all();
     }
 
-    my $compara_dba = $self->go_figure_compara_dba($self->param('compara_db'));
+    #Note this is using the database set in $self->param('compara_db') rather than the underlying compara database.
+    my $compara_dba = $self->compara_dba;
 
     #
     #Find chromosome names and numbers of genomic_align_blocks

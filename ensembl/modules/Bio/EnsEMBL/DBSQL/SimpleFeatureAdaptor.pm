@@ -24,11 +24,20 @@ Bio::EnsEMBL::DBSQL::SimpleFeatureAdaptor
 
 =head1 SYNOPSIS
 
-  my $simple_feature_adaptor =
-    $database_adaptor->get_SimpleFeatureAdaptor();
+  my $reg = 'Bio::EnsEMBL::Registry';
 
-  @simple_features =
-    @{ $simple_feature_adaptor->fetch_all_by_Slice($slice) };
+  $reg->
+    load_registry_from_db( ...
+
+  my $sfa =
+    $reg->get_adaptor('homo sapiens', 'core', 'SimpleFeature');
+
+  print ref($sfa), "\n";
+
+  my $sf_aref =
+    $sfa->fetch_all;
+
+  print scalar @$sf_aref, "\n";
 
 =head1 DESCRIPTION
 
@@ -260,9 +269,21 @@ sub _objs_from_sth {
     #
     if($mapper) {
 
-      ($seq_region_id,$seq_region_start,$seq_region_end,$seq_region_strand) =
-        $mapper->fastmap($sr_name, $seq_region_start, $seq_region_end,
-                          $seq_region_strand, $sr_cs);
+      if (defined $dest_slice && $mapper->isa('Bio::EnsEMBL::ChainedAssemblyMapper')  ) {
+	    ( $seq_region_id,  $seq_region_start,
+	      $seq_region_end, $seq_region_strand )
+		=
+		$mapper->map( $sr_name, $seq_region_start, $seq_region_end,
+                          $seq_region_strand, $sr_cs, 1, $dest_slice);
+
+      } else {
+
+	    ( $seq_region_id,  $seq_region_start,
+	      $seq_region_end, $seq_region_strand )
+		=
+		$mapper->fastmap( $sr_name, $seq_region_start, $seq_region_end,
+                          $seq_region_strand, $sr_cs );
+      }
 
       #skip features that map to gaps or coord system boundaries
       next FEATURE if(!defined($seq_region_id));

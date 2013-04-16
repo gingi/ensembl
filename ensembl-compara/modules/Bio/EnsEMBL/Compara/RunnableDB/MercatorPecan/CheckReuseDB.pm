@@ -27,7 +27,6 @@ package Bio::EnsEMBL::Compara::RunnableDB::MercatorPecan::CheckReuseDB;
 
 use strict;
 use Bio::EnsEMBL::Registry;
-use Bio::EnsEMBL::DBLoader;
 use Bio::EnsEMBL::Compara::GenomeDB;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 
@@ -64,6 +63,9 @@ sub run {
 		 print "UPDATE dnafrag SET name = '" . $new_names->{$dnafrag} . "' WHERE name='" . $old_names->{$dnafrag} . "';\n";
 		 print "UPDATE member SET chr_name = '" . $new_names->{$dnafrag} . "' WHERE chr_name='" . $old_names->{$dnafrag} . "';\n";
 	     }
+             foreach my $dnafrag (keys %$new_names) {
+                 print "Added " . $dnafrag . " " . $new_names->{$dnafrag} . "\n";
+             }
 	 }
 	 $self->input_job->transient_error(0); 
 	 die "The dnafrags changed: $added dnafrags were added and $removed were removed. Try running with debug to find which.\n";

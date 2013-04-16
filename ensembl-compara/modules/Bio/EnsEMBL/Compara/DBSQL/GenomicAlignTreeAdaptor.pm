@@ -297,6 +297,29 @@ sub fetch_all_by_MethodLinkSpeciesSet_Slice {
             $restrict
         );
 
+    #If the GenomicAlignTree has been restricted, set up the correct values 
+    #for restricted_aln_start and restricted_aln_end
+    foreach my $this_genomic_align_tree (@$these_genomic_align_trees) {
+
+	#print "GAB adaptor restricted start " . $this_genomic_align_tree->{'restricted_aln_start'} . " end " . $this_genomic_align_tree->{'restricted_aln_end'} . " length " . $this_genomic_align_tree->{'original_length'} . "\n";
+    
+    
+	if (defined $this_genomic_align_tree->{'restricted_aln_start'}) {
+	    my $tmp_start = $this_genomic_align_tree->{'restricted_aln_start'};
+	    #if ($reference_slice->strand != $this_genomic_align_tree->reference_genomic_align->dnafrag_strand) {
+
+	    #the start and end are always calculated for the forward strand
+	    if ($reference_slice->strand == 1) {
+		$this_genomic_align_tree->{'restricted_aln_start'}++;
+		$this_genomic_align_tree->{'restricted_aln_end'} = $this_genomic_align_tree->{'original_length'} - $this_genomic_align_tree->{'restricted_aln_end'};
+	    } else {
+		$this_genomic_align_tree->{'restricted_aln_start'} = $this_genomic_align_tree->{'restricted_aln_end'} + 1;
+		$this_genomic_align_tree->{'restricted_aln_end'} = $this_genomic_align_tree->{'original_length'} - $tmp_start;
+	    }
+	    #print "GAB adaptor after restricted start " . $this_genomic_align_tree->{'restricted_aln_start'} . " end " . $this_genomic_align_tree->{'restricted_aln_end'} . " length " . $this_genomic_align_tree->{'original_length'} . "\n";
+	}
+    }
+
     my $top_slice = $this_slice->seq_region_Slice;
     throw if ($top_slice->name ne $this_slice->seq_region_Slice->name);
 #     print join("\n", $top_slice->name, $this_slice->seq_region_Slice->name), "\n";
@@ -725,145 +748,6 @@ sub store_node {
   return $node->node_id;
 }
 
-=head2 fetch_node_by_node_id
-
-  Arg  1     : $node_id
-  Example    : my $node = $self->adaptor->fetch_node_by_node_id($node_id);
-  Description: Over-ride NestedSetAdaptor method for getting a node from its id
-  Returntype : reference to Bio::EnsEMBL::Compara::GenomicAlignTree
-  Exceptions : throw if not Bio::EnsEMBL::Compara::NestedSet
-  Caller     : 
-  Status     : At risk
-
-=cut
-
-sub fetch_node_by_node_id {
-  my ($self, $node_id) = @_;
-
-  #my $table=($self->_tables)[0]->[1];
-  #my $constraint = "$table.node_id = $node_id";
-  #my ($node) = @{$self->generic_fetch($constraint)};
-
-  my $sql = "SELECT " . join(",", $self->_columns) .  
-     " FROM genomic_align_tree gat". " LEFT JOIN genomic_align ga USING (node_id) WHERE gat.node_id = " . $node_id;
-   my $sth = $self->prepare($sql);
-   $sth->execute;
-   my ($node) = @{$self->_objs_from_sth($sth)};
-   $sth->finish;
-
-  return $node;
-}
-
-=head2 fetch_parent_for_node
-
-  Arg  1     : reference to Bio::EnsEMBL::Compara::GenomicAlignTree
-  Example    : my $parent = $self->adaptor->fetch_parent_for_node($self);
-  Description: Over-ride NestedSetAdaptor method for getting the parent of a node
-  Returntype : reference to Bio::EnsEMBL::Compara::GenomicAlignTree
-  Exceptions : throw if not Bio::EnsEMBL::Compara::NestedSet
-  Caller     : 
-  Status     : At risk
-
-=cut
-
- sub fetch_parent_for_node {
-   my ($self, $node) = @_;
-
-   unless(UNIVERSAL::isa($node, 'Bio::EnsEMBL::Compara::NestedSet')) {
-     throw("set arg must be a [Bio::EnsEMBL::Compara::NestedSet] not a $node");
-   }
-
-   #my $table=($self->_tables)[0]->[1];
-   #my $constraint = "$table.node_id = " . $node->_parent_id;
-   #my ($parent) = @{$self->generic_fetch($constraint)};
-
-   my $sql = "SELECT " . join(",", $self->_columns) .  
-     " FROM genomic_align_tree gat". " LEFT JOIN genomic_align ga USING (node_id) WHERE gat.node_id = " . $node->_parent_id;
-
-   my $sth = $self->prepare($sql);
-   $sth->execute;
-   my ($parent) = @{$self->_objs_from_sth($sth)};
-   $sth->finish;
-
-   return $parent;
- }
-
-=head2 fetch_all_children_for_node
-
-  Arg  1     : reference to Bio::EnsEMBL::Compara::GenomicAlignTree
-  Example    : my $node = $self->adaptor->fetch_all_children_for_node($self);
-  Description: Over-ride NestedSetAdaptor method for getting the all the children of a node
-  Returntype : reference to Bio::EnsEMBL::Compara::GenomicAlignTree
-  Exceptions : throw if not Bio::EnsEMBL::Compara::NestedSet
-  Caller     : 
-  Status     : At risk
-
-=cut
-
-sub fetch_all_children_for_node {
-  my ($self, $node) = @_;
-
-  unless(UNIVERSAL::isa($node, 'Bio::EnsEMBL::Compara::NestedSet')) {
-    throw("set arg must be a [Bio::EnsEMBL::Compara::NestedSet] not a $node");
-  }
-
-  my $sql = "SELECT " . join(",", $self->_columns) .  
-     " FROM genomic_align_tree gat". " LEFT JOIN genomic_align ga ON (gat.node_id = ga.node_id) WHERE gat.parent_id = " . $node->node_id;
-
-   my $sth = $self->prepare($sql);
-   $sth->execute;
-   my $kids = $self->_objs_from_sth($sth);
-   $sth->finish;
-  foreach my $child (@{$kids}) { $node->add_child($child); }
-
-  return $node;
-}
-
-=head2 fetch_root_by_node
-
-  Arg  1     : reference to Bio::EnsEMBL::Compara::GenomicAlignTree
-  Example    : my $root = $self->adaptor->fetch_root_by_node($self);
-  Description: Over-ride NestedSetAdaptor method for getting the root of a node
-  Returntype : reference to Bio::EnsEMBL::Compara::GenomicAlignTree
-  Exceptions : throw if not Bio::EnsEMBL::Compara::NestedSet
-  Caller     : 
-  Status     : At risk
-
-=cut
-
- sub fetch_root_by_node {
-   my ($self, $node) = @_;
-
-   unless(UNIVERSAL::isa($node, 'Bio::EnsEMBL::Compara::NestedSet')) {
-     throw("set arg must be a [Bio::EnsEMBL::Compara::NestedSet] not a $node");
-   }
-
-   my $alias = ($self->_tables)[0]->[1];
-
-   my $left_index = $node->left_index;
-   my $right_index = $node->right_index;
-
-#   my $constraint = "$alias.left_index <= $left_index AND $alias.right_index >= $right_index";
-
-
-#   my $nodes = $self->generic_fetch($constraint);
-
-
-   my $sql = "SELECT " . join(",", $self->_columns) .  
-     " FROM genomic_align_tree gat". " LEFT JOIN genomic_align ga USING (node_id) WHERE gat.left_index <= $left_index AND gat.right_index >= $right_index";
-
-   my $sth = $self->prepare($sql);
-   $sth->execute;
-   my $nodes = $self->_objs_from_sth($sth);
-   $sth->finish;
-
-   my $root = $self->_build_tree_from_nodes($nodes);
-
-   return $root;
-}
-
-
-
 
 =head2 delete
 
@@ -1175,6 +1059,7 @@ sub _tables {
       );
 }
 
+
 =head2 _default_where_clause
 
   Args       : none
@@ -1189,9 +1074,27 @@ sub _tables {
 
 sub _default_where_clause {
 
-  return "gat.node_id = ga.node_id";
+#  return "gat.node_id = ga.node_id";
 #  return "gat.node_id = gag.node_id AND gag.genomic_align_id = ga.genomic_align_id";
-#  return "";
+  return "";
+}
+
+=head2 _left_join
+
+  Args       : none
+  Example    : none
+  Description: a clause for use with generic_fetch
+  Returntype : none
+  Exceptions : none
+  Caller     : BaseAdaptor::generic_fetch
+  Status     : At risk
+
+=cut
+
+sub _left_join {
+    return (
+        ['genomic_align', 'gat.node_id = ga.node_id']
+    );
 }
 
 =head2 _objs_from_sth

@@ -50,7 +50,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.9 $
+$Revision: 1.13 $
 
 =head1 APPENDIX
 
@@ -88,7 +88,7 @@ sub param_defaults {
 sub fetch_input {
     my $self = shift @_;
 
-    $self->param('groupset_tree', $self->compara_dba->get_GeneTreeNodeAdaptor->fetch_node_by_node_id($self->param('clusterset_id'))->tree) or die "Could not fetch groupset tree";
+    $self->param('groupset_tree', $self->compara_dba->get_GeneTreeAdaptor->fetch_all(-tree_type => 'clusterset', -clusterset_id => 'default')->[0]) or die "Could not fetch groupset tree";
 
 }
 
@@ -134,7 +134,7 @@ sub overall_groupset_qc {
     my $self     = shift @_;
     my $reuse_db = shift @_;
 
-    my $reuse_compara_dba = $self->go_figure_compara_dba($reuse_db);    # may die if bad parameters
+    my $reuse_compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->go_figure_compara_dba($reuse_db);    # may die if bad parameters
 
     my $xtb_filename = $self->join_one_pair( $reuse_compara_dba, $self->compara_dba );
 
@@ -437,24 +437,22 @@ sub quantify_mapping {
   }
   close MAP;
 
-  my $current_gene_tree_adaptor = $self->compara_dba->get_GeneTreeNodeAdaptor;
-  my $reuse_gene_tree_adaptor = $reuse_compara_dba->get_GeneTreeNodeAdaptor;
+  my $current_gene_tree_adaptor = $self->compara_dba->get_GeneTreeAdaptor;
+  my $reuse_gene_tree_adaptor = $reuse_compara_dba->get_GeneTreeAdaptor;
   foreach my $mapped_cluster_id (keys %{$mapping_stats{mapped_tagging}}) {
     my $reuse_node_id = $mapping_stats{mapped_tagging}{$mapped_cluster_id};
     next unless (defined($reuse_node_id));
-    my $reuse_node = $reuse_gene_tree_adaptor->fetch_node_by_node_id($reuse_node_id);
+    my $reuse_node = $reuse_gene_tree_adaptor->fetch_by_dbID($reuse_node_id);
     next unless (defined($reuse_node));
-    my $reuse_aln_runtime_value = $reuse_node->tree->get_tagvalue('aln_runtime');
-    $reuse_node->release_tree;
+    my $reuse_aln_runtime_value = $reuse_node->get_tagvalue('aln_runtime');
     next if ($reuse_aln_runtime_value eq '');
-    my $this_node = $current_gene_tree_adaptor->fetch_node_by_node_id($mapped_cluster_id);
+    my $this_node = $current_gene_tree_adaptor->fetch_by_dbID($mapped_cluster_id);
     next unless (defined($this_node));
     $this_node->store_tag('reuse_node_id',$reuse_node_id);
     $this_node->store_tag('reuse_aln_runtime',$reuse_aln_runtime_value);
     my $contribution = $mapping_stats{mapped}{$mapped_cluster_id};
     next unless (defined($contribution));
     $this_node->store_tag('reuse_contribution',$contribution);
-    $this_node->release_tree;
   }
 
   my $num_novel_clusters = scalar keys %{$mapping_stats{novel}};
@@ -477,7 +475,7 @@ sub quantify_mapping {
   print STDERR "# Average contribution mapped clusters = $average_mapped_contribution\n";
 
   my $groupset_tree = $self->param('groupset_tree');
-  my $groupset_tag  = $self->param('groupset_tag');
+  my $groupset_tag  = $self->param('groupset_tag').'QC';
 
   $groupset_tree->store_tag('sid_map_novel_cls' . '_' . $groupset_tag, $num_novel_clusters);
   $groupset_tree->store_tag('sid_map_mapped_cls' . '_' . $groupset_tag, $num_mapped_clusters);

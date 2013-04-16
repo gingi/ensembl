@@ -122,6 +122,8 @@ package Bio::EnsEMBL::Registry;
 use strict;
 use warnings;
 
+our $NEW_EVAL = 0;
+
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor;
 use Bio::EnsEMBL::Utils::Exception qw( deprecate throw warning );
@@ -149,6 +151,7 @@ my %group2adaptor = (
       'otherfeatures' => 'Bio::EnsEMBL::DBSQL::DBAdaptor',
       'pipeline'      => 'Bio::EnsEMBL::Pipeline::DBSQL::DBAdaptor',
       'snp'       => 'Bio::EnsEMBL::ExternalData::SNPSQL::DBAdaptor',
+      'stable_ids' => 'Bio::EnsEMBL::DBSQL::DBAdaptor',
       'variation' => 'Bio::EnsEMBL::Variation::DBSQL::DBAdaptor',
       'vega'      => 'Bio::EnsEMBL::DBSQL::DBAdaptor',
       'vega_update' => 'Bio::EnsEMBL::DBSQL::DBAdaptor',
@@ -192,7 +195,7 @@ my %group2adaptor = (
 
   Example    : Bio::EnsEMBL::Registry->load_all();
   Returntype : Int count of the DBAdaptor instances which can be found in the 
-               registry
+               registry due to this method being called. Will never be negative
   Exceptions : none
   Status     : Stable
 
@@ -363,15 +366,27 @@ sub load_all {
             # of configuration written in Perl.  We need to try to
             # require() it.
 
-            my $test_eval = eval { require($config_file) };
+            my $test_eval;
+            if($NEW_EVAL) {
+              require Bio::EnsEMBL::Utils::IO;
+              my $contents = Bio::EnsEMBL::Utils::IO::slurp($config_file);
+              $test_eval = eval $contents;
+            }
+            else {
+              $test_eval = eval { require($config_file) };
+              # To make the web code avoid doing this again we delete first
+              delete $INC{$config_file};
+            }
+            
+            #Now raise the exception just in case something above is 
+            #catching this
             if ($@ or (!$test_eval)) { die($@) }
 
-            # To make the web code avoid doing this again:
-            delete $INC{$config_file};
         }
     } ## end else [ if ( !defined($config_file...
     
-    return $class->get_DBAdaptor_count() - $original_count;
+    my $count = $class->get_DBAdaptor_count() - $original_count;
+    return $count >= 0 ? $count : 0; 
 } ## end sub load_all
 
 =head2 clear
@@ -1525,7 +1540,7 @@ sub load_registry_from_url {
                of standard aliases.
 
   Returntype : Int count of the DBAdaptor instances which can be found in the 
-               registry
+               registry due to this method call.
 
   Exceptions : Thrown if the given MySQL database cannot be connected to
                or there is any error whilst querying the database.
@@ -1556,6 +1571,9 @@ sub load_registry_from_db {
 
   my $ontology_db;
   my $ontology_version;
+
+  my $stable_ids_db;
+  my $stable_ids_version;
 
   $user ||= "ensro";
   if ( !defined($port) ) {
@@ -1621,6 +1639,12 @@ sub load_registry_from_db {
         $ontology_db      = $db;
         $ontology_version = $1;
       }
+    } elsif ( $db =~ /^ensembl(?:genomes)?_stable_ids_(?:\d+_)?(\d+)/x ) {
+      if ( $1 eq $software_version ) {
+        $stable_ids_db      = $db;
+        $stable_ids_version = $1;
+      }
+
     } elsif (
       $db =~ /^([a-z]+_[a-z0-9]+(?:_[a-z0-9]+)? # species name e.g. homo_sapiens or canis_lupus_familiaris
            _
@@ -1656,6 +1680,7 @@ sub load_registry_from_db {
   }
 
   # Register Core like databases
+  my $core_like_dbs_found = 0;
   foreach my $type (qw(core cdna vega vega_update otherfeatures rnaseq)) {
 
     my @dbs = grep { /^[a-z]+_[a-z0-9]+(?:_[a-z0-9]+)?  # species name
@@ -1666,6 +1691,10 @@ sub load_registry_from_db {
                        \d+               # database release
                        _
                        /x } @dbnames;
+
+    if(@dbs) {
+      $core_like_dbs_found = 1;
+    }
 
     foreach my $database (@dbs) {
       if ( index( $database, 'collection' ) != -1 ) {
@@ -1685,7 +1714,7 @@ sub load_registry_from_db {
                       /x );
 
       if(!defined($species)){
-        warn "for $database cannot get species??\n";
+        warn "Cannot extract species name from database '$database'";
       }
 
       my $dba =
@@ -1745,6 +1774,9 @@ sub load_registry_from_db {
     }
   } ## end foreach my $multidb (@multi_dbs)
 
+  if(!$core_like_dbs_found && $verbose) {
+    print("No core-like databases found. Check your DB_VERSION (used '$software_version')\n");
+  }  
 
   # User upload DBs
 
@@ -1825,6 +1857,10 @@ sub load_registry_from_db {
     my @variation_dbs =
       grep { /^[a-z]+_[a-z0-9]+(?:_[a-z0-9]+)?_variation_(?:\d+_)?\d+_/ } @dbnames;
 
+    if(! @variation_dbs && $verbose) {
+      print("No variation databases found\n");
+    }
+
     for my $variation_db (@variation_dbs) {
 	
       if ( index( $variation_db, 'collection' ) != -1 ) {
@@ -1901,6 +1937,10 @@ sub load_registry_from_db {
   } else {
     my @funcgen_dbs =
       grep { /^[a-z]+_[a-z0-9]+(?:_[a-z0-9]+)?_funcgen_(?:\d+_)?\d+_/ } @dbnames;
+      
+    if(! @funcgen_dbs && $verbose) {
+      print("No funcgen databases found\n");
+    }
 
     for my $funcgen_db (@funcgen_dbs) {
       if ( index( $funcgen_db, 'collection' ) != -1 ) {
@@ -2074,6 +2114,26 @@ sub load_registry_from_db {
     print("No ontology database found\n");
   }
 
+
+  if ( defined($stable_ids_db) && $stable_ids_version != 0 ) {
+
+    my $dba =
+      Bio::EnsEMBL::DBSQL::DBAdaptor->new(
+                                '-species' => 'multi' . $species_suffix,
+                                '-group'   => 'stable_ids',
+                                '-host'    => $host,
+                                '-port'    => $port,
+                                '-user'    => $user,
+                                '-pass'    => $pass,
+                                '-dbname'  => $stable_ids_db, );
+
+    if ($verbose) {
+      printf( "%s loaded\n", $stable_ids_db );
+    }      
+
+  }
+
+
   Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(
     -species => 'multi'.$species_suffix,
     -alias   => ['compara'.$species_suffix] );
@@ -2081,6 +2141,11 @@ sub load_registry_from_db {
   Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(
     -species => 'multi'.$species_suffix,
     -alias   => ['ontology'.$species_suffix] );
+
+
+  Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(
+    -species => 'multi'.$species_suffix,
+    -alias   => ['stable_ids'.$species_suffix] );
 
   Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(
     -species => 'Ancestral sequences'.$species_suffix,
@@ -2090,12 +2155,31 @@ sub load_registry_from_db {
 
   $self->find_and_add_aliases( '-handle'         => $dbh,
                                '-species_suffix' => $species_suffix );
+                               
+  $self->_additional_aliases($species_suffix);
 
   $dbh->disconnect();
   
-  return $self->get_DBAdaptor_count() - $original_count;
+  my $count = $self->get_DBAdaptor_count() - $original_count;
+  return $count >= 0 ? $count : 0; 
 
 } ## end sub load_registry_from_db
+
+
+# Used as a place to push "hack" aliases
+sub _additional_aliases {
+  my ($self, $species_suffix) = @_;
+  
+  #Adding branch-68 thirteen-lined ground squirrel "old" aliases
+  Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(
+    -species => 'ictidomys_tridecemlineatus'.$species_suffix,
+    -alias   => ['spermophilus_tridecemlineatus'.$species_suffix] );
+  Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(
+    -species => 'ictidomys_tridecemlineatus'.$species_suffix,
+    -alias   => ['spermophilus tridecemlineatus'.$species_suffix] );
+  
+  return;
+} # end sub _additional_aliases
 
 =head2 _group_to_adaptor_class
 
@@ -2339,7 +2423,8 @@ sub load_registry_from_multiple_dbs {
 
   %registry_register = %merged_register;
   
-  return $self->get_DBAdaptor_count() - $original_count;
+  my $count = $self->get_DBAdaptor_count() - $original_count;
+  return $count >= 0 ? $count : 0; 
 } ## end sub load_registry_from_multiple_dbs
 
 #
@@ -2544,6 +2629,8 @@ sub version_check {
       $database_version = $1;
     } elsif ( $dba->dbc()->dbname() =~ /ensembl_ontology_(\d+)/x ) {
       $database_version = $1;
+    } elsif ( $dba->dbc()->dbname() =~ /ensembl_stable_ids_(\d+)/x ) {
+      $database_version = $1;
     } else {
       warn(
         sprintf(
@@ -2580,15 +2667,18 @@ sub version_check {
                 translation, or exon etc.), and database type for a
                 stable ID.
 
-                NOTE: No validation is done to see if the stable ID
-                      actually exists.
-
   Arg [1]    :  String stable_id
                 The stable ID to find species and object type for.
 
   Arg [2]    :  String known_type (optional)
                 The type of the stable ID, if it is known.
 
+  Arg [3]    :  String known_species (optional)
+                The species, if known
+
+  Arg [4]    :  String known_db_type (optional)
+                The database type, if known
+                
   Example    :  my $stable_id = 'ENST00000326632';
 
                 my ( $species, $object_type, $db_type ) =
@@ -2610,28 +2700,28 @@ sub version_check {
 =cut
 
 my %stable_id_stmts = (
-                    "gene" => 'SELECT m.meta_value '
+                    gene => 'SELECT m.meta_value '
                       . 'FROM %1$s.gene '
                       . 'JOIN %1$s.seq_region USING (seq_region_id) '
                       . 'JOIN %1$s.coord_system USING (coord_system_id) '
                       . 'JOIN %1$s.meta m USING (species_id) '
                       . 'WHERE stable_id = ? '
                       . 'AND m.meta_key = "species.production_name"',
-                    "transcript" => 'SELECT m.meta_value '
+                    transcript => 'SELECT m.meta_value '
                       . 'FROM %1$s.transcript '
                       . 'JOIN %1$s.seq_region USING (seq_region_id) '
                       . 'JOIN %1$s.coord_system USING (coord_system_id) '
                       . 'JOIN %1$s.meta m USING (species_id) '
                       . 'WHERE stable_id = ? '
                       . 'AND m.meta_key = "species.production_name"',
-                    "exon" => 'SELECT m.meta_value '
+                    exon => 'SELECT m.meta_value '
                       . 'FROM %1$s.exon '
                       . 'JOIN %1$s.seq_region USING (seq_region_id) '
                       . 'JOIN %1$s.coord_system USING (coord_system_id) '
                       . 'JOIN %1$s.meta m USING (species_id) '
                       . 'WHERE stable_id = ? '
                       . 'AND m.meta_key = "species.production_name"',
-                    "translation" => 'SELECT m.meta_value '
+                    translation => 'SELECT m.meta_value '
                       . 'FROM %1$s.translation tl '
                       . 'JOIN %1$s.transcript USING (transcript_id) '
                       . 'JOIN %1$s.seq_region USING (seq_region_id) '
@@ -2639,59 +2729,102 @@ my %stable_id_stmts = (
                       . 'JOIN %1$s.meta m USING (species_id) '
                       . 'WHERE tl.stable_id = ? '
                       . 'AND m.meta_key = "species.production_name"',
-                    "operon" => 'SELECT m.meta_value '
+                    operon => 'SELECT m.meta_value '
                       . 'FROM %1$s.operon '
                       . 'JOIN %1$s.seq_region USING (seq_region_id) '
                       . 'JOIN %1$s.coord_system USING (coord_system_id) '
                       . 'JOIN %1$s.meta m USING (species_id) '
                       . 'WHERE stable_id = ? '
                       . 'AND m.meta_key = "species.production_name"',
-                    "operontranscript" => 'SELECT m.meta_value '
+                    operontranscript => 'SELECT m.meta_value '
                       . 'FROM %1$s.operon_transcript '
                       . 'JOIN %1$s.seq_region USING (seq_region_id) '
                       . 'JOIN %1$s.coord_system USING (coord_system_id) '
                       . 'JOIN %1$s.meta m USING (species_id) '
                       . 'WHERE stable_id = ? '
                       . 'AND m.meta_key = "species.production_name"',
+ 
 );
 
+
 sub get_species_and_object_type {
-  my ($self, $stable_id, $known_type) = @_;
+  my ($self, $stable_id, $known_type, $known_species, $known_db_type, $force_long_lookup) = @_;
 
-  if (defined $known_type && !exists $stable_id_stmts{lc $known_type}) {
-    warn "Got invalid known_type '$known_type'";
-    return;
+  #get the stable_id lookup database adaptor
+  my $stable_ids_dba = $self->get_DBAdaptor("multi", "stable_ids", 1);
+
+  if ($stable_ids_dba && ! $force_long_lookup) {
+     my $statement = 'SELECT name, object_type, db_type FROM stable_id_lookup join species using(species_id) WHERE stable_id = ?';
+
+     if ($known_species) {
+	 $statement .= ' AND name = ?';
+     }
+     if ($known_db_type) {
+	 $statement .= ' AND db_type = ?';
+     }
+     if ($known_type) {
+	 $statement .= ' AND object_type = ?';
+     }
+
+     my $sth = $stable_ids_dba->dbc()->prepare($statement);
+     $sth->bind_param(1, $stable_id, SQL_VARCHAR);
+     my $param_count = 1;
+     if ($known_species) {
+       $known_species = $self->get_alias($known_species);
+	 $param_count++;
+	 $sth->bind_param($param_count, $known_species, SQL_VARCHAR);
+     }
+     if ($known_db_type) {
+	 $param_count++;
+	 $sth->bind_param($param_count, $known_db_type, SQL_VARCHAR);
+     }
+     if ($known_type) {
+	 $param_count++;
+	 $sth->bind_param($param_count, $known_type, SQL_VARCHAR);
+     }
+     $sth->execute();
+     my ($species, $type, $db_type) = $sth->fetchrow_array();
+     $sth->finish();
+     return ($species ,$type, $db_type);
+
+  } else {
+      if (defined $known_type && !exists $stable_id_stmts{lc $known_type}) {
+	  return;
+      }
+
+      my @types = defined $known_type ? ($known_type) : ('Gene', 'Transcript', 'Translation', 'Exon', 'Operon', 'OperonTranscript');
+  
+      if(! $known_db_type) {
+        $known_db_type = 'core';
+      }
+      
+      my %get_adaptors_args;
+      $get_adaptors_args{'-group'} = $known_db_type;
+      if ($known_species) {
+	  $get_adaptors_args{'-species'} = $known_species; 
+      }
+
+      my @dbas = sort { $a->dbc->host cmp $b->dbc->host || $a->dbc->port <=> $b->dbc->port } 
+	  @{$self->get_all_DBAdaptors(%get_adaptors_args)};    
+      foreach my $dba (@dbas) {
+	  
+	  foreach my $type (@types) {
+	      my $statement = sprintf $stable_id_stmts{lc $type}, $dba->dbc->dbname;
+
+	      my $sth = $dba->dbc()->prepare($statement);
+	      $sth->bind_param(1, $stable_id, SQL_VARCHAR);
+	      $sth->execute;
+
+	      my $species = $sth->fetchall_arrayref->[0][0];
+
+	      $sth->finish;
+
+	      return ($species, $type, $known_db_type) if defined $species;
+	  }
+
+      } ## end foreach my $dba ( sort { $a...})
+
   }
-
-  my @types = defined $known_type ? ($known_type) : ('Gene', 'Transcript', 'Translation', 'Exon', 'Operon', 'OperonTranscript');
-  my $dbc;
-  my $dbh;
-
-  foreach my $dba (
-    sort { $a->dbc->host cmp $b->dbc->host || $a->dbc->port <=> $b->dbc->port } 
-    @{$self->get_all_DBAdaptors( '-group' => 'Core' )}
-  ) {
-    unless (defined $dbc && $dbc->host eq $dba->dbc->host && $dbc->port eq $dba->dbc->port) {
-      $dbc = $dba->dbc;
-      $dbh = $dbc->db_handle;
-    }
-
-    foreach my $type (@types) {
-      my $statement = sprintf $stable_id_stmts{lc $type}, $dba->dbc->dbname;
-
-      my $sth = $dbh->prepare($statement);
-
-      $sth->bind_param(1, $stable_id, SQL_VARCHAR);
-      $sth->execute;
-
-      my $species = $sth->fetchall_arrayref->[0][0];
-
-      $sth->finish;
-
-      return ($species, $type, 'Core') if defined $species;
-    }
-
-  } ## end foreach my $dba ( sort { $a...})
 
   return;
 } ## end sub get_species_and_object_type

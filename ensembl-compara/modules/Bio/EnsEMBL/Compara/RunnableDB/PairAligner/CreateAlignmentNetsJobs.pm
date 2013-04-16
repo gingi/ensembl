@@ -41,9 +41,6 @@ package Bio::EnsEMBL::Compara::RunnableDB::PairAligner::CreateAlignmentNetsJobs;
 
 use strict;
 
-use Bio::EnsEMBL::Compara::Production::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor;
-
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
 my $DEFAULT_DUMP_MIN_SIZE = 11500000;

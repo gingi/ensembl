@@ -25,7 +25,7 @@ Bio::EnsEMBL::Pipeline::FASTA::BlastIndexer
 =head1 DESCRIPTION
 
 Creates 2bit file of the given GZipped file. The resulting index
-is created under the parameter location I<base_path> in blat. The filename
+is created under the parameter location I<base_path> in blat/index. The filename
 is prefixed with the port number of the blat server this file should be
 run on.
 
@@ -47,7 +47,7 @@ Allowed parameters are:
 =item base_path - The base of the dumps
 
 =item index     - The type of file to index; supported values are empty, 
-                  I<dna> or I<dna_rm>. If specified we will look for this
+                  I<dna>, I<dna_sm> or I<dna_rm>. If specified we will look for this
                   string in the filename surrounded by '.' e.g. .dna.
 
 =back
@@ -76,8 +76,16 @@ sub param_defaults {
   return {
     program => 'faToTwoBit',
     port_offset => 30000,
-    'index' => 'dna', #or dna_rm/''
+    'index' => 'dna', #or dna_rm and dna_sm
   };
+}
+
+sub fetch_input {
+  my ($self) = @_;
+  $self->assert_executable($self->param('program'));
+  $self->assert_executable('zcat');
+  $self->assert_executable('gunzip');
+  return;
 }
 
 sub run {
@@ -106,7 +114,9 @@ sub index_file {
     $self->param('program'), $file, $target_file);
   
   $self->info('About to run "%s"', $cmd);
-  system($cmd) and throw "Cannot run program '$cmd'";
+  my $output = `$cmd 2>&1`;
+  my $rc = $? >> 8;
+  throw "Cannot run program '$cmd'. Return code was ${rc}. Program output was $output" if $rc;
   unlink $file or throw "Cannot remove the file '$file' from the filesystem: $!";
   
   #Check the file size. If it's 16 bytes then reject as that is an empty file for 2bit
@@ -169,19 +179,9 @@ sub decompress {
 
 sub allowed_regions {
   my ($self) = @_;
-  my $prod_name = $self->production_name();
-  my @slices = grep { $_->is_reference() } @{$self->get_Slices()};
-  my %hash;
-  foreach my $slice (@slices) {
-    if($prod_name eq 'homo_sapiens') {
-      #Skip the extra unused human region
-      if($slice->seq_region_name() eq 'Y' && $slice->end() < 2649521 ) {
-        next;
-      }
-    }
-    $hash{$slice->name()} = 1;
-  }
-  
+  my $filter_human = 1;
+  my @slices = grep { $_->is_reference() } @{$self->get_Slices('core', $filter_human)};
+  my %hash = map { $_->name() => 1 } @slices;
   return \%hash;
 }
 
@@ -204,7 +204,7 @@ sub target_file {
 
 sub target_dir {
   my ($self) = @_;
-  return $self->get_dir('blat');
+  return $self->get_dir('blat', $self->param('index'));
 }
 
 sub blat_port {

@@ -56,12 +56,9 @@ Internal methods are usually preceded with a _
 package Bio::EnsEMBL::Compara::RunnableDB::SearchHMM;
 
 use strict;
-use Getopt::Long;
 use Time::HiRes qw(time gettimeofday tv_interval);
 
-use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Hive;
-our @ISA = qw(Bio::EnsEMBL::Hive::Process);
+use base('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
 
 =head2 fetch_input
@@ -78,64 +75,17 @@ our @ISA = qw(Bio::EnsEMBL::Hive::Process);
 sub fetch_input {
   my( $self) = @_;
 
-  $self->{'clusterset_id'} = 1;
-  $self->{max_evalue} = 0.05;
+  $self->param('max_evalue', 0.05);
 
-  #create a Compara::DBAdaptor which shares the same DBI handle
-  #with the Pipeline::DBAdaptor that is based into this runnable
-  $self->{'comparaDBA'} = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new
-    (
-     -DBCONN=>$self->db->dbc
-    );
-
-  # Get the needed adaptors here
-  $self->{treeDBA} = $self->{'comparaDBA'}->get_ProteinTreeAdaptor;
-
-  $self->get_params($self->parameters);
-  $self->get_params($self->input_id);
-
-# # For long parameters, look at analysis_data
-#   if($self->{analysis_data_id}) {
-#     my $analysis_data_id = $self->{analysis_data_id};
-#     my $analysis_data_params = $self->db->get_AnalysisDataAdaptor->fetch_by_dbID($analysis_data_id);
-#     $self->get_params($analysis_data_params);
-#   }
-
-  if(defined($self->{protein_tree_id})) {
-    $self->{tree} = 
-         $self->{treeDBA}->fetch_node_by_node_id($self->{protein_tree_id});
-    printf("  protein_tree_id : %d\n", $self->{protein_tree_id}) if ($self->debug);
+  if(defined($self->param('protein_tree_id'))) {
+    $self->param('tree', $self->compara_dba->get_GeneTreeAdaptor->fetch_by_dbID($self->param('protein_tree_id')));
+    printf("  protein_tree_id : %d\n", $self->param('protein_tree_id')) if ($self->debug);
   }
 
   # Fetch hmm_profile
   $self->fetch_hmmprofile;
 
   return 1;
-}
-
-
-sub get_params {
-  my $self         = shift;
-  my $param_string = shift;
-
-  return unless($param_string);
-  print("parsing parameter string : ",$param_string,"\n") if($self->debug);
-
-  my $params = eval($param_string);
-  return unless($params);
-
-  if($self->debug) {
-    foreach my $key (keys %$params) {
-      print("  $key : ", $params->{$key}, "\n");
-    }
-  }
-
-  foreach my $key (qw[qtaxon_id protein_tree_id type cdna fastafile analysis_data_id]) {
-    my $value = $params->{$key};
-    $self->{$key} = $value if defined $value;
-  }
-
-  return;
 }
 
 
@@ -184,17 +134,10 @@ sub write_output {
 sub fetch_hmmprofile {
   my $self = shift;
 
-  my $hmm_type = $self->{type} || 'aa';
-  my $node_id = $self->{tree}->node_id;
+  my $hmm_type = $self->param('type') || 'aa';
   print STDERR "type = $hmm_type\n" if ($self->debug);
 
-  my $query = "SELECT hmmprofile FROM protein_tree_hmmprofile WHERE type = ? AND node_id = ? LIMIT 1";
-  print STDERR "$query\n" if ($self->debug);
-  my $sth = $self->{comparaDBA}->dbc->prepare($query);
-  $sth->execute($hmm_type, $node_id);
-  my $result = $sth->fetchrow_hashref;
-  $self->{hmmprofile} = $result->{hmmprofile} if (defined($result->{hmmprofile}));
-  $sth->finish;
+  $self->param('hmmprofile', $self->param('tree')->get_value_for_tag("hmm_$hmm_type") );
 
   return 1;
 }
@@ -202,16 +145,16 @@ sub fetch_hmmprofile {
 sub run_search_hmm {
   my $self = shift;
 
-  my $node_id = $self->{tree}->node_id;
-  my $type = $self->{type};
-  my $hmmprofile = $self->{hmmprofile};
-  my $fastafile = $self->{fastafile};
+  my $node_id = $self->param('tree')->root_id;
+  my $type = $self->param('type');
+  my $hmmprofile = $self->param('hmmprofile');
+  my $fastafile = $self->param('fastafile');
 
   my $tempfilename = $self->worker_temp_directory . $node_id . "." . $type . ".hmm";
   open FILE, ">$tempfilename" or die "$!";
   print FILE $hmmprofile;
   close FILE;
-  delete $self->{hmmprofile};
+  $self->param('hmmprofile', undef);
 
   my $search_hmm_executable = $self->analysis->program_file;
   unless (-e $search_hmm_executable) {
@@ -225,8 +168,10 @@ sub run_search_hmm {
     return;
   }
 
-  $self->{'comparaDBA'}->dbc->disconnect_when_inactive(1);
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
   my $starttime = time();
+
+  my $hits = $self->param('hits', {});
 
   while (<$fh>) {
     if (/^Scores for complete sequences/) {
@@ -241,27 +186,27 @@ sub run_search_hmm {
         my $score = $2;
         my $id = $3;
         $score =~ /^\s*(\S+)/;
-        $self->{hits}{$id}{Score} = $1;
+        $hits->{$id}{Score} = $1;
         $evalue =~ /^\s*(\S+)/;
-        $self->{hits}{$id}{Evalue} = $1;
+        $hits->{$id}{Evalue} = $1;
       }
       last;
     }
   }
   close($fh);
-  $self->{'comparaDBA'}->dbc->disconnect_when_inactive(0);
-  print STDERR scalar (keys %{$self->{hits}}), " hits - ",(time()-$starttime)," secs...\n";
+  $self->compara_dba->dbc->disconnect_when_inactive(0);
+  print STDERR scalar (keys %$hits), " hits - ",(time()-$starttime)," secs...\n";
 
   return 1;
 }
 
 sub search_hmm_store_hits {
   my $self = shift;
-  my $type = $self->{type};
-  my $node_id = $self->{tree}->node_id;
-  my $qtaxon_id = $self->{qtaxon_id} || 0;
+  my $type = $self->param('type');
+  my $node_id = $self->param('tree')->root_id;
+  my $qtaxon_id = $self->param('qtaxon_id') || 0;
 
-  my $sth = $self->{comparaDBA}->dbc->prepare
+  my $sth = $self->compara_dba->dbc->prepare
     ("INSERT INTO hmmsearch
        (stable_id,
         node_id,
@@ -271,12 +216,14 @@ sub search_hmm_store_hits {
         qtaxon_id) VALUES (?,?,?,?,?,?)");
 
   my $evalue_count = 0;
-  foreach my $stable_id (keys %{$self->{hits}}) {
-    my $evalue = $self->{hits}{$stable_id}{Evalue};
-    my $score = $self->{hits}{$stable_id}{Score};
+  my $hits = $self->param('hits');
+
+  foreach my $stable_id (keys %$hits) {
+    my $evalue = $hits->{$stable_id}{Evalue};
+    my $score = $hits->{$stable_id}{Score};
     next unless (defined($stable_id) && $stable_id ne '');
     next unless (defined($score));
-    next unless ($evalue < $self->{max_evalue});
+    next unless ($evalue < $self->param('max_evalue') );
     $evalue_count++;
     $sth->execute($stable_id,
                   $node_id,

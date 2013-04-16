@@ -116,6 +116,7 @@ sub configure {
 		'pedigree=s',
 		'panel=s',
 		'gmaf=s',
+		'somatic',
 		
 		'flank=s',
 		'gp',
@@ -130,6 +131,7 @@ sub configure {
 		
 		'merge_vfs',
 		'only_existing',
+		'skip_n',
 		
 		'create_name',
 		'chrom_regexp=s',
@@ -201,6 +203,7 @@ sub configure {
 	$config->{coord_system}    ||= 'chromosome';
 	$config->{progress_update} ||= 100;
 	$config->{pid}             ||= $$;
+	$config->{somatic}         ||= 0;
 	
 	# recovery not possible if forking
 	#$config->{no_recover} = 1 if defined($config->{fork});
@@ -654,10 +657,11 @@ sub main {
 			
 			
 			# make a var name if none exists
-			if($data->{ID} eq '.' || defined($config->{new_var_name})) {
+			if(!defined($data->{ID}) || $data->{ID} eq '.' || defined($config->{new_var_name})) {
 				$data->{ID} =
 					($config->{var_prefix} ? $config->{var_prefix} : 'tmp').
 					'_'.$data->{'#CHROM'}.'_'.$data->{POS};
+				$data->{made_up_name} = 1;
 			}
 			
 			$data->{tmp_vf}->{variation_name} = $data->{ID};
@@ -669,7 +673,7 @@ sub main {
 			$data->{variation} = variation($config, $data);
 			
 			# transcript variation (get cons)
-			get_all_consequences($config->{vep}, [$data->{tmp_vf}], $config->{vep}->{tr_cache}, $config->{vep}->{rf_cache}) if $config->{tables}->{transcript_variation};
+			get_all_consequences($config->{vep}, [$data->{tmp_vf}]) if $config->{tables}->{transcript_variation};
 			
 			# get variation_feature object
 			$data->{vf} = variation_feature($config, $data);
@@ -713,7 +717,7 @@ sub main {
 			#}
 			
 			# compressed by region
-			if($config->{tables}->{compressed_genotype_region} && @{$data->{genotypes}}) {
+			if($config->{tables}->{compressed_genotype_region} && @{$data->{genotypes}} && !defined($config->{test})) {
 				my $vf = $data->{vf};
 				
 				$vf->{seq_region_id} = $vf->slice->get_seq_region_id if !defined($vf->{seq_region_id});
@@ -1695,7 +1699,7 @@ sub variation {
 		$var = Bio::EnsEMBL::Variation::Variation->new_fast({
 			name             => $var_id,
 			source           => $config->{source},
-			is_somatic       => 0,
+			is_somatic       => $config->{somatic},
 			ancestral_allele => $data->{info}->{AA} eq '.' ? undef : uc($data->{info}->{AA})
 		});
 		
@@ -1732,6 +1736,9 @@ sub variation_feature {
 	
 	my @new_alleles = split /\//, $vf->allele_string;
 	
+	# remove Ns?
+	@new_alleles = grep {$_ ne 'N'} @new_alleles if defined($config->{skip_n});
+	
 	my $vfa = $config->{variationfeature_adaptor};
 	
 	# does the variation entry exist in the database?
@@ -1743,7 +1750,8 @@ sub variation_feature {
 		$vfa->_fetch_all_by_coords(
 			$config->{seq_region_ids}->{$vf->{chr}},
 			$vf->{start},
-			$vf->{end}
+			$vf->{end},
+			$config->{somatic}
 		);
 	
 	# flag to indicate if we've added a synonym
@@ -1751,6 +1759,8 @@ sub variation_feature {
 	
 	# check existing VFs
 	foreach my $existing_vf (sort {
+		(count_common_alleles($vf->allele_string, $b->allele_string) <=> count_common_alleles($vf->allele_string, $a->allele_string)) ||
+		($a->map_weight <=> $b->map_weight) ||
 		($b->source eq 'dbSNP') <=> ($a->source eq 'dbSNP') ||
 		(split 'rs', $a->variation_name)[-1] <=> (split 'rs', $b->variation_name)[-1]
 	} @$existing_vfs) {
@@ -1793,7 +1803,7 @@ sub variation_feature {
 		}
 		
 		# we also need to add a synonym entry if the variation has a new name
-		if($existing_vf->variation_name ne $data->{ID} and !defined($config->{only_existing}) and !$added_synonym) {
+		if($existing_vf->variation_name ne $data->{ID} and !defined($config->{only_existing}) and !$added_synonym and !defined($data->{made_up_name})) {
 			
 			if(defined($config->{test})) {
 				debug($config, "(TEST) Adding ", $data->{ID}, " to variation_synonym as synonym for ", $existing_vf->variation_name);
@@ -1864,7 +1874,7 @@ sub variation_feature {
 		
 		# add in some info needed (since we won't have a slice)
 		$vf->{source_id}       = $config->{source_id};
-		$vf->{is_somatic}      = 0;
+		$vf->{is_somatic}      = $config->{somatic};
 		$vf->{class_attrib_id} = $config->{attribute_adaptor}->attrib_id_for_type_value('SO_term', $so_term);
 		
 		# now store the VF
@@ -1886,6 +1896,15 @@ sub variation_feature {
 	return $vf;
 }
 
+# counts how many alleles two allele strings share
+sub count_common_alleles {
+	my ($as1, $as2) = @_;
+	
+	my %alleles;
+	$alleles{$_}++ for split('/', $as1.'/'.$as2);
+	
+	return scalar grep {$_ > 1} values %alleles;
+}
 
 # transcript_variation
 sub transcript_variation {
@@ -2192,6 +2211,7 @@ sub individual_genotype {
 	my @gts = grep {$_->genotype_string !~ /\./} @{$data->{genotypes}};
 	
 	if(defined($config->{test})) {
+		return unless scalar keys %{$data->{variation}};
 		debug($config, "(TEST) Writing ", scalar @gts, " genotype objects for variation ", $data->{variation}->name);
 	}
 	else {
@@ -2490,6 +2510,9 @@ Options
                       individuals in the file; specifying any other population name
                       will use the selected population for the GMAF.
 
+--somatic             Indicate the data in this VCF is somatic (will not be merged
+                      with germline, and vice versa if --somatic not used)
+
 --ind_prefix          Prefix added to individual names [default: not used]
 --pop_prefix          Prefix added to population names [default: not used]
 --var_prefix          Prefix added to constructed variation names [default: not used]
@@ -2511,6 +2534,9 @@ Options
 --only_existing       Only write to tables when an existing variant is found. Existing
                       can be a variation with the same name, or a variant with the same
                       location and alleles
+--skip_n              When comparing to existing variations, set this flag to ignore N
+                      alleles in the VCF. This is useful if you have converted data to
+                      a VCF without knowing the reference
 
 -r | --registry       Registry file to use defines DB connections. Defining a registry
                       file overrides the connection settings below

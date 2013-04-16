@@ -51,12 +51,13 @@ sub default_options {
 #       'ce_mlss_id'            => 523,   # it is very important to check that this value is current (commented out to make it obligatory to specify)
 	#conservation score mlss_id
 #       'cs_mlss_id'            => 50029, # it is very important to check that this value is current (commented out to make it obligatory to specify)
-        'release'               => '65',
+        'release'               => '68',
         'release_suffix'        => '',    # an empty string by default, a letter otherwise
         'ensembl_cvs_root_dir'  => $ENV{'ENSEMBL_CVS_ROOT_DIR'},
 	'dbname'                => $ENV{USER}.'_pecan_19way_'.$self->o('release').$self->o('release_suffix'),
-        'work_dir'              => '/lustre/scratch101/ensembl/' . $ENV{'USER'} . '/scratch/hive/release_' . $self->o('rel_with_suffix') . '/' . $self->o('dbname'),
-	'do_not_reuse_list'     => [ ],     # names of species we don't want to reuse this time
+        'work_dir'              => '/lustre/scratch109/ensembl/' . $ENV{'USER'} . '/scratch/hive/release_' . $self->o('rel_with_suffix') . '/' . $self->o('dbname'),
+#	'do_not_reuse_list'     => [ ],     # names of species we don't want to reuse this time. This is normally done automatically, so only need to set this if we think that this will not be picked up automatically.
+	'do_not_reuse_list'     => [ 87 ],     # names of species we don't want to reuse this time. This is normally done automatically, so only need to set this if we think that this will not be picked up automatically.
 
     # dependent parameters:
         'rel_with_suffix'       => $self->o('release').$self->o('release_suffix'),
@@ -73,6 +74,10 @@ sub default_options {
 
     #master database
         'master_db_name' => 'sf5_ensembl_compara_master', 
+
+    #update_max_alignment_length
+    'quick' => 1, #use quick method for calculating the max_alignment_length (genomic_align_block->length 
+                  #instead of genomic_align->dnafrag_end - genomic_align->dnafrag_start + 1
 
     # Mercator default parameters
     'strict_map'        => 1,
@@ -147,12 +152,13 @@ sub default_options {
        'reuse_core_sources_locs'   => [ $self->o('livemirror_loc') ],
        'curr_core_sources_locs'    => [ $self->o('staging_loc1'), $self->o('staging_loc2'), ],
        'prev_release'              => 0,   # 0 is the default and it means "take current release number and subtract 1"
+
        'reuse_db' => {   # usually previous pecan production database
            -host   => 'compara1',
            -port   => 3306,
            -user   => 'ensro',
            -pass   => '',
-           -dbname => 'kb3_pecan_19way_64',
+           -dbname => 'kb3_pecan_19way_67',
 	   -driver => 'mysql',
         },
 
@@ -208,14 +214,14 @@ sub pipeline_create_commands {
 sub resource_classes {
     my ($self) = @_;
     return {
-         #0 => { -desc => 'default',       'LSF' => '-R"select[mycompara1 <=800 && myens_staging1 <= 800 && myens_staging2 <=800 && myens_livemirror <=800] rusage[mycompara1=10:duration=3,myens_staging1=10:duration=3,myens_staging2=10:duration=3,myens_livemirror=10:duration=3]"' },
-	 0 => { -desc => 'v low, 8h',     'LSF' => '-C0 -M100000 -R"select[mem>100] rusage[mem=100]"' },  
-	 1 => { -desc => 'low, 8h',       'LSF' => '-C0 -M1000000 -R"select[mem>1000] rusage[mem=1000]"' },  
-	 2 => { -desc => 'default, 8h',   'LSF' => '-C0 -M1800000 -R"select[mem>1800] rusage[mem=1800]"' },  
-         3 => { -desc => 'mercator_mem',  'LSF' => '-C0 -M3500000 -R"select[mem>3500] rusage[mem=3500]"' },
-         4 => { -desc => 'pecan_himem1',  'LSF' => '-C0 -M7500000 -R"select[mem>7500] rusage[mem=7500]"' }, 
-         5 => { -desc => 'pecan_himem2',  'LSF' => '-C0 -M11400000 -R"select[mem>11400] rusage[mem=11400]"' }, 
-         6 => { -desc => 'pecan_himem3',  'LSF' => '-C0 -M14000000 -R"select[mem>14000] rusage[mem=14000]"' }, 
+         %{$self->SUPER::resource_classes},  # inherit 'default' from the parent class
+	 '100Mb' =>  { 'LSF' => '-C0 -M100000 -R"select[mem>100] rusage[mem=100]"' },  
+	 '1Gb' =>    { 'LSF' => '-C0 -M1000000 -R"select[mem>1000] rusage[mem=1000]"' },  
+	 '1.8Gb' =>  { 'LSF' => '-C0 -M1800000 -R"select[mem>1800] rusage[mem=1800]"' },  
+         '3.6Gb' =>  { 'LSF' => '-C0 -M3600000 -R"select[mem>3600] rusage[mem=3600]"' },
+         '7.5Gb' =>  { 'LSF' => '-C0 -M7500000 -R"select[mem>7500] rusage[mem=7500]"' }, 
+         '11.4Gb' => { 'LSF' => '-C0 -M11400000 -R"select[mem>11400] rusage[mem=11400]"' }, 
+         '14Gb' =>   { 'LSF' => '-C0 -M14000000 -R"select[mem>14000] rusage[mem=14000]"' }, 
     };
 }
 
@@ -236,7 +242,7 @@ sub pipeline_analyses {
 			       2 => [ 'innodbise_table'  ],
 			       1 => [ 'populate_new_database' ],
 			      },
-		-rc_id => 0,
+		-rc_name => '100Mb',
 	    },
 
 	    {   -logic_name    => 'innodbise_table',
@@ -246,7 +252,7 @@ sub pipeline_analyses {
 				  },
 		-hive_capacity => 1,
 		-can_be_empty  => 1,
-		-rc_id => 0,
+		-rc_name => '100Mb',
 	    },
 
 # ---------------------------------------------[Run poplulate_new_database.pl script ]---------------------------------------------------
@@ -265,7 +271,7 @@ sub pipeline_analyses {
 	       -flow_into => {
 			      1 => [ 'set_internal_ids' ],
 			     },
-		-rc_id => 1,
+		-rc_name => '1Gb',
 	    },
 
 # ------------------------------------------------------[Set internal ids ]---------------------------------------------------------------
@@ -281,7 +287,7 @@ sub pipeline_analyses {
 		-flow_into => {
 			       1 => [ 'load_genomedb_factory' ],
 			      },
-		-rc_id => 0,
+		-rc_name => '100Mb',
 	    },
 
 # ---------------------------------------------[load GenomeDB entries from master+cores]---------------------------------------------
@@ -305,7 +311,7 @@ sub pipeline_analyses {
                 2 => [ 'load_genomedb' ],
 		1 => [ 'load_genomedb_funnel' ],    # backbone
             },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
 	},
 
         {   -logic_name => 'load_genomedb',
@@ -317,7 +323,7 @@ sub pipeline_analyses {
             -flow_into => {
                 1 => [ 'check_reusability' ],   # each will flow into another one
             },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
 
 	{   -logic_name => 'load_genomedb_funnel',
@@ -326,7 +332,7 @@ sub pipeline_analyses {
             -flow_into => {
                 1 => [ 'accumulate_reuse_ss', 'generate_reuse_ss' ],  # "backbone"
             },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
 
 
@@ -342,7 +348,7 @@ sub pipeline_analyses {
              -flow_into => {
                  2 => { 'mysql:////meta' => { 'meta_key' => 'reuse_ss_id', 'meta_value' => '#_insert_id_0#' } },     # dynamically record it as a pipeline-wide parameter
              },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
          },
 
 
@@ -361,7 +367,7 @@ sub pipeline_analyses {
 		-flow_into => {
 			       4 => { 'mysql:////method_link_species_set_tag' => { 'method_link_species_set_id' => '#mlss_id#', 'tag' => 'species_tree', 'value' => '#species_tree_string#' } },
 			      },
-		-rc_id => 0,
+		-rc_name => '100Mb',
 	    },
 
 # ---------------------------------------------[filter genome_db entries into reusable and non-reusable ones]------------------------
@@ -384,7 +390,7 @@ sub pipeline_analyses {
                 },
                 3 => [ 'load_fresh_members', 'paf_create_empty_table' ], #Fresh tables
             },
-	    -rc_id => 1,
+	    -rc_name => '1Gb',
         },
 
         {   -logic_name    => 'accumulate_reuse_ss',
@@ -398,7 +404,7 @@ sub pipeline_analyses {
             -flow_into => {
                 3 => [ 'mysql:////meta' ],
             },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
 
 # ---------------------------------------------[reuse members and pafs]--------------------------------------------------------------
@@ -418,7 +424,7 @@ sub pipeline_analyses {
                 },
 		3 => [ 'load_fresh_members', 'paf_create_empty_table' ],
             },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
 
         {   -logic_name => 'sequence_table_reuse',
@@ -434,7 +440,7 @@ sub pipeline_analyses {
 		 1 => [ 'member_table_reuse' ],    # n_reused_species
 		 2 => 'mysql:////sequence',
             },
-	    -rc_id => 1,
+	    -rc_name => '1Gb',
         },
 
         {   -logic_name => 'member_table_reuse',
@@ -450,7 +456,7 @@ sub pipeline_analyses {
             -flow_into => {
 		 1 => [ 'subset_table_reuse' ],   # n_reused_species
             },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
         {   -logic_name => 'subset_table_reuse',
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::MySQLTransfer',
@@ -465,7 +471,7 @@ sub pipeline_analyses {
 	    -flow_into => {
                 1 => [ 'subset_member_table_reuse' ],    # n_reused_species
             },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
 
         {   -logic_name => 'subset_member_table_reuse',
@@ -481,7 +487,7 @@ sub pipeline_analyses {
 		 1 => [ 'reuse_dump_subset_fasta'],
 		 2 => 'mysql:////subset_member',
             },
-	    -rc_id => 1,
+	    -rc_name => '1Gb',
         },
         {   -logic_name => 'paf_table_reuse',
             -module     => 'Bio::EnsEMBL::Hive::RunnableDB::MySQLTransfer',
@@ -493,7 +499,7 @@ sub pipeline_analyses {
 	    -wait_for   => [ 'accumulate_reuse_ss' ],     # have to wait until reuse_ss_csv is computed
             -hive_capacity => 4,
             -can_be_empty  => 1,
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
 
 # ---------------------------------------------[load the rest of members]------------------------------------------------------------
@@ -506,7 +512,7 @@ sub pipeline_analyses {
                 ],
             },
             -can_be_empty  => 1,
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
 
         {   -logic_name => 'load_fresh_members',
@@ -519,7 +525,7 @@ sub pipeline_analyses {
             -flow_into => {
                  1 => [ 'fresh_dump_subset_fasta' ],
             },
-	    -rc_id => 2,
+	    -rc_name => '1.8Gb',
         },
 
 # ---------------------------------------------[create and populate blast analyses]--------------------------------------------------
@@ -536,7 +542,7 @@ sub pipeline_analyses {
                 1 => [ 'make_blastdb' ],
                 2 => [ 'blast_factory' ],
             },
-	    -rc_id => 1,
+	    -rc_name => '1Gb',
         },
         {   -logic_name => 'fresh_dump_subset_fasta',
             -module     => 'Bio::EnsEMBL::Compara::RunnableDB::MercatorPecan::DumpSubsetIntoFasta',
@@ -549,7 +555,7 @@ sub pipeline_analyses {
                 1 => [ 'make_blastdb' ],
                 2 => [ 'blast_factory' ],
             },
-	    -rc_id => 1,
+	    -rc_name => '1Gb',
         },
 
         {   -logic_name => 'make_blastdb',
@@ -560,7 +566,7 @@ sub pipeline_analyses {
                 'cmd' => '#blast_bin_dir#/makeblastdb -dbtype prot -parse_seqids -logfile #fasta_dir#/make_blastdb.log -in #fasta_name#',
             },
 	    -wait_for  => [ 'reuse_dump_subset_fasta' , 'fresh_dump_subset_fasta' ],
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
         },
 
        {   -logic_name => 'blast_factory',
@@ -573,7 +579,7 @@ sub pipeline_analyses {
             -flow_into => {
                 2 => [ 'mercator_blast' ],
             },
-	    -rc_id => 1,
+	    -rc_name => '1Gb',
         },
 
         {   -logic_name    => 'mercator_blast',
@@ -585,7 +591,7 @@ sub pipeline_analyses {
             },
 	    -wait_for => [ 'paf_table_reuse' ],
             -hive_capacity => $self->o('blast_capacity'),
-	    -rc_id => 2,
+	    -rc_name => '1.8Gb',
         },
 
 
@@ -603,7 +609,7 @@ sub pipeline_analyses {
 			    1 => { 'mercator' => undef },
 			    2 => ['dump_mercator_files'],
 			   },
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
          },
 
          {   -logic_name => 'dump_mercator_files',
@@ -613,7 +619,7 @@ sub pipeline_analyses {
 			      'all_hits'    => $self->o('all_hits'),
 			    },
              -hive_capacity => -1,
-	     -rc_id => 1,
+	     -rc_name => '1Gb',
          },
 
          {   -logic_name => 'mercator',
@@ -623,7 +629,7 @@ sub pipeline_analyses {
 			     'method_link_type' => $self->o('method_link_type'),
 			    },
              -hive_capacity => 1,
-	     -rc_id => 3,
+	     -rc_name => '3.6Gb',
 	     -wait_for => [ 'dump_mercator_files' ],
              -flow_into => {
                  1 => [ 'pecan' ],
@@ -645,8 +651,9 @@ sub pipeline_analyses {
              -flow_into => {
                  1 => [ 'gerp' ],
 		 2 => [ 'pecan_mem1'], #retry with more heap memory
+		-2 => [ 'pecan_mem1'], #RUNLIMIT
              },
-	    -rc_id => 2,
+	    -rc_name => '1.8Gb',
          },
 
          {   -logic_name => 'pecan_mem1',
@@ -659,11 +666,12 @@ sub pipeline_analyses {
              },
  	     -can_be_empty  => 1,
              -max_retry_count => 1,
-	     -rc_id => 4,
+	     -rc_name => '7.5Gb',
              -hive_capacity => 500,
              -flow_into => {
                  1 => [ 'gerp' ],
 		 2 => [ 'pecan_mem2'], #retry with even more heap memory
+		-2 => [ 'pecan_mem2'], #RUNLIMIT
              },
          },
          {   -logic_name => 'pecan_mem2',
@@ -676,11 +684,12 @@ sub pipeline_analyses {
              },
 	     -can_be_empty  => 1,
              -max_retry_count => 1,
-	     -rc_id => 5,
+	     -rc_name => '11.4Gb',
              -hive_capacity => 500,
              -flow_into => {
                  1 => [ 'gerp' ],
 		 2 => [ 'pecan_mem3'], #retry with even more heap memory
+		-2 => [ 'pecan_mem3'], #RUNLIMIT
              },
          },
          {   -logic_name => 'pecan_mem3',
@@ -693,7 +702,7 @@ sub pipeline_analyses {
              },
 	     -can_be_empty  => 1,
              -max_retry_count => 1,
-	     -rc_id => 6,
+	     -rc_name => '14Gb',
              -hive_capacity => 500,
              -flow_into => {
                  1 => [ 'gerp' ],
@@ -712,8 +721,34 @@ sub pipeline_analyses {
              },
 #             -wait_for => [ 'mercator' ],
              -hive_capacity => 500,  
-	     -rc_id => 1,
+             -flow_into => {
+		 2 => [ 'gerp_himem'], #retry with more memory
+             },
+	     -rc_name => '1Gb',
          },
+         {   -logic_name    => 'gerp_himem',
+             -module        => 'Bio::EnsEMBL::Compara::RunnableDB::GenomicAlignBlock::Gerp',
+             -parameters    => {
+		 'program_version' => $self->o('gerp_version'),
+                 'window_sizes'    => $self->o('window_sizes'),
+		 'gerp_exe_dir'    => $self->o('gerp_exe_dir'),
+                 'mlss_id'         => $self->o('mlss_id'),  #to retrieve species_tree from mlss_tag table
+             },
+ 	    -can_be_empty  => 1,
+            -hive_capacity => 500,  
+	     -rc_name => '1.8Gb',
+         },
+ 	 {  -logic_name => 'update_max_alignment_length',
+	    -module     => 'Bio::EnsEMBL::Compara::RunnableDB::GenomicAlignBlock::UpdateMaxAlignmentLength',
+	    -parameters => { 
+			    'quick'                      => $self->o('quick'),
+			    'method_link_species_set_id' => $self->o('mlss_id'),
+
+			   },
+            -input_ids => [{}],
+	    -wait_for => [ 'pecan', 'pecan_mem1', 'pecan_mem2', 'pecan_mem3','gerp', 'gerp_himem'],
+	    -rc_name => '100Mb',
+	 },
 
 # ---------------------------------------------[healthcheck]---------------------------------------------------------------------
         {   -logic_name    => 'conservation_score_healthcheck',
@@ -724,9 +759,9 @@ sub pipeline_analyses {
                  { 'test' => 'conservation_jobs', 'logic_name' => 'Gerp','method_link_type' => 'PECAN',},
 		 { 'test' => 'conservation_scores', 'method_link_species_set_id' => $self->o('cs_mlss_id')},
              ],
-             -wait_for => [ 'pecan', 'pecan_mem1', 'pecan_mem2', 'pecan_mem3','gerp' ],
+             -wait_for => ['update_max_alignment_length' ],
              -hive_capacity => -1,   # to allow for parallelization
-	    -rc_id => 0,
+	    -rc_name => '100Mb',
 	},
 
     ];

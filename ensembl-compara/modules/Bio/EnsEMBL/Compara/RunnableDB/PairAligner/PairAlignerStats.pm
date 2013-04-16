@@ -46,9 +46,9 @@ Internal methods are usually preceded with a _
 package Bio::EnsEMBL::Compara::RunnableDB::PairAligner::PairAlignerStats;
 
 use strict;
-use Bio::EnsEMBL::Compara::Production::DBSQL::DBAdaptor;
-use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
+
+use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
 =head2 fetch_input
 
@@ -89,8 +89,8 @@ sub fetch_input {
   my $non_ref_genome_db = $genome_db_adaptor->fetch_by_registry_name($self->param('non_ref_species'));
 
 
-  my $ref_db = $ref_genome_db->connect_to_genome_locator;
-  my $non_ref_db = $non_ref_genome_db->connect_to_genome_locator;
+  my $ref_db = $ref_genome_db->db_adaptor;
+  my $non_ref_db = $non_ref_genome_db->db_adaptor;
 
   #Modify url to make it a valid core url
   $self->param('ref_dbc_url', $ref_db->dbc->url . "?group=core\\&species=" . $self->param('ref_species'));
@@ -227,7 +227,7 @@ sub write_pairaligner_statistics {
     $method_link_species_set->store_tag("num_blocks", $num_blocks);
 
     #Find the reference and non-reference genome_db
-    my $species_set = $method_link_species_set->species_set;
+    my $species_set = $method_link_species_set->species_set_obj->genome_dbs();
 
     my $genome_db_adaptor = $self->compara_dba->get_GenomeDBAdaptor;
     my $ref_genome_db = $genome_db_adaptor->fetch_by_registry_name($self->param('ref_species'));

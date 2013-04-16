@@ -1,14 +1,14 @@
-/EGProteinTrees_conf.pm/1.3/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/LastzMasterConf_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/LastzMasterCore_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/LastzMasterReg_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/LastzMaster_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/LastzNoMasterConf_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/LastzNoMaster_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/TBlatMaster_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/VegaPairAligner_conf.pm/1.1.2.2/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/VegaProteinTrees_conf.pm/1.4.2.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/WormProteinTrees_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/lastz.conf/1.1.6.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
-/reg.conf/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-67
+/EGProteinTrees_conf.pm/1.5/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/LastzMasterConf_conf.pm/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/LastzMasterCore_conf.pm/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/LastzMasterReg_conf.pm/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/LastzMaster_conf.pm/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/LastzNoMasterConf_conf.pm/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/LastzNoMaster_conf.pm/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/TBlatMaster_conf.pm/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/VegaPairAligner_conf.pm/1.2.2.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/VegaProteinTrees_conf.pm/1.6.2.1/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/WormProteinTrees_conf.pm/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-68
+/lastz.conf/1.2/Tue Apr 16 20:37:13 2013//Tbranch-ensembl-68
+/reg.conf/1.1/Tue Apr 16 20:36:41 2013//Tbranch-ensembl-68
 D

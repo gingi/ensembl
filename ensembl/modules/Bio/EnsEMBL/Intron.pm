@@ -22,30 +22,26 @@
 
 =head1 SYNOPSIS
 
-  $ex = new Bio::EnsEMBL::Intron( exon1, exon2 );
+  $intron = Bio::EnsEMBL::Intron->new( exon1, exon2, $analysis );
 
 =cut
 
 
 package Bio::EnsEMBL::Intron;
-use vars qw(@ISA);
 use strict;
+use warnings;
 
+use Bio::EnsEMBL::Utils::Exception qw( warning throw );
 
-use Bio::EnsEMBL::Feature;
-use Bio::Seq; # introns have to have sequences...
-
-use Bio::EnsEMBL::Utils::Exception qw( warning throw deprecate );
-use Bio::EnsEMBL::Utils::Argument qw( rearrange );
-
-
-@ISA = qw(Bio::EnsEMBL::Feature);
+use base qw(Bio::EnsEMBL::Feature);
 
 =head2 new
 
-  Args       : exon1, exon2. The two exons to build the Intron from.
+  Arg [1]    : Bio::EnsEMBL::Exon The 5' exon for the intron; required
+  Arg [2]    : Bio::EnsEMBL::Exon The 3' exon for the intron; required
+  Arg [3]    : Bio::EnsEMBL::Analysis Analysis to link to this Intron
   Example    : $intron = new Bio::EnsEMBL::Intron($exon1, $exon2)
-  Description: create an Intron object from two exons.
+  Description: Create an Intron object from two exons and an optional analysis
   Returntype : Bio::EnsEMBL::Intron
   Exceptions : exons not on the same strand or slice.
   Caller     : general
@@ -54,7 +50,7 @@ use Bio::EnsEMBL::Utils::Argument qw( rearrange );
 =cut
 
 sub new {
-  my ( $proto, $e1, $e2 ) = @_;
+  my ( $proto, $e1, $e2, $analysis ) = @_;
 
   my $class = ref $proto || $proto;
 
@@ -82,11 +78,14 @@ sub new {
     {
       throw("Exons on different slices. Not allowed");
     } else {
-      warn(   "Exons have different slice references "
-            . "to the same seq_region\n" );
+      warning("Exons have different slice references to the same seq_region");
     }
   } else {
     $self->{'slice'} = $e1->slice();
+  }
+  
+  if($analysis) {
+    $self->analysis($analysis);
   }
 
   $self->{'prev'} = $e1;
@@ -154,19 +153,45 @@ sub next_Exon {
   return $self->{'next'};
 }
 
-=head2 get_IntronSupportingEvidence
+=head2 is_splice_canonical
 
-  Example			: my $evidence = $intron->get_IntronSupportingEvidence(); 
-  Description	: Returns the evidence used to support this Intron
-  Returntype 	: Bio::EnsEMBL::IntronSupportingEvidence
-  Exceptions 	: None
+  Example     : my $canonical = $intron->is_splice_canonical(); 
+  Description : Indicates if the splice site is considered normal. This means
+                splice site variants equal to (D == donor, A == acceptor)
+                  GT (D) => AG (A) 
+                  AT (D) => AC (A)
+                  GC (D) => AG (A)
+  Returntype  : Boolean indicating if the splice was as expected
+  Exceptions  : See splice_seq
 
 =cut
 
-sub get_IntronSupportingEvidence {
+sub is_splice_canonical {
   my ($self) = @_;
-  my $sea = $self->adaptor()->db()->get_IntronSupportingEvidenceAdaptor();
-  return $sea->fetch_by_Intron($self);
+  my $splice = join q{}, @{$self->splice_seq()}; 
+  my $canonical = {
+    'GTAG' => 1, 'ATAC' => 1, 'GCAG' => 1
+  }->{$splice};
+  return $canonical || 0;
+}
+
+=head2 splice_seq
+
+  Example     : my ($donor, $acceptor) = @{$intron->splice_seq}; 
+  Description : Get the donor and acceptor splice sites for this intron
+  Returntype  : ArrayRef[String] The donor and acceptor sequences as Strings
+  Exceptions  : Thrown if a feature Slice cannot be found
+
+=cut
+
+sub splice_seq {
+  my ($self) = @_;
+  my $slice = $self->feature_Slice();
+  throw "Cannot retrieve feature_Slice() for this Intron" unless $slice;
+  my $length = $self->length();
+  my $donor_seq    = uc($slice->subseq(1,2));
+  my $acceptor_seq = uc($slice->subseq($length - 1, $length));
+  return [$donor_seq, $acceptor_seq];
 }
 
 1;

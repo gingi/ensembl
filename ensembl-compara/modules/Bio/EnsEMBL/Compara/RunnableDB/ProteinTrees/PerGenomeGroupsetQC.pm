@@ -46,11 +46,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mm14 $
+$Author: lg4 $
 
 =head VERSION
 
-$Revision: 1.7 $
+$Revision: 1.8 $
 
 =head1 APPENDIX
 
@@ -81,7 +81,7 @@ sub run {
     return unless $self->param('reuse_this');
 
     my $reuse_db                = $self->param('reuse_db') or die "'reuse_db' connection parameters hash has to be defined in reuse mode";
-    my $reuse_compara_dba       = $self->go_figure_compara_dba($reuse_db);    # may die if bad parameters
+    my $reuse_compara_dba       = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->go_figure_compara_dba($reuse_db);    # may die if bad parameters
 
     my $reuse_orphans           = $self->fetch_gdb_orphan_genes($reuse_compara_dba, $genome_db_id, 'gene_tree_member');
     my %common_orphans = ();

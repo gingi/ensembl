@@ -1,10 +1,14 @@
 package Bio::EnsEMBL::Compara::DBSQL::HomologyAdaptor;
 
 use strict;
+
 use Bio::EnsEMBL::Compara::Homology;
 use Bio::EnsEMBL::Compara::DBSQL::BaseRelationAdaptor;
+
 use Bio::EnsEMBL::Utils::Exception qw(deprecate throw);
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
+use Bio::EnsEMBL::Utils::Scalar qw(:assert);
+
 use DBI qw(:sql_types);
 
 our @ISA = qw(Bio::EnsEMBL::Compara::DBSQL::BaseRelationAdaptor);
@@ -24,11 +28,12 @@ our @ISA = qw(Bio::EnsEMBL::Compara::DBSQL::BaseRelationAdaptor);
 sub fetch_all_by_Member {
   my ($self, $member) = @_;
 
+  #$member = $member->get_canonical_Member;
   my $join = [[['homology_member', 'hm'], 'h.homology_id = hm.homology_id']];
   my $constraint = "hm.member_id = " .$member->dbID;
 
-  # This internal variable is used by add_Member_Attribute method 
-  # in Bio::EnsEMBL::Compara::BaseRelation to make sure that the first element
+  # This internal variable is used by add_Member method 
+  # in Bio::EnsEMBL::Compara::MemberSet to make sure that the first element
   # of the member array is the one that has been used by the user to fetch the
   # homology object
   $self->{'_this_one_first'} = $member->stable_id;
@@ -123,6 +128,7 @@ sub fetch_all_by_Member_method_link_type {
         "::".$member->stable_id.") with no GenomeDB");
     return [];
   }
+  #$member = $member->get_canonical_Member;
 
   throw("method_link_type arg is required\n")
     unless ($method_link_type);
@@ -164,6 +170,7 @@ sub fetch_all_by_Member_MethodLinkSpeciesSet {
   unless ($member->isa('Bio::EnsEMBL::Compara::Member')) {
     throw("The argument must be a Bio::EnsEMBL::Compara::Member object, not $member");
   }
+  #$member = $member->get_canonical_Member;
 
   throw("method_link_species_set arg is required\n")
     unless ($method_link_species_set);
@@ -222,6 +229,9 @@ sub fetch_by_Member_Member_method_link_type {
     return [];
   }
 
+  #$member1 = $member1->get_canonical_Member;
+  #$member2 = $member2->get_canonical_Member;
+
   #  my $join = [[['homology_member', 'hm'], 'h.homology_id = hm.homology_id']];
   my $join = [[['homology_member', 'hm1'], 'h.homology_id = hm1.homology_id'],[['homology_member', 'hm2'], 'h.homology_id = hm2.homology_id']];
   my $constraint =  " h.method_link_species_set_id =" . $mlss->dbID;
@@ -267,13 +277,10 @@ sub fetch_by_Member_id_Member_id {
 
   return undef unless (defined $homology || 0 == scalar @$homology);
 
-  # At production time, we may have more than one entry due to the
-  # OtherParalogs code, so we allow fetching with the extra parameter,
-  # but the duplicity is cleaned up afterwards
-  if (1 < scalar @$homology && !defined($allow_duplicates)) {
-    throw("Returns more than one element");
-  }
+  #my $pmember_id1 = $self->db_get_MemberAdaptor->fetch_canonical_member_for_gene_member_id($member_id1)->dbID;
+  #my $pmember_id2 = $self->db_get_MemberAdaptor->fetch_canonical_member_for_gene_member_id($member_id2)->dbID;
 
+  #return $self->fetch_by_PMember_id_PMember_id($pmember_id1, $pmember_id2, $allow_duplicates);
   return shift @{$homology};
 }
 
@@ -443,6 +450,139 @@ sub fetch_all_by_MethodLinkSpeciesSet_orthology_type_subtype {
 }
 
 
+=head2 fetch_all_in_paralogues_from_Member_NCBITaxon
+
+  Arg [1]    : member (Bio::EnsEMBL::Compara::Member)
+  Arg [2]    : boundary_species (Bio::EnsEMBL::Compara::NCBITaxon)
+  Example    : $homologies = $HomologyAdaptor->fetch_all_in_paralogues_from_Member_NCBITaxon
+                    $human_member, $chicken_genomdb->taxon);
+  Description: fetch all the same species paralogues of this member, that are more recent than
+                the speciation even refered to by the boundary_species argument
+  Returntype : an array reference of Bio::EnsEMBL::Compara::Homology objects
+
+=cut
+
+sub fetch_all_in_paralogues_from_Member_NCBITaxon {
+    my ($self, $member, $boundary_species) = @_;
+
+    assert_ref($member, 'Bio::EnsEMBL::Compara::Member');
+    assert_ref($boundary_species, 'Bio::EnsEMBL::Compara::NCBITaxon');
+
+    my $all_paras = $self->fetch_all_by_Member_MethodLinkSpeciesSet(
+        $member,
+        $self->db->get_MethodLinkSpeciesSetAdaptor->fetch_by_method_link_type_GenomeDBs('ENSEMBL_PARALOGUES', [$member->genome_db]),
+    );
+    return $self->_filter_paralogues_by_ancestral_species($all_paras, $member->genome_db, $boundary_species, 1);
+}
+
+
+=head2 fetch_all_out_paralogues_from_Member_NCBITaxon
+
+  Arg [1]    : member (Bio::EnsEMBL::Compara::Member)
+  Arg [2]    : boundary_species (Bio::EnsEMBL::Compara::NCBITaxon)
+  Example    : $homologies = $HomologyAdaptor->fetch_all_in_paralogues_from_Member_NCBITaxon
+                    $human_member, $chicken_genomdb->taxon);
+  Description: fetch all the same species paralog of this member, that are older than
+                the speciation even refered to by the boundary_species argument
+  Returntype : an array reference of Bio::EnsEMBL::Compara::Homology objects
+  Caller     :
+
+=cut
+
+sub fetch_all_out_paralogues_from_Member_NCBITaxon {
+    my ($self, $member, $boundary_species) = @_;
+
+    assert_ref($member, 'Bio::EnsEMBL::Compara::Member');
+    assert_ref($boundary_species, 'Bio::EnsEMBL::Compara::NCBITaxon');
+
+    my $all_paras = $self->fetch_all_by_Member_MethodLinkSpeciesSet(
+        $member,
+        $self->db->get_MethodLinkSpeciesSetAdaptor->fetch_by_method_link_type_GenomeDBs('ENSEMBL_PARALOGUES', [$member->genome_db]),
+    );
+    return $self->_filter_paralogues_by_ancestral_species($all_paras, $member->genome_db, $boundary_species, 0);
+}
+
+
+=head2 fetch_all_in_paralogues_from_GenomeDB_NCBITaxon
+
+  Arg [1]    : species (Bio::EnsEMBL::Compara::GenomeDB)
+  Arg [2]    : boundary_species (Bio::EnsEMBL::Compara::NCBITaxon)
+  Example    : $homologies = $HomologyAdaptor->fetch_all_in_paralogues_from_GenomeDB_NCBITaxon
+                    $human_genomedb, $chicken_genomdb->taxon);
+  Description: fetch all the same species paralog of this species, that are more recent than
+                the speciation even refered to by the boundary_species argument
+  Returntype : an array reference of Bio::EnsEMBL::Compara::Homology objects
+  Caller     :
+
+=cut
+
+sub fetch_all_in_paralogues_from_GenomeDB_NCBITaxon {
+    my ($self, $species, $boundary_species) = @_;
+
+    assert_ref($species, 'Bio::EnsEMBL::Compara::GenomeDB');
+    assert_ref($boundary_species, 'Bio::EnsEMBL::Compara::NCBITaxon');
+
+    my $all_paras = $self->fetch_all_by_MethodLinkSpeciesSet(
+        $self->db->get_MethodLinkSpeciesSetAdaptor->fetch_by_method_link_type_GenomeDBs('ENSEMBL_PARALOGUES', [$species]),
+    );
+
+    return $self->_filter_paralogues_by_ancestral_species($all_paras, $species, $boundary_species, 1);
+}
+
+
+=head2 fetch_all_out_paralogues_from_GenomeDB_NCBITaxon
+
+  Arg [1]    : species (Bio::EnsEMBL::Compara::GenomeDB)
+  Arg [2]    : boundary_species (Bio::EnsEMBL::Compara::NCBITaxon)
+  Example    : $homologies = $HomologyAdaptor->fetch_all_out_paralogues_from_GenomeDB_NCBITaxon
+                    $human_genomedb, $chicken_genomdb->taxon);
+  Description: fetch all the same species paralog of this species, that are older than
+                the speciation even refered to by the boundary_species argument
+  Returntype : an array reference of Bio::EnsEMBL::Compara::Homology objects
+  Caller     :
+
+=cut
+
+sub fetch_all_out_paralogues_from_GenomeDB_NCBITaxon {
+    my ($self, $species, $boundary_species) = @_;
+
+    assert_ref($species, 'Bio::EnsEMBL::Compara::GenomeDB');
+    assert_ref($boundary_species, 'Bio::EnsEMBL::Compara::NCBITaxon');
+
+    my $all_paras = $self->fetch_all_by_MethodLinkSpeciesSet(
+        $self->db->get_MethodLinkSpeciesSetAdaptor->fetch_by_method_link_type_GenomeDBs('ENSEMBL_PARALOGUES', [$species]),
+    );
+
+    return $self->_filter_paralogues_by_ancestral_species($all_paras, $species, $boundary_species, 0);
+}
+
+
+# Convenience method to filter a list of homologies
+sub _filter_paralogues_by_ancestral_species {
+    my ($self, $all_paras, $species1, $species2, $in_out) = @_;
+
+    assert_ref($species1, 'Bio::EnsEMBL::Compara::GenomeDB');
+    assert_ref($species2, 'Bio::EnsEMBL::Compara::NCBITaxon');
+
+    my $ncbi_a = $self->db->get_NCBITaxonAdaptor;
+
+    # The last common ancestor of $species1 and $species2 defines the boundary
+    my $lca =  $ncbi_a->fetch_first_shared_ancestor_indexed($species1->taxon, $species2);
+
+    my @good_paralogues;
+    foreach my $hom (@$all_paras) {
+
+        # The taxon where the homology "appeared"
+        my $ancspec = $ncbi_a->fetch_node_by_name($hom->subtype);
+    
+        # Compares the homology taxon to the boundary
+        push @good_paralogues, $hom if $in_out xor ($ancspec eq $ncbi_a->fetch_first_shared_ancestor_indexed($lca, $ancspec));
+    }
+
+    return \@good_paralogues;
+}
+
+
 =head2 fetch_orthocluster_with_Member
 
   Arg [1]    : Bio::EnsEMBL::Compara::Member $gene_member (must be ENSEMBLGENE type)
@@ -490,8 +630,7 @@ sub _recursive_get_orthocluster {
   foreach my $homology (@{$homologies}) {
     next if($ortho_set->{$homology->dbID});
     
-    foreach my $member_attribute (@{$homology->get_all_Member_Attribute}) {
-      my ($member, $attribute) = @{$member_attribute};
+    foreach my $member (@{$homology->get_all_GeneMembers}) {
       next if($member->dbID == $gene->dbID); #skip query gene
       $member->print_member if($debug);
 
@@ -602,31 +741,21 @@ sub store {
   }
   
   unless($hom->dbID) {
-    my $sql = "INSERT INTO homology (method_link_species_set_id, description, subtype, ancestor_node_id, tree_node_id) VALUES (?,?,?,?,?)";
+    my $sql = 'INSERT INTO homology (method_link_species_set_id, description, subtype, ancestor_node_id, tree_node_id) VALUES (?,?,?,?,?)';
     my $sth = $self->prepare($sql);
     $sth->execute($hom->method_link_species_set_id, $hom->description, $hom->subtype, $hom->ancestor_node_id, $hom->tree_node_id);
     $hom->dbID($sth->{'mysql_insertid'});
   }
 
-  foreach my $member_attribute (@{$hom->get_all_Member_Attribute}) {   
-    $self->store_relation($member_attribute, $hom);
+  my $sql = 'INSERT IGNORE INTO homology_member (homology_id, member_id, peptide_member_id, cigar_line, perc_id, perc_pos, perc_cov) VALUES (?,?,?,?,?,?,?)';
+  my $sth = $self->prepare($sql);
+  foreach my $member(@{$hom->get_all_Members}) {
+    # Stores the member if not yet stored
+    $self->db->get_MemberAdaptor->store($member) unless (defined $member->dbID);
+    $sth->execute($member->set->dbID, $member->gene_member_id, $member->dbID, $member->cigar_line, $member->perc_id, $member->perc_pos, $member->perc_cov);
   }
 
   return $hom->dbID;
-}
-
-
-sub store_relation {
-    my ($self, $member_attribute, $relation) = @_;
-
-    # Common interface between all relations to store the member
-    $self->SUPER::store_relation($member_attribute, $relation);
-
-    my ($member, $attribute) = @{$member_attribute};
-    $attribute->homology_id($relation->dbID);
-    my $sql = "INSERT IGNORE INTO homology_member (homology_id, member_id, peptide_member_id, cigar_line, perc_id, perc_pos) VALUES (?,?,?,?,?,?)";
-    my $sth = $self->prepare($sql);
-    $sth->execute($attribute->homology_id, $attribute->member_id, $attribute->peptide_member_id, $attribute->cigar_line, $attribute->perc_id, $attribute->perc_pos);
 }
 
 
@@ -697,7 +826,7 @@ sub fetch_all_orphans_by_GenomeDB {
     unless ($gdb);
 
   my $gdb_id = $gdb->dbID;
-  my $sql = "SELECT m.member_id from member m LEFT JOIN homology_member hm ON m.member_id=hm.member_id WHERE m.source_name='ENSEMBLGENE' AND m.genome_db_id=$gdb_id AND hm.member_id IS NULL";
+  my $sql = "SELECT m.member_id from member m JOIN member mp ON m.member_id = mp.gene_member_id JOIN subset_member sm ON sm.member_id = mp.member_id LEFT JOIN homology_member hm ON mp.member_id=hm.member_id WHERE m.source_name='ENSEMBLGENE' AND m.genome_db_id=$gdb_id AND hm.member_id IS NULL";
   my $sth = $self->dbc->prepare($sql);
   $sth->execute();
   my $ma = $self->db->get_MemberAdaptor;

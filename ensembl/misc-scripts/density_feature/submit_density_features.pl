@@ -72,8 +72,6 @@ if ( (!defined @port) || ($port_count < $host_count) ) {
     } 
 }
 
-my @hosts = qw(ens-staging1, ens-staging2);
-
 if (!$outdir) { 
     $outdir = $ENV{'PWD'}; 
 } else {
@@ -359,7 +357,7 @@ $prod_dbh->disconnect;
 	    $file_name_end = "_gc";
 	    $script = "$SERVERROOT/percent_gc_calc.pl";
 	    $script_title = "percent GC calculation";
-	    $option = " -d ";
+	    $option = " -pattern ";
 	}
 	case 'repeat_coverage' {
 	    $data_file = "$outdir/repeat_coverage_data.txt";
@@ -368,7 +366,7 @@ $prod_dbh->disconnect;
 	    $file_name_end = "_repeat";
 	    $script = "$SERVERROOT/repeat_coverage_calc.pl";
 	    $script_title = "repeat coverage calculation";
-	    $option = " -d ";
+	    $option = " -pattern ";
 	}
 	case 'gene_density' {
 	    for (my $i=0; $i<$host_count;$i++) {
@@ -398,7 +396,7 @@ $prod_dbh->disconnect;
 	    $file_name_end = "_seqreg_snp";
 	    $script = "$SERVERROOT/seq_region_stats.pl";
 	    $script_title = "seq region snp stats";
-	    $option = " -s snp -d ";
+	    $option = " -s snp -pattern ";
 	}
 	else { usage(); }
     }

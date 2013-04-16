@@ -4,10 +4,10 @@
 wget -O GO.obo "http://www.geneontology.org/ontology/obo_format_1_2/gene_ontology.1_2.obo"
 
 # SO    - Sequence Ontology
-wget -O SO.obo "http://berkeleybop.org/ontologies/obo-all/sequence/sequence.obo"
+wget -O SO.obo "http://downloads.sourceforge.net/project/song/Sequence%20Ontology/so_2_5/so.obo2.5"
 
 # EFO   - Experimental Factor Ontology
-wget -O EFO.obo "http://efo.svn.sourceforge.net/svnroot/efo/trunk/src/efoinobo/efo.obo"
+wget -O EFO.obo "http://www.ebi.ac.uk/efo/efo.obo"
 
 exit
 
@@ -29,4 +29,4 @@ wget -O GR_tax.obo "http://palea.cgrb.oregonstate.edu/viewsvn/Poc/trunk/ontology
 # EO    - Plant Envionment Ontology
 wget -O EO.obo "http://obo.cvs.sourceforge.net/viewvc/obo/obo/ontology/phenotype/environment/environment_ontology.obo"
 
-# $Id: get_OBO_files.ksh,v 1.6 2011-02-23 10:12:28 mk8 Exp $
+# $Id: get_OBO_files.ksh,v 1.7 2012-05-28 12:20:03 mk8 Exp $

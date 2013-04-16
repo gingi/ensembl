@@ -1,6 +1,7 @@
-#!/usr/local/ensembl/bin/perl -w
+#!/usr/bin/env perl
 
 use strict;
+use Data::Dumper;
 
 my $description = q{
 ###########################################################################
@@ -48,6 +49,7 @@ perl DumpMultiAlign.pl
     [--reg_conf registry_configuration_file]
     [--dbname compara_db_name]
     [--species species]
+    [--species_set_name]
     [--coord_system coordinates_name]
     --seq_region region_name
     --seq_region_start start
@@ -167,6 +169,11 @@ The list of species used to get those alignments. Default is
 core database in the registry_configuration_file or any of its
 aliases
 
+=item B<[--species_set_name]>
+
+If working with multiple alignments use the species_set_name flag eg. 
+"mammals" or "fish". By default it is set to undef. 
+
 =item B<[--expanded]>
   
 By default the genes are aligned on the original query species.
@@ -250,6 +257,9 @@ perl DumpAlignedGenes.pl
         "human:mouse". The names should correspond to the name of the
         core database in the registry_configuration_file or any of its
         aliases
+    [--species_set_name] 
+       If working with multiple alignments use the species_set_name flag eg. 
+       "mammals" or "fish". By default it is set to undef.
     [--expanded]
         By default the genes are aligned on the original query species.
         In the expanded mode, the deletions in the query species are taken
@@ -260,18 +270,26 @@ perl DumpAlignedGenes.pl
     [--output_file filename]
         The name of the output file. By default the output is the
         standard output
+   Example for pairwise alignments:
+     perl DumpAlignedGenes.pl  --alignment_type BLASTZ_NET --set_of_species mouse:rat --seq_region 8 \
+               --seq_region_start 21180813 --seq_region_end 21188452 --species rat --genes_from mouse
+   Example for multiple alignments:
+     perl DumpAlignedGenes.pl  --alignment_type EPO_LOW_COVERAGE --species_set_name mammals --seq_region 8 \
+               --seq_region_start 21180813 --seq_region_end 21188452 --species rat --genes_from chimp
+                               
 };
 
 my $reg_conf;
 my $dbname = "compara";
-my $species = "human";
+my $species = "rat";
+my $species_set_name = undef;
 my $coord_system = "chromosome";
-my $seq_region = "14";
-my $seq_region_start = 50000000;
-my $seq_region_end =   50250000;
-my $source_species = "rat"; ## for genes_from
+my $seq_region = "8";
+my $seq_region_start = 21180813;
+my $seq_region_end =   21188452;
+my $source_species = "mouse"; ## for genes_from
 my $alignment_type = "BLASTZ_NET";
-my $set_of_species = "human:rat";
+my $set_of_species = "mouse:rat";
 my $expanded = 0;
 my $output_file = undef;
 my $max_repetition_length = 100;
@@ -279,6 +297,11 @@ my $max_gap_length = 100;
 my $max_intron_length = 100000;
 my $strict_order_of_exon_pieces = 1;
 my $strict_order_of_exons = 0;
+
+#get_all_Genes parameters
+my $logic_name; #The name of the analysis used to generate the genes to retrieve
+my $dbtype;     #The dbtype of genes to obtain
+
 my $help;
 
 GetOptions(
@@ -287,6 +310,7 @@ GetOptions(
     "dbname=s" => \$dbname,
 
     "species=s" => \$species,
+    "species_set_name=s" => \$species_set_name,
     "coord_system=s" => \$coord_system,
     "seq_region=s" => \$seq_region,
     "seq_region_start=i" => \$seq_region_start,
@@ -331,7 +355,8 @@ if ($output_file) {
 ## ~/.ensembl_init if all the previous fail.
 ##
 
-Bio::EnsEMBL::Registry->load_all($reg_conf);
+Bio::EnsEMBL::Registry->load_registry_from_db(
+  -host=>'ensembldb.ensembl.org', -user=>'anonymous', -port=>'5306');
 
 ##
 ##############################################################################################
@@ -343,7 +368,6 @@ Bio::EnsEMBL::Registry->load_all($reg_conf);
 ##
 
 my $genome_dbs;
-
 # Get the adaptor
 my $genome_db_adaptor = Bio::EnsEMBL::Registry->get_adaptor($dbname, 'compara', 'GenomeDB');
 
@@ -353,13 +377,8 @@ throw("Registry configuration file has no data for connecting to <$dbname>")
 
 # Fill in the @$genome_dbs array.
 foreach my $this_species (split(":", $set_of_species)) {
-  my $this_meta_container_adaptor = Bio::EnsEMBL::Registry->get_adaptor(
-      $this_species, 'core', 'MetaContainer');
-  throw("Registry configuration file has no data for connecting to <$this_species>")
-      if (!$this_meta_container_adaptor);
-  my $this_binomial_id = $this_meta_container_adaptor->get_Species->binomial;
-  # Fetch Bio::EnsEMBL::Compara::GenomeDB object
-  my $genome_db = $genome_db_adaptor->fetch_by_name_assembly($this_binomial_id);
+  my $genome_db = $genome_db_adaptor->fetch_by_registry_name($this_species);
+
   # Add Bio::EnsEMBL::Compara::GenomeDB object to the list
   push(@$genome_dbs, $genome_db);
 }
@@ -378,9 +397,14 @@ my $method_link_species_set_adaptor = Bio::EnsEMBL::Registry->get_adaptor(
     $dbname, 'compara', 'MethodLinkSpeciesSet');
 
 # Fetch the object
-my $method_link_species_set = $method_link_species_set_adaptor->fetch_by_method_link_type_GenomeDBs(
+my $method_link_species_set;
+if($species_set_name){
+  $method_link_species_set = $method_link_species_set_adaptor->fetch_by_method_link_type_species_set_name(
+   $alignment_type, "$species_set_name");
+} else {
+  $method_link_species_set = $method_link_species_set_adaptor->fetch_by_method_link_type_GenomeDBs(
         $alignment_type, $genome_dbs);
-
+}
 # Check the object
 throw("The database do not contain any $alignment_type data for $set_of_species!")
     if (!$method_link_species_set);
@@ -417,19 +441,8 @@ throw("No Slice can be created with coordinates $seq_region:$seq_region_start-$s
 ## Fetching Genome DB adaptor for the source species
 ##
 
-# Get the MetaContainer adaptor
-my $meta_container_adaptor = Bio::EnsEMBL::Registry->get_adaptor(
-    $source_species, 'core', 'MetaContainer');
-
-# Check the adaptor
-throw("Registry configuration file has no data for connecting to <$source_species>")
-    if (!$meta_container_adaptor);
-
-# Get the binomial name for this species from the MetaContainer adaptor
-my $source_binomial_id = $meta_container_adaptor->get_Species->binomial;
-
 # Fetch the Bio::EnsEMBL::Compara::GenomeDB object
-my $source_genome_db = $genome_db_adaptor->fetch_by_name_assembly($source_binomial_id);
+my $source_genome_db = $genome_db_adaptor->fetch_by_registry_name($source_species);
 
 ##
 ##############################################################################################
@@ -451,8 +464,12 @@ my $align_slice = $align_slice_adaptor->fetch_by_Slice_MethodLinkSpeciesSet(
         $expanded
     );
 
+
 # Get all the genes from the source species and map them on the query genome
-my $mapped_genes = $align_slice->{slices}->{$source_genome_db->name}->get_all_Genes(
+
+die "no alignments available in $species chr$seq_region:$seq_region_start-$seq_region_end which contain sequences from $source_species" 
+ unless $align_slice->{slices}->{$source_genome_db->name}->[0];
+my $mapped_genes = $align_slice->{slices}->{$source_genome_db->name}->[0]->get_all_Genes($logic_name, $dbtype, undef,
         -MAX_REPETITION_LENGTH => 100,
         -MAX_GAP_LENGTH => 100,
         -MAX_INTRON_LENGTH => 100000,
@@ -468,13 +485,7 @@ my $mapped_genes = $align_slice->{slices}->{$source_genome_db->name}->get_all_Ge
 ##
 ## Print the aligned genes on the genomic sequence they are aligned to
 ##
-
-$meta_container_adaptor = Bio::EnsEMBL::Registry->get_adaptor(
-    $species, 'core', 'MetaContainer');
-throw("Registry configuration file has no data for connecting to <$species>")
-    if (!$meta_container_adaptor);
-my $query_binomial_id = $meta_container_adaptor->get_Species->binomial;
-my $query_genome_db = $genome_db_adaptor->fetch_by_name_assembly($query_binomial_id);
+my $query_genome_db = $genome_db_adaptor->fetch_by_registry_name($species);
 
 foreach my $gene (sort {$a->stable_id cmp $b->stable_id} @$mapped_genes) {
   print "GENE: ", $gene->stable_id,
@@ -506,7 +517,8 @@ foreach my $gene (sort {$a->stable_id cmp $b->stable_id} @$mapped_genes) {
       } else {
         $seq = ("." x 50).$exon->seq->revcom->seq.("." x 50);
       }
-      my $aseq = $align_slice->{slices}->{$query_genome_db->name}->subseq($exon->start-50, $exon->end+50);
+
+      my $aseq = $align_slice->{slices}->{$query_genome_db->name}->[0]->subseq($exon->start-50, $exon->end+50);
       $seq =~ s/(.{80})/$1\n/g;
       $aseq =~ s/(.{80})/$1\n/g;
       $seq =~ s/(.{20})/$1 /g;

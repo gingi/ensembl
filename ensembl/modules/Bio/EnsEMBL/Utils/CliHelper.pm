@@ -25,7 +25,7 @@ Bio::EnsEMBL::Utils::CliHelper
 
 =head1 VERSION
 
-$Revision: 1.3 $
+$Revision: 1.6 $
 
 =head1 SYNOPSIS
 
@@ -82,6 +82,7 @@ use Carp;
 use Data::Dumper;
 use Getopt::Long qw(:config auto_version no_ignore_case);
 
+use Bio::EnsEMBL::Registry;
 use Bio::EnsEMBL::DBSQL::DBConnection;
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
 
@@ -177,20 +178,22 @@ sub get_dba_args_for_opts {
                                                           -PORT   => $opts->{$port},
                                                           -DRIVER => $opts->{$driver} );
 		my @dbnames;
-		if ( defined $opts->{$pattern} ) {
+		if ( defined $opts->{$dbname} ) {
+			push @dbnames, $opts->{$dbname};
+		} elsif ( defined $opts->{$pattern} ) {
 		   # get a basic DBConnection and use to find out which dbs are involved
 			@dbnames =
 			  grep { m/$opts->{pattern}/smx }
 			  @{ $dbc->sql_helper()->execute_simple(q/SHOW DATABASES/) };
-		} elsif ( defined $opts->{$dbname} ) {
-			push @dbnames, $opts->{$dbname};
 		} else {
 			print Dumper($opts);
 			croak 'dbname or dbpattern arguments required';
 		}
-
 		for my $dbname (@dbnames) {
 
+      #Decipher group of DBAdaptor by capturing the name_name(_name?)_core_ code. Otherwise we don't know 
+      my ($group) = $dbname =~ /^[a-z]+_[a-z0-9]+(?:_[a-z0-9]+)?_([a-z]+)(?:_\d+)?_\d+/;
+            
 			my $multi = 0;
 			my $species_ids = [ [ 1, undef ] ];
 			if ( !$single_species ) {
@@ -208,7 +211,7 @@ sub get_dba_args_for_opts {
 				}
 			}
 			for my $species_id ( @{$species_ids} ) {
-				push @db_args, {
+				my $args = {
 					-HOST            => $opts->{$host},
 					-USER            => $opts->{$user},
 					-PORT            => $opts->{$port},
@@ -218,6 +221,8 @@ sub get_dba_args_for_opts {
 					-SPECIES_ID      => $species_id->[0],
 					-SPECIES         => $species_id->[1],
 					-MULTISPECIES_DB => $multi };
+				$args->{-GROUP} = $group if $group;
+				push(@db_args, $args);
 			}
 		}
 	} ## end if ( defined $opts->{$host...})
@@ -251,4 +256,35 @@ sub get_dbas_for_opts {
 	}
 	return $dbas;
 }
+
+=head2 load_registry_for_opts
+
+  Arg [1]    	: Hash of options (e.g. parsed from command line options by process_args()) 
+  Arg [2]     : Optional prefix to use when parsing e.g. dna or master 
+  Description	: Loads a Registry from the given options hash. If a C<registry> 
+                option is given then the code will call C<load_all>. Otherwise
+                we use the database parameters given to call 
+                C<load_registry_from_db()>.
+  Returntype  : Integer of the number of DBAdaptors loaded
+  Status      : Under development
+
+=cut
+
+sub load_registry_for_opts {
+  my ($self, $opts, $prefix) = @_;
+  $prefix ||= q{};
+  if($opts->{registry}) {
+    my $location = $opts->{registry};
+    return Bio::EnsEMBL::Registry->load_all($location);
+  }
+  my ( $host, $port, $user, $pass ) = map { $prefix . $_ } qw(host port user pass);
+  my %args = (
+    -HOST => $opts->{$host},
+    -PORT => $opts->{$port},
+    -USER => $opts->{$user},
+  );
+  $args{-PASS} = $opts->{$pass};
+  return Bio::EnsEMBL::Registry->load_registry_from_db(%args);
+}
+
 1;

@@ -17,10 +17,10 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 # The majority of core databases live on two staging servers:
 
 Bio::EnsEMBL::Registry->load_registry_from_url(
-  'mysql://ensro@ens-staging1/67');
+  'mysql://ensro@ens-staging1/68');
 
 Bio::EnsEMBL::Registry->load_registry_from_url(
-  'mysql://ensro@ens-staging2/67');
+  'mysql://ensro@ens-staging2/68');
 
 
 # Extra core databases that live on genebuilders' servers:
@@ -54,7 +54,7 @@ Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(
     -pass => $ENV{'ENSADMIN_PSW'},
     -port => 3306,
     -species => 'compara_prev',
-    -dbname => 'mp12_ensembl_compara_66',
+    -dbname => 'mm14_ensembl_compara_67',
 );
 
 # Curr
@@ -64,25 +64,25 @@ Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(
     -pass => $ENV{'ENSADMIN_PSW'},
     -port => 3306,
     -species => 'compara_curr',
-    -dbname => 'mm14_ensembl_compara_67',
+    -dbname => 'mm14_ensembl_compara_68',
 );
 
-#Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( ## TO BE FIXED BEFORE HOMOLOGY MERGE
-#    -host => 'compara4',
-#    -user => 'ensadmin',
-#    -pass => $ENV{'ENSADMIN_PSW'},
-#    -port => 3306,
-#    -species => 'compara_homology_merged',
-#    -dbname => 'mp12_mp12_compara_homology_merged_66_test',
-#);
+Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( ## TO BE FIXED BEFORE HOMOLOGY MERGE
+    -host => 'compara4',
+    -user => 'ensadmin',
+    -pass => $ENV{'ENSADMIN_PSW'},
+    -port => 3306,
+    -species => 'compara_homology_merged',
+    -dbname => 'mm14_compara_homology_merged_68',
+);
 
-#Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( ## HAS TO BE CREATED (FINAL DB)
-#    -host => 'ens-staging',
-#    -user => 'ensadmin',
-#    -pass => $ENV{'ENSADMIN_PSW'},
-#    -port => 3306,
-#    -species => 'compara_staging',
-#    -dbname => 'ensembl_compara_66',
-#);
+Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( ## HAS TO BE CREATED (FINAL DB)
+    -host => 'ens-staging',
+    -user => 'ensadmin',
+    -pass => $ENV{'ENSADMIN_PSW'},
+    -port => 3306,
+    -species => 'compara_staging',
+    -dbname => 'ensembl_compara_68',
+);
 
 1;

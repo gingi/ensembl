@@ -14,7 +14,7 @@ use IO::Compress::Gzip qw/gzip $GzipError/;
 use Pod::Usage;
 use Sys::Hostname;
 
-my $rcsid = '$Revision: 1.19 $';
+my $rcsid = '$Revision: 1.21 $';
 our ($VERSION) = $rcsid =~ /(\d+\.\d+)/;
 
 my $PIGZ_BINARY = 'pigz';
@@ -315,6 +315,11 @@ sub modify_sql {
     $sql =~ s/DEFINER=.+ \s+ SQL/DEFINER=CURRENT_USER() SQL/xms;
     $sql =~ s/SQL \s+ SECURITY \s+ DEFINER/SQL SECURITY INVOKER/xms;
   }
+  if($self->opts()->{testcompatible}) {
+    $sql =~ s/DEFAULT\s+CHARSET=latin1//xms;
+    $sql =~ s/COLLATE=latin1_bin//xms;
+    $sql =~ s/AUTO_INCREMENT=\d+//xms;
+  }
   return $sql;
 }
 
@@ -486,7 +491,7 @@ sub _setup_dir {
   my ($self, $db) = @_;
   my @path = ($self->opts()->{directory});
   if($self->opts()->{testcompatible}) {
-    if( $db =~ /^([a-zA-Z0-9_]+)_([a-z]+)_\d+/) {
+    if( $db =~ /^(?:\w+_test_db_)?([a-zA-Z0-9_]+)_([a-z]+)_\d+/) {
       push(@path, $1, $2);
     }
     else {

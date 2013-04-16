@@ -1,21 +1,14 @@
 use strict;
 use warnings;
 
-BEGIN { $| = 1;
-	use Test;
-	plan tests => 61;
-}
+use Test::More;
 
 use Bio::EnsEMBL::Test::MultiTestDB;
 use Bio::EnsEMBL::Test::TestUtils;
-
+use Bio::EnsEMBL::DBSQL::DBEntryAdaptor;
 use Bio::EnsEMBL::DBEntry;
 
-# switch on the debug prints
-
-our $verbose = 0;
-
-debug( "Startup test" );
+note( "Startup test" );
 #
 # 1 Test started
 #
@@ -25,7 +18,7 @@ my $multi = Bio::EnsEMBL::Test::MultiTestDB->new();
 
 my $db = $multi->get_DBAdaptor( "core" );
 
-debug( "Test database instantiated" );
+note( "Test database instantiated" );
 
 #
 # 2 Database instatiated
@@ -61,19 +54,19 @@ for my $gene_id ( @$all_gene_ids ) {
   }
 }
 
-debug( "Found $xref_count xrefs and $db_entry_count dblinks." );
-debug( " $goxref_count GoXrefs, $ident_count identityXrefs." );
+note( "Found $xref_count xrefs and $db_entry_count dblinks." );
+note( " $goxref_count GoXrefs, $ident_count identityXrefs." );
 
 #
 # 3 as many dblinks as entries in object_xref
 #
-print $db_entry_count."\t".$xref_count."\n";
+note $db_entry_count."\t".$xref_count."\n";
 ok( $db_entry_count == $xref_count );
 
 #
 # 4,5 correct number of GoXrefs and IdentityXrefs
 #
-debug( "GoXrefs and IdentityXrefs: ".$goxref_count . " " . $ident_count);
+note( "GoXrefs and IdentityXrefs: ".$goxref_count . " " . $ident_count);
 ok( $goxref_count == 48 );
 ok( $ident_count == 32 );
 
@@ -136,6 +129,13 @@ my $oxr_count = count_rows($db, 'object_xref');
 $dbEntryAdaptor->store( $xref, $tr->dbID, "Transcript" );
 $oxr_count = count_rows($db, 'object_xref');
 $dbEntryAdaptor->store( $ident_xref, $tl->dbID, "Translation" );
+#intentional duplicates should be filtered out and not increase row count
+$dbEntryAdaptor->store( $ident_xref, $tl->dbID, "Translation" ); 
+$dbEntryAdaptor->store( $ident_xref, $tl->dbID, "Translation" );
+$dbEntryAdaptor->store( $ident_xref, $tl->dbID, "Translation" );
+$dbEntryAdaptor->store( $ident_xref, $tl->dbID, "Translation" );
+
+
 $oxr_count = count_rows($db, 'object_xref');
 $dbEntryAdaptor->store( $goref, $tl->dbID, "Translation" );
 $oxr_count = count_rows($db, 'object_xref');
@@ -146,8 +146,9 @@ $oxr_count = count_rows($db, 'object_xref');
 #
 # 6 right number of object xrefs in db
 #
-debug( "object_xref_count = $oxr_count" );
+note( "object_xref_count = $oxr_count" );
 ok( $oxr_count == 4 );
+
 
 $xref_count = count_rows($db, 'xref');
 $sth->finish();
@@ -155,14 +156,14 @@ $sth->finish();
 #
 # 7 number of xrefs right
 #
-debug( "Number of xrefs = $xref_count" );
+note( "Number of xrefs = $xref_count" );
 ok( $xref_count == 3 );
 
 #
 # 8 number of go entries right
 #
 $go_count = count_rows($db, 'ontology_xref');
-debug( "Number of go_xrefs = $go_count" );
+note( "Number of go_xrefs = $go_count" );
 ok( $go_count == 2 );
 
 #
@@ -171,7 +172,7 @@ ok( $go_count == 2 );
 
 $ident_count = count_rows($db, 'identity_xref');
 # the identity (query/target)values are not normalized ...
-debug( "Number of identity_xrefs = $ident_count" );
+note( "Number of identity_xrefs = $ident_count" );
 ok( $ident_count == 2 );
 
 # Check type storing and retrieval
@@ -179,9 +180,75 @@ ok($xref->type() eq 'ARRAY');
 
 $multi->restore();
 
+# test parallel insertions of identical xrefs
+
+$xref = Bio::EnsEMBL::DBEntry->new
+  (
+   -primary_id => "1",
+   -dbname => "Vega_gene",
+   -release => "1",
+   -display_id => "Ens fake thing",
+   -primary_id_linkable => "0",
+   -display_id_linkable => "1",
+   -priority => "5",
+   -db_display_name => "Nice unfriendly name",
+   -info_type => "MISC",
+   -info_text => "Concurrent insert",
+   -type => "ARRAY",
+    -analysis => $analysis
+   );
+
+{
+  local $ENV{RUNTESTS_HARNESS} = 1;
+  
+  # db connection must be severed for threads to access DB    
+  $dbEntryAdaptor->dbc->disconnect_if_idle();
+  use threads;
+  
+  my $parallel_store = sub{
+      my $xref_id = $dbEntryAdaptor->store( $xref, $tr->dbID, "Transcript" );
+      return $xref_id
+  };
+     
+  my $thread1 = threads->create($parallel_store);
+  my $thread2 = threads->create($parallel_store);
+  my $thread3 = threads->create($parallel_store);
+  
+      
+  my @xref_ids;
+  @xref_ids = ($thread1->join,$thread2->join,$thread3->join);
+  
+  note("Threaded xrefs: ".$xref_ids[0]." ".$xref_ids[1]." ".$xref_ids[2]);
+  
+  # Test 10 - Verify that only one xref has been inserted under parallel inserts
+  ok($xref_ids[0] == 1000009 && $xref_ids[1] == $xref_ids[0] && $xref_ids[2] == $xref_ids[0]);
+
+}
+
+# Test 11 - Exception testing on ->store()
+
+$xref = Bio::EnsEMBL::DBEntry->new
+  (
+   -primary_id => "1",
+   -dbname => "Vega_gene",
+   -release => "1",
+   -display_id => "Ens fakiest thing",
+   -primary_id_linkable => "0",
+   -display_id_linkable => "1",
+   -priority => "5",
+   -db_display_name => "Nice unfriendly name",
+   -info_type => "MISC",
+   -info_text => "Full exception checking",
+   -type => "ARRAY",
+   -analysis => undef,
+   );
+   
+my $xref_id = $dbEntryAdaptor->store($xref, undef, "Transcript");
+note("Xref_id from insert: ".$xref_id);
+ok($xref_id == 1000010);
 
 #
-# 10-12 Test that external synonyms and go evidence tags are retrieved
+# 12-14 Test that external synonyms and go evidence tags are retrieved
 #
 my $ta = $db->get_TranscriptAdaptor();
 my $translation = $ta->fetch_by_dbID(21737)->translation;
@@ -420,23 +487,42 @@ ok(@{$xrefs} == 23);  #test 60
 my $db_name = $dbEntryAdaptor->get_db_name_from_external_db_id(4100);
 ok($db_name eq 'UniGene');
 
+# Test multiple inserts for empty descriptions
+{
+  $multi->hide('core', 'xref', 'object_xref');
+  my @basic_args = (-PRIMARY_ID => 'AAAA', -DBNAME => 'Uniprot/SWISSPROT', -RELEASE => 1);
+  my $entry_no_desc = Bio::EnsEMBL::DBEntry->new(@basic_args, -DESCRIPTION => q{});
+  my $no_desc_id = $dbEntryAdaptor->store($entry_no_desc, $gene->dbID(), 'Gene');
+  is_rows(1, $db, 'xref', 'where description = ?', [q{}]);
+  is_rows(1, $db, 'object_xref');
+  my $no_desc_id_again = $dbEntryAdaptor->store($entry_no_desc, $gene->dbID(), 'Gene');
+  is($no_desc_id_again, $no_desc_id, 'Checking the ID is consistent between store() invocations');
+  is_rows(1, $db, 'xref', 'where description = ?', [q{}]);
+  is_rows(1, $db, 'object_xref');
+  is_rows(0, $db, 'object_xref', 'where xref_id =?', [0]);
+  
+  $multi->restore('core', 'xref', 'object_xref');
+}
+
 sub print_dbEntries {
   my $dbes = shift;
 
   foreach my $dbe (@$dbes) {
     if($dbe->isa('Bio::EnsEMBL::IdentityXref')) {
-      debug("IDXref");
+      note("IDXref");
     } elsif($dbe->isa('Bio::EnsEMBL::OntologyXref')) {
-      debug("GOXref");
+      note("GOXref");
     } elsif($dbe->isa('Bio::EnsEMBL::DBEntry')) {
-      debug("DBEntry");
+      note("DBEntry");
     } else {
-      debug("UNKNOWN dbentry type");
+      note("UNKNOWN dbentry type");
     }
 
-    debug(" ".$dbe->dbname()."-".$dbe->display_id()."\n");
+    note(" ".$dbe->dbname()."-".$dbe->display_id()."\n");
   }
 
-  debug(scalar(@$dbes). " total");
+  note(scalar(@$dbes). " total");
 
 }
+
+done_testing();

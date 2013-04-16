@@ -36,7 +36,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.53 $
+$Revision: 1.58 $
 
 =head1 APPENDIX
 
@@ -95,15 +95,28 @@ sub fetch_node_by_node_id {
   return $node;
 }
 
+=head2 fetch_parent_for_node
+
+  Arg[1]     : NestedSet: $node
+  Example    : $parent_node = $genetree_adaptor->fetch_parent_for_node($node);
+  Description: Fetches from the database the parent node of a node, or returns
+                the already-loaded instance if available
+  Returntype : Bio::EnsEMBL::Compara::NestedSet
+
+=cut
 
 sub fetch_parent_for_node {
-  my ($self, $node) = @_;
+    my ($self, $node) = @_;
 
-  unless($node->isa('Bio::EnsEMBL::Compara::NestedSet')) {
-    throw("set arg must be a [Bio::EnsEMBL::Compara::NestedSet] not a $node");
-  }
+    unless($node->isa('Bio::EnsEMBL::Compara::NestedSet')) {
+        throw("set arg must be a [Bio::EnsEMBL::Compara::NestedSet] not a $node");
+    }
 
-  return $self->fetch_node_by_node_id($node->_parent_id);
+    return $node->{'_parent_link'}->get_neighbor($node) if defined $node->{'_parent_link'};
+    my $parent = undef;
+    $parent = $self->fetch_node_by_node_id($node->_parent_id) if defined $node->_parent_id;
+    $parent->add_child($node) if defined $parent;
+    return $parent;
 }
 
 
@@ -176,8 +189,31 @@ sub fetch_tree_at_node_id {
 }
 
 
-# UNUSED
+
+=head2 fetch_tree_by_root_id
+
+  Arg[1]     : root_id: integer
+  Example    : $root_node = $proteintree_adaptor->fetch_tree_by_root_id(3);
+  Description: Fetches from the database all the nodes linked to this root_id
+                and links them in a tree structure. Returns the root node
+  Returntype : Bio::EnsEMBL::Compara::NestedSet
+  Caller     : general
+
+=cut
+
+sub fetch_tree_by_root_id {
+  my ($self, $root_id) = @_;
+
+  my $table = ($self->_tables)[0]->[1];
+  my $constraint = "$table.root_id = $root_id";
+  return $self->_build_tree_from_nodes($self->generic_fetch($constraint));
+}
+
+
+
 sub fetch_subroot_by_left_right_index {
+  deprecate('fetch_subroot_by_left_right_index() should not be used and will be removed in release 70.
+  If you are using it, please contact the dev mailing-list dev@ensembl.org');
   my ($self,$node) = @_;
 
   unless ($node->left_index && $node->right_index) {

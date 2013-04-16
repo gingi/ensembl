@@ -55,11 +55,10 @@ Supported keys:
 package Bio::EnsEMBL::Compara::RunnableDB::MercatorPecan::DumpMercatorFiles;
 
 use strict;
+use Time::HiRes qw(time gettimeofday tv_interval);
+use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::Analysis::Runnable::Mercator;
 use Bio::EnsEMBL::Compara::DnaFragRegion;
-use Bio::EnsEMBL::Compara::Production::DBSQL::DBAdaptor;;
-use Bio::EnsEMBL::Utils::Exception;
-use Time::HiRes qw(time gettimeofday tv_interval);
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
@@ -166,7 +165,7 @@ sub dumpMercatorFiles {
       my $file = $self->param('input_dir') . "/$gdb_id1" . "-$gdb_id2.hits";
       open F, ">$file";
       my $sql = $self->get_sql_for_peptide_hits($gdb_id1, $gdb_id2);
-      my $sth = $self->{'comparaDBA'}->dbc->prepare($sql);
+      my $sth = $self->compara_dba->dbc->prepare($sql);
       my ($qmember_id,$hmember_id,$score1,$evalue1,$score2,$evalue2);
       $sth->execute($gdb_id1, $gdb_id2);
       $sth->bind_columns( \$qmember_id,\$hmember_id,\$score1,\$evalue1,\$score2,\$evalue2);

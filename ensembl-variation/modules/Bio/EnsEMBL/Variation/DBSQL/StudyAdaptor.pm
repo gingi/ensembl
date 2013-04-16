@@ -68,6 +68,7 @@ use Bio::EnsEMBL::Variation::Study;
 
 use base qw{Bio::EnsEMBL::DBSQL::BaseAdaptor};
 
+my %cache;
 
 =head2 fetch_by_name
 
@@ -106,14 +107,12 @@ sub fetch_by_name {
 
 =cut
 
-my %cache;
 sub fetch_by_dbID {
   my $self = shift;
   my $dbID = shift;
 
   throw('dbID argument expected') if(!defined($dbID));
 
-  ## Cache results, or they slow down the website horribly!
   if (exists($cache{$dbID})) {
     return $cache{$dbID};
   }
@@ -125,6 +124,7 @@ sub fetch_by_dbID {
 
   return ($result ? $result->[0] : undef);
 }
+
 	
 =head2 fetch_all_by_dbID_list
 

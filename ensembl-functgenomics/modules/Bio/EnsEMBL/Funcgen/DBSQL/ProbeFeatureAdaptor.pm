@@ -47,7 +47,7 @@ Bio::EnsEMBL::Funcgen::ProbeFeature
 
 package Bio::EnsEMBL::Funcgen::DBSQL::ProbeFeatureAdaptor;
 
-use Bio::EnsEMBL::Utils::Exception qw( throw warning );
+use Bio::EnsEMBL::Utils::Exception qw( throw deprecate );
 use Bio::EnsEMBL::Funcgen::ProbeFeature;
 use Bio::EnsEMBL::Funcgen::DBSQL::BaseFeatureAdaptor;
 use Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor;
@@ -58,14 +58,13 @@ use warnings;
 
 @ISA = qw(Bio::EnsEMBL::Funcgen::DBSQL::BaseFeatureAdaptor Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor);
 
-#Exported from BaseAdaptor
-$true_tables{probe_feature} = [	[ 'probe_feature', 'pf' ], [ 'probe',   'p' ]];
-@{$tables{probe_feature}} = @{$true_tables{probe_feature}};
+use constant TRUE_TABLES => [	[ 'probe_feature', 'pf' ], [ 'probe',   'p' ]]; 
+use constant TABLES      => [	[ 'probe_feature', 'pf' ], [ 'probe',   'p' ]];
+
 
 my $true_final_clause = ' ORDER BY pf.seq_region_id, pf.seq_region_start, pf.probe_feature_id';
 #Could drop pf.probe_feature_id from the ORDER as is implicit from the group?
 #still uses filesort for ac clause
-
 my $final_clause = $true_final_clause;
 
 
@@ -115,7 +114,7 @@ sub fetch_all_by_probe_id {
   }
   
   my @cs_ids = @{$self->_get_coord_system_ids($coord_systems)};
-  push @{$tables{probe_feature}}, (['seq_region', 'sr']);
+  push @{$self->TABLES}, (['seq_region', 'sr']);
 
   my $cs_ids = join(', ', @cs_ids);
   my $constraint = " pf.probe_id=$pid AND pf.seq_region_id=sr.seq_region_id and sr.coord_system_id IN ($cs_ids)";
@@ -123,27 +122,30 @@ sub fetch_all_by_probe_id {
  	
   
   my $features = $self->generic_fetch($constraint);
-  @{$tables{probe_feature}} = @{$true_tables{probe_feature}};
+  $self->reset_true_tables;
   $final_clause = $true_final_clause;
   
+
   return $features;
 }
 
 
 
-=head2 fetch_all_by_probeset
+=head2 fetch_all_by_probeset_name
 
-  Arg [1]    : string - probeset
+  Arg [1]    : String - probeset name
+  Arg [2]    : ARRAYREF (optional) - Bio::EnsEMBL::CoordSystem objects
   Example    : my $features = $ofa->fetch_all_by_probeset('Set-1');
   Description: Fetchs all features that a given probeset creates.
   Returntype : Listref of Bio::EnsEMBL::ProbeFeature objects
   Exceptions : Throws if no probeset argument
   Caller     : General
-  Status     : At Risk - need to add vendor/class to this?
+  Status     : At Risk - add vendor/class to this?
 
 =cut
 
-sub fetch_all_by_probeset {
+
+sub fetch_all_by_probeset_name {
 	my ($self, $probeset, $coord_systems) = @_;
 
 	if (! $probeset) {
@@ -153,7 +155,7 @@ sub fetch_all_by_probeset {
 	#Restrict to default coord_systems
 	#Can we remove the need for this by restricting the sr cache to default entries?
 	my @cs_ids = @{$self->_get_coord_system_ids($coord_systems)};
-	push @{$tables{probe_feature}}, (['probe_set', 'ps'], ['seq_region', 'sr']);
+  push @{$self->TABLES}, (['probe_set', 'ps'], ['seq_region', 'sr']);
 
 	#Need to protect against SQL injection here due to text params
 	my $cs_ids = join(', ', @cs_ids);
@@ -163,11 +165,92 @@ sub fetch_all_by_probeset {
 	$self->bind_param_generic_fetch($probeset,  SQL_VARCHAR);
 	
 	my $features = $self->generic_fetch($constraint);
-	@{$tables{probe_feature}} = @{$true_tables{probe_feature}};
+  $self->reset_true_tables;
 	$final_clause = $true_final_clause;
 
 	return $features;
 }
+
+
+=head2 fetch_all_by_ProbeSet
+
+  Arg [1]    : Bio::EnsEMBL::Funcgen::ProbeSet
+  Arg [2]    : ARRAYREF (optional) - Bio::EnsEMBL::CoordSystem objects
+  Example    : my @features = @{$probe_feature_adaptor->fetch_all_by_ProbeSet($pset)};
+  Description: Fetches all ProbeFeatures from a given ProbeSet.
+  Returntype : ARRAYREF of Bio::EnsEMBL::Funcgen::ProbeFeature objects
+  Exceptions : Throws if no probeset argument
+  Caller     : General
+  Status     : At Risk - add vendor/class to this?
+
+=cut
+
+
+sub fetch_all_by_ProbeSet {
+	my ($self, $pset, $coord_systems) = @_;
+
+	$self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::ProbeSet', $pset);
+
+
+	#Restrict to default coord_systems
+	#Can we remove the need for this by restricting the sr cache to default entries?
+	my @cs_ids = @{$self->_get_coord_system_ids($coord_systems)};
+  push @{$self->TABLES}, (['seq_region', 'sr']);
+
+	my $cs_ids = join(', ', @cs_ids);
+	my $constraint = ' p.probe_set_id='.$pset->dbID." AND pf.seq_region_id=sr.seq_region_id and sr.coord_system_id IN ($cs_ids)";
+	$final_clause = ' GROUP by pf.probe_feature_id '.$final_clause;	
+
+	
+  warn $constraint;
+
+	my $features = $self->generic_fetch($constraint);
+  $self->reset_true_tables;
+	$final_clause = $true_final_clause;
+
+	return $features;
+}
+
+
+=head2 fetch_all_by_Slice_ExperimentalChips
+
+  Arg [1]    : Bio::EnsEMBL::Slice
+  Arg [2]    : ARRAY ref of Bio::EnsEMBL::Funcgen::ExperimentalChip objects
+  Example    : my $features = $pfa->fetch_all_by_Slice_ExperimentalChips($slice, \@echips);
+  Description: Retrieves a list of features on a given slice that are created
+               by probes from the given ExperimentalChips.
+  Returntype : Listref of Bio::EnsEMBL::Funcgen::ProbeFeature objects
+  Exceptions : Throws if args not valid
+  Caller     : 
+  Status     : At Risk
+
+=cut
+
+sub fetch_all_by_Slice_ExperimentalChips {
+  my ($self, $slice, $exp_chips) = @_;
+
+  my %nr;
+
+  foreach my $ec(@$exp_chips){
+    
+    throw("Need pass listref of valid Bio::EnsEMBL::Funcgen::ExperimentalChip objects") 
+      if ! $ec->isa("Bio::EnsEMBL::Funcgen::ExperimentalChip");
+    
+    $nr{$ec->array_chip_id()} = 1;
+  }
+  
+  my $constraint = " p.array_chip_id IN (".join(", ", keys %nr).") AND p.probe_id = pf.probe_id ";
+    
+  return $self->SUPER::fetch_all_by_Slice_constraint($slice, $constraint);
+}
+
+
+
+#Need to Group in the following methods as we may get array_chip 
+#to probe product if probe is presenton >1 array_chip.
+#This will be slowing as GROUP implies order
+#Does _objects_from_sth handle this without assuming order?
+
 
 
 =head2 fetch_all_by_Slice_array_vendor
@@ -192,66 +275,20 @@ sub fetch_all_by_Slice_array_vendor {
 	if(! ($array && $vendor)){
 	  throw('You must provide and array name and a vendor name');
 	}
-
 	
-	push @{$tables{probe_feature}}, (['array', 'a'], ['array_chip', 'ac']);
-
+  push @{$self->TABLES}, (['array', 'a'], ['array_chip', 'ac']);
 
 	#Need to protect against SQL injection here due to text params
 	my $constraint = ' a.name=? and a.vendor=? and a.array_id=ac.array_id and ac.array_chip_id=p.array_chip_id';
 	$final_clause = ' GROUP by pf.probe_feature_id '.$final_clause;	
-	#Do we need this group by?
-	#We may get array_chip to probe product if probe is presenton >1 array_chip.
-	#We handle this in _objects_from_sth anyway.
-
-	#That would have to be removed for complex extension.
 	$self->bind_param_generic_fetch($array,  SQL_VARCHAR);
 	$self->bind_param_generic_fetch($vendor, SQL_VARCHAR);
 	
 	my $features  = $self->SUPER::fetch_all_by_Slice_constraint($slice, $constraint);
-	@{$tables{probe_feature}}       = @{$true_tables{probe_feature}};
+  $self->reset_true_tables;
 	$final_clause = $true_final_clause;
 
 	return $features;
-}
-
-
-
-#should this take >1 EC? What if we can't fit a all mappings onto one chip
-#Would possibly miss some from the slice
-
-=head2 fetch_all_by_Slice_ExperimentalChips
-
-  Arg [1]    : Bio::EnsEMBL::Slice
-  Arg [2]    : ARRAY ref of Bio::EnsEMBL::Funcgen::ExperimentalChip objects
-  Example    : my $features = $pfa->fetch_all_by_Slice_ExperimentalChips($slice, \@echips);
-  Description: Retrieves a list of features on a given slice that are created
-               by probes from the given ExperimentalChips.
-  Returntype : Listref of Bio::EnsEMBL::Funcgen::ProbeFeature objects
-  Exceptions : Throws if args not valid
-  Caller     : 
-  Status     : At Risk
-
-=cut
-
-sub fetch_all_by_Slice_ExperimentalChips {
-  my ($self, $slice, $exp_chips) = @_;
-
-  my (%nr);
-
-
-  foreach my $ec(@$exp_chips){
-    
-    throw("Need pass listref of valid Bio::EnsEMBL::Funcgen::ExperimentalChip objects") 
-      if ! $ec->isa("Bio::EnsEMBL::Funcgen::ExperimentalChip");
-    
-    $nr{$ec->array_chip_id()} = 1;
-  }
-   
-  my $constraint = " p.array_chip_id IN (".join(", ", keys %nr).") AND p.probe_id = pf.probe_id ";
-
-    
-  return $self->SUPER::fetch_all_by_Slice_constraint($slice, $constraint);
 }
 
 
@@ -276,17 +313,12 @@ sub fetch_all_by_Slice_Array {
   throw("Need pass a valid stored Bio::EnsEMBL::Funcgen::Array object") 
 	if (! (ref($array) && $array->isa("Bio::EnsEMBL::Funcgen::Array") && $array->dbID));
   
-  push @{$tables{probe_feature}}, (['array_chip', 'ac']);  
+  push @{$self->TABLES}, (['array_chip', 'ac']);  
   my $constraint = ' ac.array_id='.$array->dbID.' and ac.array_chip_id=p.array_chip_id ';
-
-  #Do we need this group by?
-  #We may get array_chip to probe product if probe is presenton >1 array_chip.
-  #We handle this in _objects_from_sth anyway.
-  #That would have to be removed for complex extension.
   $final_clause = ' GROUP by pf.probe_feature_id '.$final_clause;
   
   my $features  = $self->SUPER::fetch_all_by_Slice_constraint($slice, $constraint);
-  @{$tables{probe_feature}}       = @{$true_tables{probe_feature}};
+  $self->reset_true_tables;
   $final_clause = $true_final_clause;
   
   return $features;
@@ -322,16 +354,12 @@ sub fetch_all_by_Slice_Arrays{
 
   my $array_ids = join(',', (map $_->dbID, @$arrays));
 
-  push @{$tables{probe_feature}}, (['array_chip', 'ac']);  
+  push @{$self->TABLES}, (['array_chip', 'ac']);  
   my $constraint = " ac.array_id IN ($array_ids) and ac.array_chip_id=p.array_chip_id ";
 
-  #Do we need this group by?
-  #We may get array_chip to probe product if probe is presenton >1 array_chip.
-  #We handle this in _objects_from_sth anyway.
-  #That would have to be removed for complex extension.
   $final_clause = ' GROUP by pf.probe_feature_id '.$final_clause;  
   my $features  = $self->SUPER::fetch_all_by_Slice_constraint($slice, $constraint, $logic_name);
-  @{$tables{probe_feature}}       = @{$true_tables{probe_feature}};
+  $self->reset_true_tables;
   $final_clause = $true_final_clause;
   
   return $features;
@@ -385,8 +413,8 @@ sub fetch_Iterator_by_Slice_Arrays{
 sub _tables {
 	my $self = shift;
 	
-	return @{$tables{probe_feature}};
-  }
+	return @{$self->TABLES};
+}
 
 =head2 _columns
 
@@ -697,7 +725,7 @@ sub store{
 		}
 
 		if ( $of->is_stored($db) ) {
-			warning('ProbeFeature [' . $of->dbID() . '] is already stored in the database');
+			warn('ProbeFeature [' . $of->dbID() . '] is already stored in the database');
 			next FEATURE;
 		}
 
@@ -831,6 +859,15 @@ sub count_probe_features_by_probe_id {
   return $self->count_features_by_field_id('probe_id', $probe_id);
 }
 
+### DEPRECATED METHODS ###
+
+sub fetch_all_by_probeset { #deprecated in v68
+  my ($self, @args) = @_;
+
+  deprecate('This method is deprecated, please use fetch_all_by_probeset_name or fetch_all_by_ProbeSet');
+
+  return $self->fetch_all_by_probeset_name(@args);
+}
 
 
 1;

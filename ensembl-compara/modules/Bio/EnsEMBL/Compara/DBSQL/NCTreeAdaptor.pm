@@ -31,7 +31,6 @@ ncRNA genes, but the methods are the same as in the GeneTreeNodeAdaptor.
 Similarly, you can use the ProteinTreeAdaptor to fetch trees for protein-coding genes or the
 GeneTreeAdaptor to fetch trees for all types of genes.
 
-
 =head1 INHERITANCE TREE
 
   Bio::EnsEMBL::Compara::DBSQL::NCTreeAdaptor
@@ -43,11 +42,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: jh7 $
+$Author: mm14 $
 
 =head1 VERSION
 
-$Revision: 1.13 $
+$Revision: 1.16 $
 
 =head1 APPENDIX
 
@@ -59,12 +58,11 @@ Internal methods are usually preceded with an underscore (_)
 package Bio::EnsEMBL::Compara::DBSQL::NCTreeAdaptor;
 
 use strict;
+use Bio::EnsEMBL::Utils::Exception;
 
 use base ('Bio::EnsEMBL::Compara::DBSQL::GeneTreeNodeAdaptor');
 
-sub _default_where_clause {
-    return "tr.member_type = 'ncrna'";
-}
+deprecate('ProteinTreeAdaptor and NCTreeAdaptor are deprecated. Please use GeneTreeAdaptor to fetch trees or GeneTreeNodeAdaptor if you are interested in tree-node operations.');
 
 sub _default_member_type {
     return 'ncrna';

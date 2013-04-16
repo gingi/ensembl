@@ -51,12 +51,7 @@ use Bio::EnsEMBL::DBSQL::BaseAdaptor;
 use DBI qw(:sql_types);
 
 @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor Exporter);
-
-#Declare table registers for query extentions
-#May need to add final clause register too
-our (%tables, %true_tables, %constraint_config);
-
-@EXPORT = (@{$DBI::EXPORT_TAGS{'sql_types'}}, '%tables', '%true_tables', '%constraint_config');
+@EXPORT = (@{$DBI::EXPORT_TAGS{'sql_types'}});
 
 
 
@@ -72,46 +67,51 @@ our (%tables, %true_tables, %constraint_config);
 
 =cut
 
-#Add support for final_clause
+#This approach originated in the need for a fully flexible method call
+#for the FeatureSetAdaptor to support the Experiment view.
+#Add support for final_clause?
+#Will still be useful to define an array of valid constraints in the descendant adaptor
+#This will enable us to restrict the generic constraints(in here) for a given adaptor
+#and dynamically provide a list of valid constraint in the error output
 
 sub compose_constraint_query{
   my ($self, $params) = @_;
 
-  #Top level constraints key to allow other params to be passed
-  #Hence can't throw if defined but constraints not present as maybe for something else
-  #Won't all params be constraints?
+  if($params &&
+	 (ref($params) ne 'HASH') ){
+	throw('You must pass a valid params HASHREF to compose_constraint_query');
+  }
   
-  #Other options for Experiment view were:
-  # 2 fetch all and filter in here? This is just recreating what the web code is currently doing
-  # 3 ExperimentAdaptor method to pull back the individual values, and bypasses all the object generation
-  #   Too complex/error probe with xrefs and MFs
   
   my @constraints;
 
-  if( (ref($params) eq 'HASH') &&
-	  exists ${$params}{constraints}){
+  if( exists ${$params}{constraints}){
 		
 	my @filter_names = keys (%{$params->{constraints}});
 
 	foreach my $constraint_key(keys (%{$params->{constraints}})){
 
-	  if (! exists $constraint_config{$constraint_key}) {
-		throw($constraint_key." is not a valid filter please specify values for one of:\t".
-			  join(', ', keys(%constraint_config)));
-	  }
+    my $constrain_method = '_constrain_'.$constraint_key;
 
-	  #Get contraint arg and config
-	  my $c_arg = $params->{constraints}{$constraint_key};
-	  my $c_config = $constraint_config{$constraint_key};
+    if(! $self->can($constrain_method)){
+      throw($constraint_key." is not a valid constraint");
 
-	  #Add tables as required
-	  if (exists ${$c_config}{tables}) {
-		push @{$tables{feature_set}}, $c_config->{tables};
-	  }
+      #Need to add test on and list valid constraints
 
-	  #Build constraints
-	  push @constraints, $c_config->{compose_constraint}->($self, $c_arg).' ';
-	  
+      # please specify values for one of:\t".
+      #           join(', ', keys(%constraint_config)));
+    }
+
+    my ($constraint, $constraint_conf) = $self->$constrain_method($params->{constraints}{$constraint_key});
+    push @constraints, $constraint;
+    
+
+    #Currently only handle tables here but could also 
+    #set other dynamic config e.g. final clause
+
+    if (exists ${$constraint_conf}{tables}) {
+      push @{$self->TABLES}, @{$constraint_conf->{tables}};
+    }
 	} # END OF CONSTRAINTS
   }	# END OF $PARAMS				
 
@@ -119,6 +119,14 @@ sub compose_constraint_query{
 }
 
 
+
+sub reset_true_tables{
+  my $self = shift;
+
+  #deref to avoid modifying TRUE_TABLES
+  @{$self->TABLES} = @{$self->TRUE_TABLES};
+  return;
+}
 
 =head2 store_states
 
@@ -848,13 +856,13 @@ sub fetch_all_by_associated_FeatureType{
   $self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::FeatureType', $ftype);
   my ($table_name, $table_syn) = @{$self->_main_table};
 
-  push @{$tables{$self->_main_table->[0]}}, ['associated_feature_type', 'aft'];
+  push @{$self->TABLES}, ['associated_feature_type', 'aft'];
   my $constraint = "aft.feature_type_id=? AND aft.table_name='${table_name}' AND aft.table_id=${table_syn}.${table_name}_id";
 
   $self->bind_param_generic_fetch($ftype->dbID,  SQL_INTEGER);
   my $objs = $self->generic_fetch($constraint);
-  #  #Reset tables  
-  @{$tables{$self->_main_table->[0]}} = @{$true_tables{$self->_main_table->[0]}};
+  $self->reset_true_tables;
+
   return $objs;
 }
 

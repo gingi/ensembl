@@ -41,7 +41,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.29 $
+$Revision: 1.37.2.1 $
 
 =head1 APPENDIX
 
@@ -78,10 +78,7 @@ use base ('Bio::EnsEMBL::Compara::DBSQL::BaseAdaptor', 'Bio::EnsEMBL::Compara::D
              : MethodLinkSpeciesSet or int: either the object or its dbID
                NB: It currently gives the same partition of the data as member_type
   Arg [-CLUSTERSET_ID] (opt)
-             : int: the root_id of the clusterset node
-               NB: It currently gives the same partition of the data as member_type
-               NB: The definition of this argument is unstable and might change
-                   in the future
+             : string: the name of the clusterset (default is "default")
   Example    : $all_trees = $genetree_adaptor->fetch_all();
   Description: Fetches from the database all the gene trees
   Returntype : arrayref of Bio::EnsEMBL::Compara::GeneTree
@@ -114,7 +111,7 @@ sub fetch_all {
 
     if (defined $clusterset_id) {
         push @constraint, '(gtr.clusterset_id = ?)';
-        $self->bind_param_generic_fetch($clusterset_id, SQL_INTEGER);
+        $self->bind_param_generic_fetch($clusterset_id, SQL_VARCHAR);
     }
 
     return $self->generic_fetch(join(' AND ', @constraint));
@@ -207,9 +204,7 @@ sub fetch_by_node_id {
   Arg [-METHOD_LINK_SPECIES_SET] (opt)
              : MethodLinkSpeciesSet or int: either the object or its dbID
   Arg [-CLUSTERSET_ID] (opt)
-             : int: the root_id of the clusterset node
-               NB: The definition of this argument is unstable and might change
-                   in the future
+             : string: the name of the clusterset (default is "default")
   Example    : $all_trees = $genetree_adaptor->fetch_all_by_Member($member);
   Description: Fetches from the database all the gene trees that contains this member
                If the member is not an ENSEMBLGENE, it has to be canoncal, otherwise,
@@ -225,7 +220,7 @@ sub fetch_all_by_Member {
     my ($clusterset_id, $mlss) = rearrange([qw(CLUSTERSET_ID METHOD_LINK_SPECIES_SET)], @args);
 
     # Discard the UNIPROT members
-    return if (ref($member) and not ($member->source_name =~ 'ENSEMBL'));
+    return undef if (ref($member) and not ($member->source_name =~ 'ENSEMBL'));
 
     my $join = [[['gene_tree_node', 'gtn'], 'gtn.root_id = gtr.root_id'], [['gene_tree_member', 'gtm'], 'gtn.node_id = gtm.node_id'], [['member', 'm'], 'gtm.member_id = m.member_id']];
     my $constraint = '((m.member_id = ?) OR (m.gene_member_id = ?))';
@@ -241,10 +236,40 @@ sub fetch_all_by_Member {
     }
     if (defined $clusterset_id) {
         $constraint .= ' AND (gtr.clusterset_id = ?)';
-        $self->bind_param_generic_fetch($clusterset_id, SQL_INTEGER);
+        $self->bind_param_generic_fetch($clusterset_id, SQL_VARCHAR);
     }
 
     return $self->generic_fetch($constraint, $join);
+}
+
+
+=head2 fetch_default_for_Member
+
+  Arg[1]     : Member or member_id
+  Example    : $trees = $genetree_adaptor->fetch_default_for_Member($member);
+  Description: Fetches from the database the default gene tree that contains this member
+               If the member is not an ENSEMBLGENE, it has to be canoncal, otherwise,
+                 the function would return undef
+  Returntype : Bio::EnsEMBL::Compara::GeneTree
+  Exceptions : none
+  Caller     : general
+
+=cut
+
+sub fetch_default_for_Member {
+    my ($self, $member) = @_;
+
+    # Discard the UNIPROT members
+    return undef if (ref($member) and not ($member->source_name =~ 'ENSEMBL'));
+
+    my $join = [[['gene_tree_node', 'gtn'], 'gtn.root_id = gtr.root_id'], [['gene_tree_member', 'gtm'], 'gtn.node_id = gtm.node_id'], [['member', 'm'], 'gtm.member_id = m.member_id']];
+    my $constraint = '((m.member_id = ?) OR (m.gene_member_id = ?)) AND (gtr.clusterset_id = "default")';
+    
+    my $member_id = (ref($member) ? $member->dbID : $member);
+    $self->bind_param_generic_fetch($member_id, SQL_INTEGER);
+    $self->bind_param_generic_fetch($member_id, SQL_INTEGER);
+    
+    return $self->generic_fetch($constraint, $join)->[0];
 }
 
 
@@ -288,11 +313,50 @@ sub fetch_subtrees {
 
     my $tree_id = (ref($tree) ? $tree->root_id : $tree);
 
-    my $join = [[['gene_tree_node', 'gtn2'], 'gtn2.node_id = gtr.root_id'], [['gene_tree_node', 'gtn1'], 'gtn1.node_id = gtn2.parent_id']];
+    my $join = [[['gene_tree_node', 'gtn2'], 'gtn2.node_id = gtr.root_id', ['gtn2.parent_id']], [['gene_tree_node', 'gtn1'], 'gtn1.node_id = gtn2.parent_id']];
     my $constraint = "(gtn1.root_id = ?) AND (gtn1.left_index = (gtn1.right_index - 1))";
 
     $self->bind_param_generic_fetch($tree_id, SQL_INTEGER);
     return $self->generic_fetch($constraint, $join);
+}
+
+
+=head2 fetch_all_linked_trees
+
+  Arg[1]     : GeneTree $tree or its root_id
+  Example    : $othertrees = $genetree_adaptor->fetch_all_linked_trees($tree);
+  Description: Fetches from the database all trees that are associated to the argument tree.
+                The other trees generally contain the same members, but are either build
+                with a different phylogenetic model, or have a different multiple alignment.
+  Returntype : arrayref of Bio::EnsEMBL::Compara::GeneTree
+  Caller     : general
+
+=cut
+
+sub fetch_all_linked_trees {
+    my ($self, $tree) = @_;
+
+    my $ini_tree_id = (ref($tree) ? $tree->root_id : $tree);
+
+    my %results = ($ini_tree_id => $tree);
+    my @todo = ($ini_tree_id);
+
+    my $join = [[['gene_tree_root_tag', 'gtrt'], 'gtr.root_id = gtrt.value']];
+
+    while (scalar(@todo)) {
+        
+        my $constraint = '(gtrt.tag LIKE "%\_tree\_root\_id") AND (gtrt.root_id IN ('.join(',',@todo).'))';
+        @todo = ();
+        my $array1 = $self->generic_fetch($constraint, $join);
+        foreach my $other_tree (@$array1) {
+            next if exists $results{$other_tree->root_id};
+            push @todo, $other_tree->root_id;
+            $results{$other_tree->root_id} = $other_tree;
+        }
+    }
+    delete $results{$ini_tree_id};
+    my @results = values %results;
+    return \@results;
 }
 
 
@@ -304,18 +368,22 @@ sub store {
     my ($self, $tree) = @_;
 
     # Firstly, store the nodes
-    $tree->root->store();
+    my $has_root_id = (exists $tree->{'_root_id'} ? 1 : 0);
+    my $root_id = $self->db->get_GeneTreeNodeAdaptor->store($tree->root);
+    $tree->{'_root_id'} = $root_id;
 
     # Secondly, the tree itself
-    my $sth = $self->prepare('INSERT IGNORE INTO gene_tree_root (root_id) VALUES (?)');
-    $sth->execute($tree->root_id);
-
-    $sth = $self->prepare('UPDATE gene_tree_root SET tree_type = ?, member_type = ?, clusterset_id = ?, method_link_species_set_id = ?, stable_id = ?, version = ? WHERE root_id = ?'),
-    $sth->execute($tree->tree_type, $tree->member_type, $tree->clusterset_id, $tree->method_link_species_set_id, $tree->stable_id, $tree->version, $tree->root_id);
+    my $sth;
+    if ($has_root_id) {
+        $sth = $self->prepare('UPDATE gene_tree_root SET tree_type = ?, member_type = ?, clusterset_id = ?, method_link_species_set_id = ?, stable_id = ?, version = ? WHERE root_id = ?'),
+    } else {
+        $sth = $self->prepare('INSERT INTO gene_tree_root (tree_type, member_type, clusterset_id, method_link_species_set_id, stable_id, version, root_id) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    }
+    $sth->execute($tree->tree_type, $tree->member_type, $tree->clusterset_id, $tree->method_link_species_set_id, $tree->stable_id, $tree->version, $root_id);
     
     $tree->adaptor($self);
 
-    return $tree->root_id;
+    return $root_id;
 }
 
 
@@ -355,14 +423,18 @@ sub _objs_from_sth {
   my @tree_list = ();
 
   while(my $rowhash = $sth->fetchrow_hashref) {
-
-    # a new GeneTree object
-    my $tree = new Bio::EnsEMBL::Compara::GeneTree;
-    foreach my $attr (qw(root_id tree_type member_type clusterset_id method_link_species_set_id stable_id version)) {
-        $tree->$attr($rowhash->{$attr});
-    }
-    $tree->adaptor($self);
-
+    #my $tree = new Bio::EnsEMBL::Compara::GeneTree(-adaptor => $self, %$rowhash);
+    my $tree = Bio::EnsEMBL::Compara::GeneTree->new_fast({
+        _adaptor => $self,
+        _root_id => $rowhash->{root_id},
+        _tree_type => $rowhash->{tree_type},
+        _member_type => $rowhash->{member_type},
+        _clusterset_id => $rowhash->{clusterset_id},
+        _method_link_species_set_id => $rowhash->{method_link_species_set_id},
+        _stable_id => $rowhash->{stable_id},
+        _version => $rowhash->{version},
+        _parent_id => $rowhash->{parent_id},
+    });
     push @tree_list, $tree;
   }
 

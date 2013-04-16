@@ -124,11 +124,14 @@ sub store {
             flags,
             source_id,
             validation_status,
-            consequence_type,
+            consequence_types,
             variation_set_id,
             class_attrib_id,
-            somatic
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            somatic,
+            minor_allele,
+            minor_allele_freq,
+            minor_allele_count
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     });
     
     $sth->execute(
@@ -146,7 +149,10 @@ sub store {
         $vf->{slice} ? (join ",", @{$vf->consequence_type('SO')}) : 'intergenic_variant',
         $vf->{variation_set_id} || '',
         $vf->{class_attrib_id} || $vf->adaptor->db->get_AttributeAdaptor->attrib_id_for_type_value('SO_term', $vf->{class_SO_term}) || 18,
-        $vf->is_somatic
+        $vf->is_somatic,
+        $vf->minor_allele,
+        $vf->minor_allele_frequency,
+        $vf->minor_allele_count,
     );
     
     $sth->finish;
@@ -829,6 +835,78 @@ sub _tag_fetch {
     return $features;
 }
 
+
+
+=head2 fetch_all_by_Slice_SO_terms
+
+  Arg [1]    : Bio::EnsEMBL::Slice
+  Arg [2]    : listref of SO terms
+  Description: Fetch all germline VariationFeatures on the given slice with
+               consequences with given SO terms
+  Returntype : listref of Bio::EnsEMBL::Variation::VariationFeatures
+  Status     : At risk
+
+=cut
+
+sub fetch_all_by_Slice_SO_terms {
+  my ($self, $slice, $terms, $without_children, $included_so) = @_;
+
+  if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+    throw('Bio::EnsEMBL::Slice arg expected');
+  }
+  
+  if(!defined($terms) || scalar @$terms == 0) {
+	return $self->fetch_all_by_Slice($slice);
+  }
+
+  my $constraint = $self->_get_consequence_constraint($terms, $without_children, $included_so);
+  if (!$constraint) {
+    return [];
+  }
+  
+  my $vfs = $self->fetch_all_by_Slice_constraint($slice,$constraint);
+
+  return $vfs;
+}
+
+=head2 fetch_all_somatic_by_Slice_SO_terms
+
+  Arg [1]    : Bio::EnsEMBL::Slice
+  Arg [2]    : listref of SO terms
+  Description: Fetch all somatic VariationFeatures on the given slice with
+               consequences with given SO terms
+  Returntype : listref of Bio::EnsEMBL::Variation::VariationFeatures
+  Status     : At risk
+
+=cut
+
+sub fetch_all_somatic_by_Slice_SO_terms {
+  my ($self, $slice, $terms, $without_children, $included_so) = @_;
+
+  if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+    throw('Bio::EnsEMBL::Slice arg expected');
+  }
+  
+  if(!defined($terms) || scalar @$terms == 0) {
+	return $self->fetch_all_somatic_by_Slice($slice);
+  }
+
+  my $constraint = $self->_get_consequence_constraint($terms, $without_children, $included_so);
+  if (!$constraint) {
+    return [];
+  }
+  
+  my $vfs = $self->fetch_all_somatic_by_Slice_constraint($slice,$constraint);
+
+  return $vfs;
+}
+
+# call to method in BaseAdaptor
+sub _get_consequence_constraint {
+	my $self = shift;
+	return $self->SUPER::_get_consequence_constraint('variation_feature', @_);
+}
+
 sub fetch_Iterator_by_Slice_constraint {
     my ($self, $slice, $constraint) = @_;
     
@@ -843,27 +921,30 @@ sub fetch_Iterator_by_Slice_constraint {
 
 # method used by import VCF script
 sub _fetch_all_by_coords {
-    my ($self, $seq_region_id, $start, $end) = @_;
+    my ($self, $seq_region_id, $start, $end, $somatic) = @_;
+	
+	$somatic ||= 0;
     
     return $self->generic_fetch(qq{
         vf.seq_region_id = $seq_region_id AND
         vf.seq_region_start = $start AND
-        vf.seq_region_end = $end
+        vf.seq_region_end = $end AND
+		vf.somatic = $somatic
     });
 }
 
 # method used by superclass to construct SQL
-sub _tables { 
-    my $self = shift;
-    
-    my @tables = (
-        ['variation_feature', 'vf'],
-        [ 'source', 's']
-       );
+sub _tables {
+	my $self = shift;
+	
+	my @tables = (
+		[ 'variation_feature', 'vf', 'IGNORE INDEX(consequence_type_idx)'],
+		[ 'source', 's']
+	);
 
-   #ÊIf we are including failed_variations, add that table
+   # If we are including failed_variations, add that table
    push(@tables,['failed_variation', 'fv']) unless ($self->db->include_failed_variations());
-    
+
    # add bits for tagged variation feature
    push @tables, ['tagged_variation_feature', 'tvf'] if defined $self->{tag};
 
@@ -898,12 +979,13 @@ sub _columns {
   return qw( vf.variation_feature_id vf.seq_region_id vf.seq_region_start
              vf.seq_region_end vf.seq_region_strand vf.variation_id
              vf.allele_string vf.variation_name vf.map_weight s.name s.version vf.somatic 
-             vf.validation_status vf.consequence_type vf.class_attrib_id);
+             vf.validation_status vf.consequence_types vf.class_attrib_id
+             vf.minor_allele vf.minor_allele_freq vf.minor_allele_count);
 }
 
 sub _objs_from_sth {
     my ($self, $sth, $mapper, $dest_slice) = @_;
-
+	
     #warn $sth->sql;
 
     # 
@@ -924,13 +1006,15 @@ sub _objs_from_sth {
     my ($variation_feature_id, $seq_region_id, $seq_region_start,
       $seq_region_end, $seq_region_strand, $variation_id,
       $allele_string, $variation_name, $map_weight, $source_name, $source_version,
-      $is_somatic, $validation_status, $consequence_type, $class_attrib_id, $last_vf_id);
+      $is_somatic, $validation_status, $consequence_types, $class_attrib_id,
+	  $minor_allele, $minor_allele_freq, $minor_allele_count, $last_vf_id);
 
     $sth->bind_columns(\$variation_feature_id, \$seq_region_id,
                      \$seq_region_start, \$seq_region_end, \$seq_region_strand,
                      \$variation_id, \$allele_string, \$variation_name,
                      \$map_weight, \$source_name, \$source_version, \$is_somatic, \$validation_status, 
-                     \$consequence_type, \$class_attrib_id);
+                     \$consequence_types, \$class_attrib_id,
+					 \$minor_allele, \$minor_allele_freq, \$minor_allele_count);
 
     my $asm_cs;
     my $cmp_cs;
@@ -1035,11 +1119,11 @@ sub _objs_from_sth {
                 $validation_code = get_validation_code([split(',',$validation_status)]);
             }
             
-            #my $overlap_consequences = $self->_variation_feature_consequences_for_set_number($consequence_type);
+            #my $overlap_consequences = $self->_variation_feature_consequences_for_set_number($consequence_types);
             
-            my $overlap_consequences = [ map { $OVERLAP_CONSEQUENCES{$_} } split /,/, $consequence_type ];
+            my $overlap_consequences = [ map { $OVERLAP_CONSEQUENCES{$_} } split /,/, $consequence_types ];
 
-            # consequence_type
+            # consequence_types
             return $self->_create_feature_fast('Bio::EnsEMBL::Variation::VariationFeature',
             #push @features, Bio::EnsEMBL::Variation::VariationFeature->new_fast(
             #if use new_fast, then do not need "-" infront of key, i.e 'start' => $seq_region_start,
@@ -1060,6 +1144,9 @@ sub _objs_from_sth {
                 'overlap_consequences' => $overlap_consequences,
                 '_variation_id' => $variation_id,
                 'class_SO_term' => $aa->attrib_value_for_id($class_attrib_id),
+				'minor_allele' => $minor_allele,
+				'minor_allele_frequency' => $minor_allele_freq,
+				'minor_allele_count' => $minor_allele_count
                 }
             );
         }

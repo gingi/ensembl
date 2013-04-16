@@ -49,7 +49,7 @@ to their RFAM id. It also takes into account information from mirBase.
 
 =head1 CONTACT
 
-  Contact Albert Vilella on module implementation/design detail: avilella@ebi.ac.uk
+  Contact the Ensembl Compara Team on module implementation and design detail: ensembl-compara@ebi.ac.uk
 
 =cut
 
@@ -117,7 +117,7 @@ sub run {
 sub write_output {
     my $self = shift @_;
 
-    $self->store_and_dataflow_clusterset();
+    $self->store_and_dataflow_clusterset('default', $self->param('allclusters'));
 }
 
 
@@ -138,8 +138,8 @@ sub run_rfamclassify {
     #  $self->build_hash_cms('name');
     $self->build_hash_models();
 
-    my @allclusters;
-    $self->param('allclusters', \@allclusters);
+    my %allclusters;
+    $self->param('allclusters', \%allclusters);
 
     # Classify the cluster that already have an RFAM id or mir id
     print STDERR "Storing clusters...\n" if ($self->debug);
@@ -162,34 +162,13 @@ sub run_rfamclassify {
 
         print STDERR "ModelName: $model_name\n" if ($self->debug);
 
-        push @allclusters, [$cm_id, $model_name, \@cluster_list];
+        $allclusters{$cm_id} = {'members' => [@cluster_list],
+                                'model_name' => $model_name,
+                                'clustering_id' => $cm_id,
+                               }
 
     }
 }
-
-sub store_and_dataflow_clusterset {
-    my $self = shift;
-    my $allclusters = $self->param('allclusters');
-    $self->create_clusterset();
-    if ($self->param('sort_clusters')) {
-        foreach my $cluster_list_extended (sort {scalar(@{$b->[2]}) <=> scalar(@{$a->[2]})} @$allclusters) {
-            my ($cm_id, $model_name, $cluster_list) = @$cluster_list_extended;
-            my $cluster = $self->add_cluster($cluster_list);
-            $cluster->store_tag('clustering_id', $cm_id);
-            $cluster->store_tag('model_name', $model_name) if (defined($model_name));
-        }
-    } else {
-        foreach my $cluster_list_extended (@$allclusters) {
-            my ($cm_id, $model_name, $cluster_list) = @$cluster_list_extended;
-            my $cluster = $self->add_cluster($cluster_list);
-            $cluster->store_tag('clustering_id', $cm_id);
-            $cluster->store_tag('model_name', $model_name) if (defined($model_name));
-        }
-    }
-    $self->finish_store_clusterset();
-    $self->dataflow_clusters();
-}
-
 
 sub build_hash_models {
   my $self = shift;
@@ -258,7 +237,7 @@ sub build_hash_cms {
   my $self = shift;
   my $field = shift;
 
-  my $sql = "SELECT $field from nc_profile";
+  my $sql = "SELECT $field from hmm_profile";
   my $sth = $self->compara_dba->dbc->prepare($sql);
   $sth->execute;
   while( my $ref  = $sth->fetchrow_arrayref() ) {
@@ -274,7 +253,7 @@ sub load_names_model_id {
   $self->param('model_id_names', {});
   $self->param('model_name_ids', {});
 
-  my $sql = "SELECT model_id, name from nc_profile";
+  my $sql = "SELECT model_id, name from hmm_profile";
   my $sth = $self->compara_dba->dbc->prepare($sql);
   $sth->execute;
   while( my $ref  = $sth->fetchrow_arrayref() ) {

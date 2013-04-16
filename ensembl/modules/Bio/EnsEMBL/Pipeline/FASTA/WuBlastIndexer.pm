@@ -27,7 +27,7 @@ Bio::EnsEMBL::Pipeline::FASTA::WuBlastIndexer
 Creates WUBlast indexes of the given GZipped file. The resulting index
 is created under the parameter location I<base_path> in blast and then in a
 directory defined by the type of dump. The type of dump also changes the file
-name generated. Genomic dumps have their release version replaced with the
+name generated. Genomic dumps have their release number replaced with the
 last repeat masked date. 
 
 Allowed parameters are:
@@ -44,6 +44,8 @@ Allowed parameters are:
 
 =item base_path - The base of the dumps
 
+=item release - Required for correct DB naming
+
 =back
 
 =cut
@@ -57,6 +59,7 @@ use base qw/Bio::EnsEMBL::Pipeline::FASTA::Indexer/;
 use Bio::EnsEMBL::Utils::Exception qw/throw/;
 use File::Copy qw/copy/;
 use File::Spec;
+use POSIX qw/strftime/;
 
 sub param_defaults {
   my ($self) = @_;
@@ -77,6 +80,8 @@ sub fetch_input {
   if($type ne 'genomic' && $type ne 'genes') {
     throw "param 'type' must be set to 'genomic' or 'genes'";
   }
+  $self->assert_executable($self->param('program'));
+  $self->assert_executable('gunzip');
 }
 
 sub write_output {
@@ -94,13 +99,18 @@ sub index_file {
   my ($self, $file) = @_;
   my $molecule_arg = ($self->param('molecule') eq 'dna') ? '-n' : '-p' ;
   my $silence = ($self->debug()) ? 0 : 1;
+  my $target_dir = $self->target_dir();
   my $target_file = $self->target_file($file);
+  my $db_title = $self->db_title($file);
+  my $date = $self->db_date();
   
-  my $cmd = sprintf(q{%s %s -q%d -I -o %s %s }, 
-    $self->param('program'), $molecule_arg, $silence, $target_file, $file);
+  my $cmd = sprintf(q{cd %s && %s %s -q%d -I -t %s -d %s -o %s %s }, 
+    $target_dir, $self->param('program'), $molecule_arg, $silence, $db_title, $date, $target_file, $file);
   
   $self->info('About to run "%s"', $cmd);
-  system($cmd) and throw sprintf("Cannot run program '%s' with exit code %d", $cmd, ($? >> 8));
+  my $output = `$cmd 2>&1`;
+  my $rc = $? >> 8;
+  throw "Cannot run program '$cmd'. Return code was ${rc}. Program output was $output" if $rc;
   unlink $file or throw "Cannot remove the file '$file' from the filesystem: $!";
   $self->param('index_base', $target_file);
   return;
@@ -119,6 +129,21 @@ sub target_dir {
   return $self->get_dir('blast', $self->param('type'));
 }
 
+sub db_title {
+  my ($self, $source_file) = @_;
+  my ($vol, $dir, $file) = File::Spec->splitpath($source_file);
+  my $release = $self->param('release');
+  my $title = $file;
+  $title =~ s/$release\.//;
+  return $title;
+}
+
+sub db_date {
+  my ($self) = @_;
+  return strftime('%d-%m-%Y', gmtime());
+}
+
+#Source like Homo_sapiens.GRCh37.68.dna.toplevel.fa
 #Filename like Homo_sapiens.GRCh37.20090401.dna.toplevel.fa
 sub target_filename {
   my ($self, $source_file) = @_;

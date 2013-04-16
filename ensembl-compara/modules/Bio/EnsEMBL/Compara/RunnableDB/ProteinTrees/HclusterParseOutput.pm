@@ -43,11 +43,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: mp12 $
+$Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.16 $
+$Revision: 1.19 $
 
 =head1 APPENDIX
 
@@ -82,7 +82,13 @@ sub run {
 sub write_output {
     my $self = shift @_;
 
-    $self->store_and_dataflow_clusterset();
+    $self->store_and_dataflow_clusterset('default', $self->param('allclusters'));
+
+    if (defined $self->param('additional_clustersets')) {
+        foreach my $clusterset_id (@{$self->param('additional_clustersets')}) {
+            $self->fetch_or_create_clusterset($clusterset_id);
+        }
+    }
 }
 
 
@@ -97,8 +103,8 @@ sub parse_hclusteroutput {
 
     my $filename      = $self->param('cluster_dir') . '/hcluster.out';
 
-    my @allclusters;
-    $self->param('allclusters', \@allclusters);
+    my %allclusters = ();
+    $self->param('allclusters', \%allclusters);
     
     open(FILE, $filename) or die "Could not open '$filename' for reading : $!";
     while (<FILE>) {
@@ -115,7 +121,7 @@ sub parse_hclusteroutput {
 
         # If it's a singleton, we don't store it as a protein tree
         next if (2 > scalar(@cluster_list));
-        push @allclusters, \@cluster_list;
+        $allclusters{$cluster_id} = { 'members' => \@cluster_list };
     }
     close FILE;
 

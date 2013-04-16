@@ -180,7 +180,7 @@ CREATE TABLE method_link_species_set_tag (
 
   FOREIGN KEY (method_link_species_set_id) REFERENCES method_link_species_set(method_link_species_set_id),
 
-  UNIQUE KEY tag_mlss_id (method_link_species_set_id,tag)
+  PRIMARY KEY tag_mlss_id (method_link_species_set_id,tag)
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
@@ -462,7 +462,7 @@ CREATE TABLE subset_member (
   FOREIGN KEY (member_id) REFERENCES member(member_id),
 
   KEY (member_id),
-  UNIQUE subset_member_id (subset_id, member_id)
+  PRIMARY KEY subset_member_id (subset_id, member_id)
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
@@ -472,15 +472,13 @@ CREATE TABLE subset_member (
 #
 
 CREATE TABLE sequence_exon_bounded (
-  sequence_exon_bounded_id    int(10) unsigned NOT NULL AUTO_INCREMENT, # unique internal id
   member_id                   int(10) unsigned NOT NULL, # unique internal id
   length                      int(10) NOT NULL,
   sequence_exon_bounded       longtext NOT NULL,
 
   FOREIGN KEY (member_id) REFERENCES member(member_id),
 
-  PRIMARY KEY (sequence_exon_bounded_id),
-  KEY (member_id),
+  PRIMARY KEY (member_id),
   KEY sequence_exon_bounded (sequence_exon_bounded(18))
 ) MAX_ROWS = 10000000 AVG_ROW_LENGTH = 19000 COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
@@ -490,15 +488,13 @@ CREATE TABLE sequence_exon_bounded (
 #
 
 CREATE TABLE sequence_cds (
-  sequence_cds_id             int(10) unsigned NOT NULL AUTO_INCREMENT, # unique internal id
   member_id                   int(10) unsigned NOT NULL, # unique internal id
   length                      int(10) NOT NULL,
   sequence_cds                longtext NOT NULL,
 
   FOREIGN KEY (member_id) REFERENCES member(member_id),
 
-  PRIMARY KEY (sequence_cds_id),
-  KEY (member_id),
+  PRIMARY KEY (member_id),
   KEY sequence_cds (sequence_cds(64))
 ) MAX_ROWS = 10000000 AVG_ROW_LENGTH = 60000 COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
@@ -598,7 +594,7 @@ CREATE TABLE family_member (
   FOREIGN KEY (family_id) REFERENCES family(family_id),
   FOREIGN KEY (member_id) REFERENCES member(member_id),
 
-  UNIQUE family_member_id (family_id,member_id),
+  PRIMARY KEY family_member_id (family_id,member_id),
   KEY (family_id),
   KEY (member_id)
 
@@ -667,6 +663,7 @@ CREATE TABLE gene_tree_node (
   distance_to_parent              double default 1.0 NOT NULL,
 
   FOREIGN KEY (root_id) REFERENCES gene_tree_node(node_id),
+  FOREIGN KEY (parent_id) REFERENCES gene_tree_node(node_id),
 
   PRIMARY KEY (node_id),
   KEY (parent_id),
@@ -684,6 +681,10 @@ CREATE TABLE gene_tree_node (
 #
 # semantics:
 #    root_id           - node_id of the root of the tree
+#    member_type       - type of members in the tree
+#    tree_type         - type of the tree
+#    clusterset_id     - name of the set of trees
+#    method_link_species_set_id - reference to the method_link_species_set table
 #    stable_id         - the main part of the stable_id ( follows the pattern: label(5).release_introduced(4).unique_id(10) )
 #    version           - numeric version of the stable_id (changes only when members move to/from existing trees)
 
@@ -691,7 +692,7 @@ CREATE TABLE gene_tree_root (
     root_id                         INT(10) UNSIGNED NOT NULL,
     member_type                     ENUM('protein', 'ncrna') NOT NULL,
     tree_type                       ENUM('clusterset', 'supertree', 'tree') NOT NULL,
-    clusterset_id                   INT(10) UNSIGNED,
+    clusterset_id                   VARCHAR(20) NOT NULL DEFAULT 'default',
     method_link_species_set_id      INT(10) UNSIGNED NOT NULL,
     stable_id                       VARCHAR(40),            # unique stable id, e.g. 'ENSGT'.'0053'.'1234567890'
     version                         INT UNSIGNED,           # version of the stable_id (changes only when members move to/from existing trees)
@@ -725,7 +726,7 @@ CREATE TABLE gene_tree_member (
   FOREIGN KEY (node_id) REFERENCES gene_tree_node(node_id),
   FOREIGN KEY (member_id) REFERENCES member(member_id),
 
-  UNIQUE (node_id),
+  PRIMARY KEY (node_id),
   KEY (member_id)
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
@@ -834,11 +835,12 @@ CREATE TABLE gene_tree_node_attr (
 
 
 
-CREATE TABLE nc_profile (
-  model_id                    varchar(10) NOT NULL,
+CREATE TABLE hmm_profile (
+  model_id                    varchar(40) NOT NULL,
   name                        varchar(40),
-  type                        varchar(40) DEFAULT 'ncrna' NOT NULL,
+  type                        varchar(40) NOT NULL,
   hc_profile                  mediumtext,
+  consensus                   mediumtext,
 
   PRIMARY KEY (model_id)
 
@@ -893,7 +895,7 @@ CREATE TABLE homology_member (
   FOREIGN KEY (member_id) REFERENCES member(member_id),
   FOREIGN KEY (peptide_member_id) REFERENCES member(member_id),
 
-  UNIQUE homology_member_id (homology_id,member_id),
+  PRIMARY KEY homology_member_id (homology_id,member_id),
   KEY (homology_id),
   KEY (member_id),
   KEY (peptide_member_id)
@@ -1096,8 +1098,6 @@ CREATE TABLE CAFE_tree (
        lambdas                    varchar(100),
        p_value_lim                double(5,4),
 
-       FOREIGN KEY (root_id) REFERENCES CAFE_tree_node(root_id),
-#       FOREIGN KEY (method_link_species_set_id) REFERENCES method_link_species_set(method_link_species_set_id),
        PRIMARY KEY (root_id)
 
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
@@ -1130,7 +1130,7 @@ CREATE TABLE CAFE_tree_attr (
 
 
 # Auto add schema version to database (this will override whatever hive puts there)
-REPLACE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_version', '67');
+REPLACE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_version', '68');
 
 #Add schema type
 INSERT INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_type', 'compara');

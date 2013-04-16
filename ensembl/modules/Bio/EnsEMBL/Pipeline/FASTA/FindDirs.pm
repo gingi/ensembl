@@ -44,52 +44,16 @@ package Bio::EnsEMBL::Pipeline::FASTA::FindDirs;
 use strict;
 use warnings;
 
-use base qw/Bio::EnsEMBL::Pipeline::FASTA::Base Bio::EnsEMBL::Hive::RunnableDB::JobFactory/;
+use base qw/Bio::EnsEMBL::Pipeline::FindDirs Bio::EnsEMBL::Pipeline::FASTA::Base/;
 
 use File::Spec;
 
 sub fetch_input {
   my ($self) = @_;
   $self->throw("No 'species' parameter specified") unless $self->param('species');
-  my $dirs = $self->dirs();
-  $self->param('inputlist', $dirs);
+  $self->param('path', $self->fasta_path());
+  $self->SUPER::fetch_input();
   return;
-}
-
-sub run {
-  my ($self) = @_;
-  Bio::EnsEMBL::Hive::RunnableDB::JobFactory::run($self);
-  return;
-}
-
-sub write_output {
-  my ($self) = @_;
-  Bio::EnsEMBL::Hive::RunnableDB::JobFactory::write_output($self);
-  return;
-}
-
-sub dirs {
-  my ($self) = @_;
-  
-  my @dirs;
-  
-  my $dir = $self->fasta_path();
-  $self->info('Searching directory %s', $dir);
-
-  opendir(my $dh, $dir) or die "Cannot open directory $dir";
-  my @files = sort { $a cmp $b } readdir($dh);
-  closedir($dh) or die "Cannot close directory $dir";
-
-  foreach my $file (@files) {
-    next if $file =~ /^\./;         #hidden file or up/current dir
-    my $path = File::Spec->catdir($dir, $file);
-    if(-d $path) {
-      $self->fine('Adding %s to the list of found dirs', $path);
-      push(@dirs, $path);
-    }
-  }
-  
-  return \@dirs;
 }
 
 1;

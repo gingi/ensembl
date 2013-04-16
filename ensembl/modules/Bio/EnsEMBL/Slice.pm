@@ -68,6 +68,7 @@ use Bio::EnsEMBL::RepeatMaskedSlice;
 use Bio::EnsEMBL::Utils::Sequence qw(reverse_comp);
 use Bio::EnsEMBL::ProjectionSegment;
 use Bio::EnsEMBL::Registry;
+use Bio::EnsEMBL::Utils::Iterator;
 use Bio::EnsEMBL::DBSQL::MergedAdaptor;
 
 use Bio::EnsEMBL::StrainSlice;
@@ -661,6 +662,37 @@ sub subseq {
     reverse_comp(\$subseq) if($strand == -1);
   }
   return $subseq;
+}
+
+=head2 sub_Slice_Iterator
+
+  Arg[1]      : int The chunk size to request
+  Example     : my $i = $slice->sub_Slice_Iterator(60000); 
+                while($i->has_next()) { warn $i->next()->name(); }
+  Description : Returns an iterator which batches subslices of this Slice 
+                in the requested chunk size
+  Returntype  : Bio::EnsEMBL::Utils::Iterator next() will return the next
+                 chunk of Slice
+  Exceptions  : None
+
+=cut
+
+sub sub_Slice_Iterator {
+  my ($self, $chunk_size) = @_;
+  throw "Need a chunk size to divide the slice by" if ! $chunk_size;
+  my $here = 1;
+  my $end = $self->length();
+  my $iterator_sub = sub {
+    while($here <= $end) {
+      my $there = $here + $chunk_size - 1;
+      $there = $end if($there > $end); 
+      my $slice = $self->sub_Slice($here, $there);
+      $here = $there + 1;
+      return $slice;
+    }
+    return;
+  };
+  return Bio::EnsEMBL::Utils::Iterator->new($iterator_sub);
 }
 
 =head2 assembly_exception_type
@@ -1605,8 +1637,7 @@ sub get_all_RepeatFeatures {
     ReturnType  : Bio::EnsEMBL::Variation::LDFeatureContainer
     Exceptions  : none
     Caller      : contigview, snpview
-     Status     : At Risk
-                : Variation database is under development.
+     Status     : Stable
 
 =cut
 
@@ -1694,32 +1725,25 @@ sub _get_VariationFeatureAdaptor {
 }
 
 =head2 get_all_VariationFeatures
-
-    Args        : $filter [optional] (deprecated)
+    Args        : $so_terms [optional] - list of so_terms to limit the fetch to
     Description : Returns all germline variation features on this slice. This function will 
                   only work correctly if the variation database has been attached to the core 
                   database.
-                  If (the deprecated parameter) $filter is "genotyped" return genotyped SNPs only, 
-                  otherwise return all germline variations.
+                  If $so_terms is specified, only variation features with a consequence type
+                  that matches or is an ontological child of any of the supplied terms will
+                  be returned
     ReturnType  : listref of Bio::EnsEMBL::Variation::VariationFeature
     Exceptions  : none
     Caller      : contigview, snpview
-    Status      : At Risk
-                : Variation database is under development.
+    Status      : Stable
 
 =cut
 
 sub get_all_VariationFeatures{
-  my $self = shift;
-  my $filter = shift;
+  my $self     = shift;
 
-  if ($filter && $filter eq 'genotyped') {
-    deprecate("Don't pass 'genotyped' parameter, call get_all_genotyped_VariationFeatures instead");
-    return $self->get_all_genotyped_VariationFeatures;
-  }
-    
   if (my $vf_adaptor = $self->_get_VariationFeatureAdaptor) {
-    return $vf_adaptor->fetch_all_by_Slice($self);
+    return $vf_adaptor->fetch_all_by_Slice_SO_terms($self, @_);
   }
   else {
     return [];
@@ -1733,8 +1757,7 @@ sub get_all_VariationFeatures{
                   work correctly if the variation database has been attached to the core database.
     ReturnType  : listref of Bio::EnsEMBL::Variation::VariationFeature
     Exceptions  : none
-    Status      : At Risk
-                : Variation database is under development.
+    Status      : Stable
 
 =cut
 
@@ -1766,8 +1789,7 @@ sub get_all_somatic_VariationFeatures {
     ReturnType  : listref of Bio::EnsEMBL::Variation::VariationFeature
     Exceptions  : none
     Caller      : contigview, snpview
-    Status      : At Risk
-                : Variation database is under development.
+    Status      : Stable
 
 =cut
 
@@ -1794,8 +1816,7 @@ sub get_all_VariationFeatures_with_annotation{
                   (see get_all_VariationFeatures_with_annotation for further documentation)
     ReturnType  : listref of Bio::EnsEMBL::Variation::VariationFeature
     Exceptions  : none
-    Status      : At Risk
-                : Variation database is under development.
+    Status      : Stable
 
 =cut
 
@@ -1822,8 +1843,7 @@ sub get_all_somatic_VariationFeatures_with_annotation{
     ReturnType : listref of Bio::EnsEMBL::Variation::VariationFeature
     Exceptions : none
     Caller     : contigview, snpview
-    Status     : At Risk
-               : Variation database is under development.
+    Status     : Stable
 
 =cut
 
@@ -1916,7 +1936,7 @@ sub _get_StructuralVariationFeatureAdaptor {
     ReturnType  : listref of Bio::EnsEMBL::Variation::StructuralVariationFeature
     Exceptions  : none
     Caller      : contigview, snpview, structural_variation_features
-    Status      : At Risk
+    Status      : Stable
 
 =cut
 
@@ -1980,7 +2000,7 @@ sub get_all_StructuralVariationFeatures {
     ReturnType : listref of Bio::EnsEMBL::Variation::StructuralVariationFeature
     Exceptions : none
     Caller     : contigview, snpview
-    Status     : At Risk
+    Status     : Stable
 
 =cut
 
@@ -2013,7 +2033,7 @@ sub get_all_StructuralVariationFeatures_by_VariationSet {
     ReturnType  : listref of Bio::EnsEMBL::Variation::StructuralVariationFeature
     Exceptions  : none
     Caller      : contigview, snpview, structural_variation_features
-    Status      : At Risk
+    Status      : Stable
 
 =cut
 

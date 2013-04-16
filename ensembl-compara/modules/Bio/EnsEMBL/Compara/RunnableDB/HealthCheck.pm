@@ -62,8 +62,7 @@ method_link_type for the multiple alignments. Default: PECAN
 =head2 conservation_scores
 
 This test checks whether there are conservation scores in the table, whether
-these correspond to existing genomic_align_blocks, whether the
-right gerp_XXX entry exists in the meta table and whether there
+these correspond to existing genomic_align_blocks, and whether there
 are no alignments wiht more than 3 seqs and no scores.
 
 Parameters:
@@ -123,7 +122,6 @@ Internal methods are usually preceded with a _
 package Bio::EnsEMBL::Compara::RunnableDB::HealthCheck;
 
 use strict;
-use Bio::EnsEMBL::Compara::Production::DBSQL::DBAdaptor;
 #use Bio::EnsEMBL::Utils::Exception;
 
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
@@ -236,8 +234,7 @@ sub _run_conservation_jobs_test {
   Example     : $self->_run_conservation_scores_test(
                     "{method_link_species_set_id=>123}");
   Description : Tests whether there are conservation scores in the table, whether
-                these correspond to existing genomic_align_blocks, whether the
-                right gerp_XXX entry exists in the meta table and whether there
+                these correspond to existing genomic_align_blocks, and hether there
                 are no alignments with more than 3 seqs and no scores.
   Returntype  :
   Exceptions  : die on failure
@@ -479,7 +476,7 @@ sub _run_compare_to_previous_db_test {
   }
   
   #Load previous url
-  my $previous_compara_dba = $self->go_figure_compara_dba($previous_db);
+  my $previous_compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->go_figure_compara_dba($previous_db);
 
   #get the previous method_link_species_set adaptor
   my $previous_mlss_adaptor = $previous_compara_dba->get_MethodLinkSpeciesSetAdaptor;

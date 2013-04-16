@@ -34,11 +34,11 @@ Allowed parameters are:
 
 =over 8
 
-=item version - Needed to build the target path
+=item release - Needed to build the target path
 
 =item species - Required to indicate which species we are working with
 
-=item data_type - The type of data to work with. Can be I<dna> or T<dna_rm>
+=item data_type - The type of data to work with. Can be I<dna>, I<dn_sm> or I<dna_rm>
 
 =item base_path - The base of the dumps
 
@@ -52,8 +52,8 @@ use strict;
 use warnings;
 use base qw/Bio::EnsEMBL::Pipeline::FASTA::Base/;
 
-use Bio::EnsEMBL::Utils::Exception qw/throw/;
 use File::Spec;
+use File::stat;
 
 sub param_defaults {
   my ($self) = @_;
@@ -64,12 +64,15 @@ sub param_defaults {
     dna_rm => {
       regex => qr/.+\.dna_rm\..+\.fa\.gz$/,
     },
+    dna_sm => {
+      regex => qr/.+\.dna_sm\..+\.fa\.gz$/,
+    },
   };
 }
 
 sub fetch_input {
   my ($self) = @_;
-  foreach my $key (qw/data_type species version base_path/) {
+  foreach my $key (qw/data_type species release base_path/) {
     $self->throw("Cannot find the required parameter $key") unless $self->param($key);
   }
   return;
@@ -81,6 +84,7 @@ sub run {
   
   my @file_list = @{$self->get_dna_files()};
   my $count = scalar(@file_list);
+  my $running_total_size = 0;
   
   if($count) {
     my $target_file = $self->target_file();
@@ -88,36 +92,51 @@ sub run {
     
     if(-f $target_file) {
       $self->info("Target already exists. Removing");
-      unlink $target_file or throw "Could not remove $target_file: $!";
+      unlink $target_file or $self->throw("Could not remove $target_file: $!");
     }
     
     $self->info('Running concat');
     foreach my $file (@file_list) {
       $self->fine('Processing %s', $file);
+      $running_total_size += stat($file)->size;
       system("cat $file >> $target_file") 
-        and throw sprintf('Cannot concat %s into %s. RC %d', $file, $target_file, ($?>>8));
+        and $self->throw( sprintf('Cannot concat %s into %s. RC %d', $file, $target_file, ($?>>8)));
     }
 
     $self->info("Catted files together");
     
+    my $catted_size = stat($target_file)->size;
+    
+    if($running_total_size != $catted_size) {
+      $self->throw(sprintf('The total size of the files catted together should be %d but was in fact %d. Failing as we expect the catted size to be the same', $running_total_size, $catted_size));
+    }
+    
     $self->param('target_file', $target_file);
   }
   else {
-    $self->info("No files found so nothing to concat");
+    $self->throw("Cannot continue as we found no files to concat");
   }
   return;
 }
 
 sub write_output {
   my ($self) = @_;
-  $self->dataflow_output_id({ file => $self->param('target_file'), species => $self->param('species') }, 1);
+  my $file = $self->param('target_file');
+  if($file) {
+    $self->dataflow_output_id({ file => $file, species => $self->param('species') }, 1);
+  }
   return;
 }
 
 sub get_dna_files {
   my ($self) = @_;
   my $path = $self->fasta_path('dna');
-  my $regex = $self->param($self->param('data_type'))->{regex};
+  my $data_type = $self->param('data_type'); 
+  my $regex_hash = $self->param($data_type); 
+  if(! $regex_hash ) {
+    $self->throw("We do not have an entry for the data_type $data_type in our regex lookup hash. Edit this module");
+  }
+  my $regex = $regex_hash->{regex};
   my $filter = sub {
     my ($filename) = @_;
     return ($filename =~ $regex && $filename !~ /\.toplevel\./) ? 1 : 0;
@@ -135,7 +154,7 @@ sub target_file {
   my @name_bits;
   push @name_bits, $self->web_name();
   push @name_bits, $self->assembly();
-  push @name_bits, $self->param('version');
+  push @name_bits, $self->param('release');
   push @name_bits, $self->param('data_type');
   push @name_bits, 'toplevel';
   push @name_bits, 'fa', 'gz';

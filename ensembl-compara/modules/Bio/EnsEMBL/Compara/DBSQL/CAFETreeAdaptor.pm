@@ -227,11 +227,7 @@ sub update_node {
 
     if ($node->parent()) {
         $parent_id = $node->parent->node_id;
-        if (ref($node->node_id)) {
-            $root_id = $node->root->node_id();
-        } else {
-            $root_id = $node->subroot->node_id();
-        }
+        $root_id = $node->root->node_id();
     }
 
     my $sth = $self->prepare("UPDATE CAFE_tree_node SET
@@ -366,11 +362,13 @@ sub _columns {
 }
 
 sub _tables {
-    return (['CAFE_tree_attr', 'cta'], ['CAFE_tree_node', 'ctn']);
+    return (['CAFE_tree_attr', 'cta'], ['CAFE_tree_node', 'ctn'], ['CAFE_tree', 'ct']);
 }
 
-sub _default_left_join_clause {
-    return "LEFT JOIN CAFE_tree ct ON (ctn.node_id = ct.root_id) ";
+sub _left_join {
+    return (
+        ['CAFE_tree', 'ctn.node_id = ct.root_id']
+    );
 }
 
 sub _default_where_clause {

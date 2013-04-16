@@ -1,14 +1,9 @@
 use strict;
 use warnings;
 
-
-BEGIN { $| = 1;
-	use Test;
-	plan tests => 8;
-}
+use Test::More;
 
 use Bio::EnsEMBL::Test::TestUtils;
-
 use Bio::EnsEMBL::Test::MultiTestDB;
 
 
@@ -60,5 +55,31 @@ ok($bin eq 'Homo sapiens');
 my $taxid = $mc->get_taxonomy_id();
 ok($taxid == 9606);
 
+my $div = $mc->get_division();
+ok(!defined $div);
+
+my $divname = 'EnsemblVertebrate';
+$mc->store_key_value('species.division',$divname);
+$div = $mc->get_division();
+ok($div eq $divname);
+
+#
+# classification 
+#
+my $classification = [ qw/Hominidae Catarrhini Primates Eutheria Mammalia Vertebrata Chordata Metazoa Eukaryota/ ];
+is_deeply($mc->get_classification(), $classification, 'Checking classification as expected');
+
+#
+# Testing get_Species()
+#
+
+capture_std_streams(sub {
+  my ($stdout_ref, $stderr_ref) = @_;
+  my $s = $mc->get_Species();
+  is($s->binomial(), 'Homo sapiens', 'Checking binomial from Bio::Species continues to work');
+  like(${$stderr_ref}, qr/.+ deprecated .+ get_scientific_name\(\)/xms, 'Make sure we warn about deprecation');
+});
+
 $mdb->restore('core', 'meta');
 
+done_testing();

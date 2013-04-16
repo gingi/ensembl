@@ -73,6 +73,15 @@ sub species_tree {
     return $self->{'_species_tree'};
 }
 
+sub genome_db {
+    my ($self) = @_;
+    return undef unless ($self->is_leaf);
+    $self->throw("taxon_id is not set in this node") unless ($self->taxon_id);
+    my $GenomeDBAdaptor = $self->adaptor->db->get_GenomeDBAdaptor;
+    my $genomeDB = $GenomeDBAdaptor->fetch_by_taxon_id($self->taxon_id);
+    return $genomeDB;
+}
+
 sub lambdas {
     my ($self, $lambdas) = @_;
 
@@ -135,12 +144,12 @@ sub p_value {
     return $self->{'_p_value'};
 }
 
-sub tree_is_significant {
+sub is_tree_significant {
     my ($self) = @_;
     return $self->avg_pvalue() < $self->pvalue_lim();
 }
 
-sub node_is_significant {
+sub is_node_significant {
     my ($self) = @_;
     return $self->p_value() < $self->root->pvalue_lim();
 }

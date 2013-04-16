@@ -45,8 +45,10 @@ package Bio::EnsEMBL::Compara::AlignedMember;
 
 use strict;
 use Bio::EnsEMBL::Utils::Exception;
+use Bio::EnsEMBL::Compara::Member;
 
 use base ('Bio::EnsEMBL::Compara::Member');
+
 
 ##################################
 # overriden superclass methods
@@ -71,14 +73,17 @@ sub copy {
                $self->SUPER::copy($mycopy);
   bless $mycopy, 'Bio::EnsEMBL::Compara::AlignedMember';
 
-  $mycopy->cigar_line($self->cigar_line);
-  $mycopy->cigar_start($self->cigar_start);
-  $mycopy->cigar_end($self->cigar_end);
-  $mycopy->perc_cov($self->perc_cov);
-  $mycopy->perc_id($self->perc_id);
-  $mycopy->perc_pos($self->perc_pos);
-  $mycopy->method_link_species_set_id($self->method_link_species_set_id);
-  
+  # The following does not Work if the initial object is only a Member
+  if (UNIVERSAL::isa($self, 'Bio::EnsEMBL::Compara::AlignedMember')) {
+    $mycopy->cigar_line($self->cigar_line);
+    $mycopy->cigar_start($self->cigar_start);
+    $mycopy->cigar_end($self->cigar_end);
+    $mycopy->perc_cov($self->perc_cov);
+    $mycopy->perc_id($self->perc_id);
+    $mycopy->perc_pos($self->perc_pos);
+    $mycopy->method_link_species_set_id($self->method_link_species_set_id);
+  }
+
   return $mycopy;
 }
 
@@ -267,6 +272,12 @@ sub method_link_species_set_id {
 }
 
 
+sub set {
+    my $self = shift;
+    return $self->{'set'};
+}
+
+
 =head2 alignment_string
 
   Arg [1]     : (optional) bool $exon_cased
@@ -420,7 +431,8 @@ sub alignment_string_bounded {
 =cut
 
 sub cdna_alignment_string {
-  my $self = shift;
+  my ($self, $changeSelenos) = @_;
+  $changeSelenos = 0 unless (defined $changeSelenos);
 
   unless (defined $self->{'cdna_alignment_string'}) {
 
@@ -442,7 +454,6 @@ sub cdna_alignment_string {
       $cdna = substr($cdna, $offset, $length);
     }
 
-    my $cdna_len = length($cdna);
     my $start = 0;
     my $cdna_align_string = '';
 
@@ -451,6 +462,9 @@ sub cdna_alignment_string {
     foreach my $pep (unpack("A1" x length($alignment_string), $alignment_string)) {
       if($pep eq '-') {
         $cdna_align_string .= '--- ';
+      } elsif ((($pep eq 'U') and $changeSelenos) or ($pep eq '*')) {
+	  $cdna_align_string .= 'NNN ';
+	  $start += 3;  
       } else {
         my $codon = substr($cdna, $start, 3);
         unless (length($codon) == 3) {
@@ -462,7 +476,7 @@ sub cdna_alignment_string {
         $start += 3;
       }
     }
-    $self->{'cdna_alignment_string'} = $cdna_align_string
+    $self->{'cdna_alignment_string'} = $cdna_align_string;
   }
   
   return $self->{'cdna_alignment_string'};

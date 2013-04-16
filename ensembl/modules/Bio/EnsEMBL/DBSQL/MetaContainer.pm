@@ -119,6 +119,21 @@ sub get_scientific_name {
   return $self->single_value_by_key('species.scientific_name');
 }
 
+=head2 get_division
+
+  Args          : none
+  Example       : $div = $meta_container->get_division();
+  Description   : Obtains the Ensembl Genomes division to which the species belongs.
+  Returntype    : string
+  Exceptions    : none
+  Status        : Stable
+
+=cut
+sub get_division {
+  my ($self) = @_;
+  return $self->single_value_by_key('species.division');
+}
+
 =head2 get_Species
 
   Arg [1]    : none
@@ -143,9 +158,17 @@ sub get_Species {
   if ( !@$classification ) {
     return undef;
   }
-
+  
+  #Re-create the old classification data structure by adding the scientific
+  #name back onto the classification but with species before genus e.g.
+  # sapiens -> Homo -> Hominade
+  my $scientific_name = $self->get_scientific_name();
+  my ($genus, @sp) = split(/ /, $scientific_name);
+  unshift(@{$classification}, join(q{ }, @sp), $genus);
+  
   my $species = Bio::Species->new();
   $species->common_name($common_name);
+  
   $species->classification($classification, 1); #always force it
 
   return $species;
@@ -239,8 +262,9 @@ sub get_genebuild {
 sub get_classification {
   my ($self) = @_;
   my $classification = $self->list_value_by_key('species.classification');
-  splice(@{$classification}, 0, 2); # remove the sapiens, Homo from the backing array
-  return $classification;
+  my $copy = [@{$classification}];
+  splice(@{$copy}, 0, 1); # remove the Homo sapiens
+  return $copy;
 }
 
 

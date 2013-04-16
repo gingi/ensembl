@@ -27,8 +27,8 @@ sub fetch_input {
 		my ($df_start,$df_end)=($dnafrag->start,$dnafrag->end);
 		my ($max_anc_seq_size, $min_anc_seq_size) = ($self->param('max_anchor_seq_len'), $self->param('min_anchor_seq_len'));
 		my $mid_size = $max_anc_seq_size / 2;
-		$anc_start -= $mid_size + 1;
-		$anc_end += $mid_size - 1;
+		$anc_start -= $mid_size + 2;
+		$anc_end += $mid_size - 2;
 		$anc_start = $anc_start < $df_start ? $df_start : $anc_start;
 		$anc_end = $anc_end > $df_end ? $df_end : $anc_end;
 		my $anc_seq = $dnafrag->slice->sub_Slice($anc_start,$anc_end,$df_strand)->seq;

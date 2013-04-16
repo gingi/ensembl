@@ -34,23 +34,10 @@ This RunnableDB module generates a general README.{emf} file and a specific READ
 package Bio::EnsEMBL::Compara::RunnableDB::DumpMultiAlign::Readme;
 
 use strict;
-use Bio::EnsEMBL::Hive::DBSQL::AnalysisDataAdaptor;
 use Bio::EnsEMBL::Compara::Graph::NewickParser;
 use base ('Bio::EnsEMBL::Compara::RunnableDB::BaseRunnable');
 
 use Cwd;
-
-
-=head2 strict_hash_format
-
-    Description : Implements strict_hash_format() interface method of Bio::EnsEMBL::Hive::Process that is used to set the strictness level of the parameters' parser.
-                  Here we return 0 in order to indicate that neither input_id() nor parameters() is required to contain a hash.
-
-=cut
-
-sub strict_hash_format {
-    return 0;
-}
 
 sub fetch_input {
     my $self = shift;
@@ -117,8 +104,9 @@ sub _create_specific_readme {
 	Bio::EnsEMBL::Registry->load_all();
     }
 
-    my $compara_dba = $self->go_figure_compara_dba($self->param('compara_db'));
- 
+    #Note this is using the database set in $self->param('compara_db') rather than the underlying compara database.
+    my $compara_dba = $self->compara_dba;
+
     #Get meta_container adaptor
     my $meta_container = $compara_dba->get_MetaContainer;
 
@@ -133,10 +121,8 @@ sub _create_specific_readme {
     }
 
     #Get tree and ordered set of genome_dbs
-    my ($newick_species_tree, $species_set) = $self->_get_species_tree($compara_dba, $mlss);
-
+    my ($newick_species_tree, $species_set) = $self->_get_species_tree($mlss);
     my $method_link = $mlss->method_link_type;
-
     my $filename = $self->param('output_dir') . "/README." . lc($method_link) . "_" . @$species_set . "_way";
 
     #Get first schema_version
@@ -159,15 +145,15 @@ sub _create_specific_readme {
 # Return species_tree and ordered list of genome_dbs
 #
 sub _get_species_tree {
-    my ($self, $compara_dba, $mlss) = @_;
+    my ($self, $mlss) = @_;
 
     my $ordered_species;
-    my $newick_species_tree;
-    if ($self->param('species_tree_data_id') ne "") {
-	my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new(-DBCONN => $compara_dba->dbc);
-	my $analysis_data_adaptor = $hive_dba->get_AnalysisDataAdaptor;
-	$newick_species_tree = $analysis_data_adaptor->fetch_by_dbID($self->param('species_tree_data_id'));
-    } elsif ($self->param('species_tree_file') ne "") {
+
+    #Try to get tree from mlss_tag table
+    my $newick_species_tree = $mlss->get_value_for_tag('species_tree');
+    
+    #If this fails, try to get from file
+    if (!$newick_species_tree && $self->param('species_tree_file') ne "") {
 	open(TREE_FILE, $self->param('species_tree_file')) or $self->throw("Cannot open file ".$self->('species_tree_file'));
 	$newick_species_tree = join("", <TREE_FILE>);
 	close(TREE_FILE);

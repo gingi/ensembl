@@ -68,8 +68,8 @@ foreach my $ortho_type (@A_ortholog_types) {
   print STDERR "\nStarting with =$ortho_type= and =".$mlss->name()."=\n" ;
 
   #Get all homologies
-  #my $homols = $ha->fetch_all_by_MethodLinkSpeciesSet_orthology_type($mlss,'ortholog_one2one');
-  my $homols = $ha->fetch_all_by_MethodLinkSpeciesSet_orthology_type($mlss,$ortho_type);
+  #my $homols = $ha->fetch_all_by_MethodLinkSpeciesSet($mlss, -orthology_type => 'ortholog_one2one');
+  my $homols = $ha->fetch_all_by_MethodLinkSpeciesSet($mlss, -orthology_type => $ortho_type);
 
   #For each members
   my $name = $mlss->name() ; $name =~ s/ /_/g ;
@@ -82,8 +82,7 @@ foreach my $ortho_type (@A_ortholog_types) {
       my $score = 1 ;
 
       #print "=== TEST NEW HOMOLOGY! ===\n" ;
-      foreach my $member_attribute (@{$homol->get_all_Member_Attribute}) {
-	my ($member, $attribute) = @{$member_attribute};
+      foreach my $member (@{$homol->get_all_Members}) {
 
 	#Get the "query" member and the "target" member
 	my $genom = $member->genome_db->name() ;

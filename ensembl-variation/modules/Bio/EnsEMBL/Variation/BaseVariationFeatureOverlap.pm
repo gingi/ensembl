@@ -58,10 +58,12 @@ sub new {
     my $class = shift;
 
     my (
+        $adaptor,
         $base_variation_feature,
         $feature, 
         $no_transfer
     ) = rearrange([qw(
+            ADAPTOR
             BASE_VARIATION_FEATURE
             FEATURE
             NO_TRANSFER
@@ -84,6 +86,7 @@ sub new {
     my $self = bless {
         base_variation_feature  => $base_variation_feature,
         feature                 => $feature,
+        adaptor                 => $adaptor,
     }, $class;
 
     return $self;
@@ -335,15 +338,15 @@ sub consequence_type {
     if(defined($term_type)) {
         delete $self->{_consequence_type};
 		$method_name = $term_type.($term_type eq 'label' ? '' : '_term');
-		$method_name = 'display_term' unless defined $self->most_severe_OverlapConsequence && $self->most_severe_OverlapConsequence->can($method_name);
+		$method_name = 'SO_term' unless defined $self->most_severe_OverlapConsequence && $self->most_severe_OverlapConsequence->can($method_name);
     }
 	
-	$method_name ||= 'display_term';
+	$method_name ||= 'SO_term';
     
     unless ($self->{_consequence_type}) {
         
         # use a hash to ensure we don't include redundant terms (because more than one
-        # allele may have the same consequence display_term)
+        # allele may have the same consequence SO_term)
 
         my %cons_types;
 
@@ -416,14 +419,25 @@ sub display_consequence {
     # delete cached term
     if(defined($term_type)) {
 		$method_name = $term_type.($term_type eq 'label' ? '' : '_term');
-		$method_name = 'display_term' unless @{$self->get_all_OverlapConsequences} && $self->get_all_OverlapConsequences->[0]->can($method_name);
+		$method_name = 'SO_term' unless @{$self->get_all_OverlapConsequences} && $self->get_all_OverlapConsequences->[0]->can($method_name);
     }
 	
-	$method_name ||= 'display_term';
+	$method_name ||= 'SO_term';
     
     my $worst_conseq = $self->most_severe_OverlapConsequence;
 
     return $worst_conseq ? $worst_conseq->$method_name : '';
+}
+
+sub adaptor {
+    my $self = shift;
+    $self->{adaptor} = shift if @_;
+    
+    # make adaptor an anonymous hash in its absence
+    # this allows the VEP to cache OverlapConsequences in offline mode
+    $self->{adaptor} ||= {};
+    
+    return $self->{adaptor};
 }
 
 1;

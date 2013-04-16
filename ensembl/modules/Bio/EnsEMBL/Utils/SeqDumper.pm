@@ -494,7 +494,7 @@ sub dump_embl {
 
   my $value = "Sequence $length BP; $a_count A; $c_count C; " .
     "$g_count G; $t_count T; $other_count other;";
-  $self->write($FH, $EMBL_HEADER, 'SQ', $value);
+  $self->print($FH, 'SQ   '.$value."\n");
 
   $self->write_embl_seq($FH, \$SEQ);
 
@@ -649,7 +649,7 @@ sub dump_genbank {
   $tag   = 'BASE COUNT';
   $value = "$a_count a $c_count c $g_count g $t_count t";
   $value .= " $other_count n" if($other_count);
-  $self->write($FH, $GENBANK_HEADER, $tag, $value);
+  $self->print($FH, qq{$tag  $value\n});
   $self->print( $FH, "ORIGIN\n" );
 
   $self->write_genbank_seq($FH, \$SEQ);
@@ -724,7 +724,8 @@ sub _dump_feature_table {
   }
 
   foreach my $gene_slice (@gene_slices) {
-    foreach my $gene (@{$gene_slice->get_all_Genes(undef,undef, 1)}) {
+    my @genes = @{$gene_slice->get_all_Genes(undef,undef, 1)};
+    while(my $gene = shift @genes) {
       $value = $self->features2location( [$gene] );
       $self->write( @ff, 'gene', $value );
       $self->write( @ff, "", '/gene='.$gene->stable_id() );
@@ -800,7 +801,8 @@ sub _dump_feature_table {
   #
   if($self->is_enabled('genscan')) {
     my @genscan_exons;
-    foreach my $transcript(@{$slice->get_all_PredictionTranscripts(undef,1)}) {
+    my @transcripts = @{$slice->get_all_PredictionTranscripts(undef,1)};
+    while(my $transcript = shift @transcripts) {
       my $exons = $transcript->get_all_Exons();
       push @genscan_exons, @$exons;
       $self->write(@ff, 'mRNA', $self->features2location($exons));
@@ -818,7 +820,8 @@ sub _dump_feature_table {
   if($self->is_enabled('variation') && $slice->can('get_all_VariationFeatures')) {
 #    $slice->adaptor->db->add_db_adaptor('lite', $lite) if $lite;
 
-    foreach my $snp (@{$slice->get_all_VariationFeatures}) {
+    my @variations = @{$slice->get_all_VariationFeatures()};
+    while(my $snp = shift @variations) {
       my $ss = $snp->start;
       my $se = $snp->end;
       #skip snps that hang off edge of slice
@@ -854,9 +857,9 @@ sub _dump_feature_table {
   # repeats
   #
   if($self->is_enabled('repeat')) {
-    my $rfs = $slice->get_all_RepeatFeatures();
+    my @rfs = @{$slice->get_all_RepeatFeatures()};
 
-    foreach my $repeat (@$rfs) {
+    while(my $repeat = shift @rfs) {
       $self->write(@ff, 'repeat_region', $self->features2location([$repeat]));
       $self->write(@ff, ''    , '/note="' . $repeat->repeat_consensus->name.
 		   ' repeat: matches ' . $repeat->hstart.'..'.$repeat->hend .
@@ -869,7 +872,8 @@ sub _dump_feature_table {
   # markers
   #
   if($self->is_enabled('marker') && $slice->can('get_all_MarkerFeatures')) {
-    foreach my $mf (@{$slice->get_all_MarkerFeatures}) {
+    my @markers = @{$slice->get_all_MarkerFeatures()};
+    while(my $mf = shift @markers) {
       $self->write(@ff, 'STS', $self->features2location([$mf]));
       if($mf->marker->display_MarkerSynonym) {
         $self->write(@ff, ''   , '/standard_name="' .
@@ -963,7 +967,7 @@ sub dump_fasta {
 
   #chunk the sequence in 60kb chunks to use less memory
   my $cur = $start;
-  while($cur < $end) {
+  while($cur <= $end) {
     my $to = $cur + 59_999;
     $to = $end if($to > $end); 
     my $seq = $slice->subseq($cur, $to);

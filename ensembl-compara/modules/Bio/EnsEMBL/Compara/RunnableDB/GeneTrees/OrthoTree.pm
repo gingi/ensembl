@@ -51,11 +51,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: st3 $
+$Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.17.2.1 $
+$Revision: 1.28.2.1 $
 
 =head1 APPENDIX
 
@@ -91,7 +91,6 @@ sub param_defaults {
             'tree_scale'            => 1,
             'store_homologies'      => 1,
             'no_between'            => 0.25, # dont store all possible_orthologs
-            'doublecheck_homologies' => 0,
     };
 }
 
@@ -110,14 +109,19 @@ sub param_defaults {
 sub fetch_input {
     my $self = shift @_;
 
-    $self->param('treeDBA', $self->compara_dba->get_GeneTreeNodeAdaptor);
     $self->param('homologyDBA', $self->compara_dba->get_HomologyAdaptor);
 
     my $starttime = time();
     $self->param('tree_id_str') or die "tree_id_str is an obligatory parameter";
     my $tree_id = $self->param($self->param('tree_id_str')) or die "'*_tree_id' is an obligatory parameter";
-    my $gene_tree = $self->param('treeDBA')->fetch_tree_at_node_id($tree_id) or die "Could not fetch gene_tree with tree_id='$tree_id'";
-    $self->param('gene_tree', $gene_tree);
+    my $gene_tree = $self->compara_dba->get_GeneTreeAdaptor->fetch_by_root_id($tree_id) or die "Could not fetch gene_tree with tree_id='$tree_id'";
+    $gene_tree->preload();
+    $self->param('gene_tree', $gene_tree->root);
+
+    #if ($self->input_job->retry_count > 0) {
+    $self->delete_old_homologies;
+    $self->delete_old_orthotree_tags;
+    $self->fill_easy_values;
 
     if($self->debug) {
         $self->param('gene_tree')->print_tree($self->param('tree_scale'));
@@ -126,8 +130,6 @@ sub fetch_input {
     unless($self->param('gene_tree')) {
         $self->throw("undefined GeneTree as input\n");
     }
-    $self->delete_old_homologies;
-    $self->delete_old_orthotree_tags;
     $self->param('taxon_tree', $self->load_species_tree_from_string( $self->get_species_tree_string ) );
     my %mlss_hash;
     $self->param('mlss_hash', \%mlss_hash);
@@ -541,8 +543,6 @@ sub delete_old_orthotree_tags
 {
     my $self = shift;
 
-    #return undef unless ($self->input_job->retry_count > 0);
-
     my $tree_node_id = $self->param('gene_tree')->node_id;
 
     print "deleting old orthotree tags\n" if ($self->debug);
@@ -564,8 +564,6 @@ sub delete_old_orthotree_tags
 sub delete_old_homologies {
     my $self = shift;
 
-    #return undef unless ($self->input_job->retry_count > 0);
-
     my $tree_node_id = $self->param('gene_tree')->node_id;
 
     # New method all in one go -- requires key on tree_node_id
@@ -586,6 +584,24 @@ sub delete_old_homologies {
     
     printf("%1.3f secs to delete old homologies\n", time()-$delete_time) if ($self->debug);
 }
+
+sub fill_easy_values
+{
+    my $self = shift;
+
+    my $tree_node_id = $self->param('gene_tree')->node_id;
+
+    my $sql1 = 'UPDATE gene_tree_node JOIN gene_tree_node_attr USING (node_id) SET duplication_confidence_score = 0 WHERE root_id = ? AND node_type = "dubious"';
+    my $sth1 = $self->compara_dba->dbc->prepare($sql1);
+    $sth1->execute($tree_node_id);
+    $sth1->finish;
+
+    my $sql2 = 'UPDATE gene_tree_node JOIN gene_tree_node_attr USING (node_id) SET duplication_confidence_score = 1 WHERE root_id = ? AND node_type = "gene_split"';
+    my $sth2 = $self->compara_dba->dbc->prepare($sql2);
+    $sth2->execute($tree_node_id);
+    $sth2->finish;
+}
+
 
 sub genepairlink_check_dups
 {
@@ -681,6 +697,7 @@ sub inspecies_paralog_test
   #passed all the tests -> it's an inspecies_paralog
 #  $genepairlink->add_tag("orthotree_type", 'inspecies_paralog');
   $genepairlink->add_tag("orthotree_type", 'within_species_paralog');
+  $genepairlink->add_tag("orthotree_type", 'contiguous_gene_split') if $ancestor->get_tagvalue('node_type') eq 'gene_split';
   $genepairlink->add_tag("orthotree_subtype", $taxon->name);
   # Duplication_confidence_score
   if (not $ancestor->has_tag("duplication_confidence_score")) {
@@ -828,7 +845,7 @@ sub store_homologies {
     my $dcs = $genepairlink->get_tagvalue('ancestor')->get_tagvalue('duplication_confidence_score');
     next if ($type eq 'possible_ortholog' and $dcs > $self->param('no_between'));
 
-    $self->store_gene_link_as_homology($genepairlink);
+    $self->store_gene_link_as_homology($genepairlink) if $self->param('store_homologies');
     print STDERR "homology links $hlinkscount\n" if ($hlinkscount++ % 500 == 0);
   }
 
@@ -848,40 +865,41 @@ sub store_gene_link_as_homology {
   return unless($type);
   my $subtype = $genepairlink->get_tagvalue('taxon_name');
   my $ancestor = $genepairlink->get_tagvalue('ancestor');
+  warn "Tag tree_node_id undefined\n" unless $genepairlink->has_tag('tree_node_id');
   my $tree_node_id = $genepairlink->get_tagvalue('tree_node_id');
-  warn("Tag tree_node_id undefined\n") unless(defined($tree_node_id) && $tree_node_id ne '');
 
   my ($gene1, $gene2) = $genepairlink->get_nodes;
 
   # get or create method_link_species_set
-  my $mlss_type;
-  if (($type eq 'possible_ortholog') or ($type eq 'within_species_paralog') or ($type eq 'other_paralog')) {
-      $mlss_type = "ENSEMBL_PARALOGUES";
-  } else {
-      $mlss_type = "ENSEMBL_ORTHOLOGUES";
-  }
-  # This should be unique to a pair of genome_db_ids, and equal if we switch the two genome_dbs
-  # WARNING: This trick is valid for genome_db_id up to 10000
-  my $mlss_key = sprintf("%s_%d", $mlss_type, $gene1->genome_db->dbID * $gene2->genome_db->dbID + 100000000*($gene1->genome_db->dbID+$gene2->genome_db->dbID));
-
   my $mlss;
-  if (exists $self->param('mlss_hash')->{$mlss_key}) {
-    $mlss = $self->param('mlss_hash')->{$mlss_key};
-  } else {
-      my $gdbs;
-      if ($gene1->genome_db->dbID == $gene2->genome_db->dbID) {
-          $gdbs = [$gene1->genome_db];
+  {
+      my $mlss_type;
+      if ((not $type =~ /^ortholog/) and (not $type =~ /^apparent_ortholog/)) {
+          $mlss_type = "ENSEMBL_PARALOGUES";
       } else {
-          $gdbs = [$gene1->genome_db, $gene2->genome_db];
+          $mlss_type = "ENSEMBL_ORTHOLOGUES";
       }
-      $mlss = new Bio::EnsEMBL::Compara::MethodLinkSpeciesSet(
-        -method => $self->compara_dba->get_MethodAdaptor->fetch_by_type($mlss_type),
-        -species_set_obj => ($self->compara_dba->get_SpeciesSetAdaptor->fetch_by_GenomeDBs($gdbs) || new Bio::EnsEMBL::Compara::SpeciesSet(-genomedbs => $gdbs))
-      );
-      $self->compara_dba->get_MethodLinkSpeciesSetAdaptor->store($mlss) unless ($self->param('_readonly'));
-      $self->param('mlss_hash')->{$mlss_key} = $mlss;
-  }
+    # This should be unique to a pair of genome_db_ids, and equal if we switch the two genome_dbs
+    # WARNING: This trick is valid for genome_db_id up to 10000
+      my $mlss_key = sprintf("%s_%d", $mlss_type, $gene1->genome_db->dbID * $gene2->genome_db->dbID + 100000000*($gene1->genome_db->dbID+$gene2->genome_db->dbID));
 
+      if (exists $self->param('mlss_hash')->{$mlss_key}) {
+          $mlss = $self->param('mlss_hash')->{$mlss_key};
+      } else {
+          my $gdbs;
+          if ($gene1->genome_db->dbID == $gene2->genome_db->dbID) {
+              $gdbs = [$gene1->genome_db];
+          } else {
+              $gdbs = [$gene1->genome_db, $gene2->genome_db];
+          }
+          $mlss = new Bio::EnsEMBL::Compara::MethodLinkSpeciesSet(
+                  -method => ($self->compara_dba->get_MethodAdaptor->fetch_by_type($mlss_type) || new Bio::EnsEMBL::Compara::Method(-type => $mlss_type, -class => 'Homology.homology')),
+                  -species_set_obj => ($self->compara_dba->get_SpeciesSetAdaptor->fetch_by_GenomeDBs($gdbs) || new Bio::EnsEMBL::Compara::SpeciesSet(-genome_dbs => $gdbs)),
+                  );
+          $self->compara_dba->get_MethodLinkSpeciesSetAdaptor->store($mlss) unless ($self->param('_readonly'));
+          $self->param('mlss_hash')->{$mlss_key} = $mlss;
+      }
+  }
   # create an Homology object
   my $homology = new Bio::EnsEMBL::Compara::Homology;
   $homology->description($type);
@@ -889,110 +907,25 @@ sub store_gene_link_as_homology {
   $homology->ancestor_node_id($ancestor->node_id);
   $homology->tree_node_id($tree_node_id);
   $homology->method_link_species_set_id($mlss->dbID);
+  
+  $homology->add_Member($gene1);
+  $homology->add_Member($gene2);
+  $homology->update_alignment_stats;
 
   my $key = $mlss->dbID . "_" . $gene1->dbID;
   $self->param('homology_consistency')->{$key}{$type} = 1;
-  #$homology->dbID(-1);
 
-  # NEED TO BUILD THE Attributes (ie homology_members)
-  my ($cigar_line1, $perc_id1, $perc_pos1,
-      $cigar_line2, $perc_id2, $perc_pos2) = 
-        $self->generate_attribute_arguments($gene1, $gene2,$type);
-
-  # QUERY member
-  #
-  my $attribute;
-  $attribute = new Bio::EnsEMBL::Compara::Attribute;
-  $attribute->peptide_member_id($gene1->dbID);
-  $attribute->cigar_line($cigar_line1);
-  $attribute->perc_cov(100);
-  $attribute->perc_id(int($perc_id1));
-  $attribute->perc_pos(int($perc_pos1));
-
-  my $gene_member1 = $gene1->gene_member;
-  $homology->add_Member_Attribute([$gene_member1, $attribute]);
-
-  #
-  # HIT member
-  #
-  $attribute = new Bio::EnsEMBL::Compara::Attribute;
-  $attribute->peptide_member_id($gene2->dbID);
-  $attribute->cigar_line($cigar_line2);
-  $attribute->perc_cov(100);
-  $attribute->perc_id(int($perc_id2));
-  $attribute->perc_pos(int($perc_pos2));
-
-  my $gene_member2 = $gene2->gene_member;
-  $homology->add_Member_Attribute([$gene_member2, $attribute]);
-
-  # Pre-tagging potential_gene_split paralogies
+  # at this stage, contiguous_gene_split have been retrieved from the node types
   if ($self->param('tag_split_genes')) {
-    if ($type eq 'within_species_paralog' && 0 == $perc_id1 && 0 == $perc_id2 && 0 == $perc_pos1 && 0 == $perc_pos2) {
-      $self->param('orthotree_homology_counts')->{'within_species_paralog'}--;
-      # If same seq region and less than 1MB distance
-      if ($gene_member1->chr_name eq $gene_member2->chr_name 
-          && (1000000 > abs($gene_member1->chr_start - $gene_member2->chr_start)) 
-          && $gene_member1->chr_strand eq $gene_member2->chr_strand ) {
-        $homology->description('contiguous_gene_split');
-        if (scalar(@{$ancestor->get_all_leaves}) == 2) {
-          $ancestor->store_tag('node_type', 'gene_split')
-            unless ($self->param('_readonly'));
-        }
-        $self->param('orthotree_homology_counts')->{'contiguous_gene_split'}++;
-      } else {
+    # Potential split genes: within_species_paralog that do not overlap at all
+    if ($type eq 'within_species_paralog' && 0 == $gene1->perc_id && 0 == $gene2->perc_id && 0 == $gene1->perc_pos && 0 == $gene2->perc_pos) {
+        $self->param('orthotree_homology_counts')->{'within_species_paralog'}--;
         $homology->description('putative_gene_split');
         $self->param('orthotree_homology_counts')->{'putative_gene_split'}++;
-      }
     }
   }
-  ## Check if it has already been stored, in which case we dont need to store again
-  my $matching_homology = 0;
-  if ($self->param('doublecheck_homologies') and ($self->input_job->retry_count > 0)) {
-    my $member_id1 = $gene1->gene_member->member_id;
-    my $member_id2 = $gene2->gene_member->member_id;
-    if ($member_id1 == $member_id2) {
-      my $tree_id = $self->param('gene_tree')->node_id;
-      my $pmember_id1 = $gene1->member_id; my $pstable_id1 = $gene1->stable_id;
-      my $pmember_id2 = $gene2->member_id; my $pstable_id2 = $gene2->stable_id;
-      $self->throw("$member_id1 ($pmember_id1 - $pstable_id1) and $member_id2 ($pmember_id2 - $pstable_id2) shouldn't be the same");
-    }
-    my $stored_homology = $self->param('homologyDBA')->fetch_by_Member_id_Member_id($member_id1,$member_id2);
-    if (defined($stored_homology)) {
-      $matching_homology = 1;
-      $matching_homology = 0 if ($stored_homology->description ne $homology->description);
-      $matching_homology = 0 if ($stored_homology->subtype ne $homology->subtype);
-      $matching_homology = 0 if ($stored_homology->ancestor_node_id ne $homology->ancestor_node_id);
-      $matching_homology = 0 if ($stored_homology->tree_node_id ne $homology->tree_node_id);
-      $matching_homology = 0 if ($stored_homology->method_link_type ne $homology->method_link_type);
-      $matching_homology = 0 if ($stored_homology->method_link_species_set->dbID ne $homology->method_link_species_set->dbID);
-    }
-
-    # Delete old one, then proceed to store new one
-    if (defined($stored_homology) && (0 == $matching_homology)) {
-      my $homology_id = $stored_homology->dbID;
-      my $sql1 = "delete from homology where homology_id=$homology_id";
-      my $sql2 = "delete from homology_member where homology_id=$homology_id";
-      my $sth1 = $self->compara_dba->dbc->prepare($sql1);
-      my $sth2 = $self->compara_dba->dbc->prepare($sql2);
-      $sth1->execute;
-      $sth2->execute;
-      $sth1->finish;
-      $sth2->finish;
-    }
-  }
-  if($self->param('store_homologies') and (0 == $matching_homology)) {
-    $self->param('homologyDBA')->store($homology);
-  }
-
-  #my $stable_id;
-  #if($gene1->taxon_id < $gene2->taxon_id) {
-  #  $stable_id = $gene1->taxon_id . "_" . $gene2->taxon_id . "_";
-  #} else {
-  #  $stable_id = $gene2->taxon_id . "_" . $gene1->taxon_id . "_";
-  #}
-  #$stable_id .= sprintf ("%011.0d",$homology->dbID) if($homology->dbID);
-  #$homology->stable_id($stable_id);
-  #TODO: update the stable_id of the homology
+  
+  $self->param('homologyDBA')->store($homology);
 
   return $homology;
 }
@@ -1006,194 +939,16 @@ sub check_homology_consistency {
 
     foreach my $mlss_member_id ( keys %{$self->param('homology_consistency')} ) {
         my $count = scalar(keys %{$self->param('homology_consistency')->{$mlss_member_id}});
-        if ($count > 1) {
-            my ($mlss, $member_id) = split("_", $mlss_member_id);
-            $bad_key = "mlss member_id : $mlss $member_id";
-            print "$bad_key\n" if ($self->debug);
-        }
+
+        next if $count == 1;
+        next if $count == 2 and exists $self->param('homology_consistency')->{$mlss_member_id}->{contiguous_gene_split} and exists $self->param('homology_consistency')->{$mlss_member_id}->{within_species_paralog};
+
+        my ($mlss, $member_id) = split("_", $mlss_member_id);
+        $bad_key = "mlss member_id : $mlss $member_id";
+        print "$bad_key\n" if ($self->debug);
     }
     $self->throw("Inconsistent homologies: $bad_key") if defined $bad_key;
 }
 
-
-sub generate_attribute_arguments {
-  my ($self, $gene1, $gene2, $type) = @_;
-
-  my $new_aln1_cigarline = "";
-  my $new_aln2_cigarline = "";
-
-  my $perc_id1 = 0;
-  my $perc_pos1 = 0;
-  my $perc_id2 = 0;
-  my $perc_pos2 = 0;
-
-  # This speeds up the pipeline for this portion of the homology table. If no_between option is used,
-  # only the low SIS are dealt with, so we will calculate the cigar_lines
-  if ($type eq 'possible_ortholog' && !defined($self->param('no_between'))) {
-    return ($new_aln1_cigarline, $perc_id1, $perc_pos1, $new_aln2_cigarline, $perc_id2, $perc_pos2);
-  }
-
-  my $identical_matches = 0;
-  my $positive_matches = 0;
-  my $m_hash = $self->get_matrix_hash;
-
-  my ($aln1state, $aln2state);
-  my ($aln1count, $aln2count);
-
-  # my @aln1 = split(//, $gene1->alignment_string); # Speed up
-  # my @aln2 = split(//, $gene2->alignment_string);
-  my $alignment_string = $gene1->alignment_string;
-  my @aln1 = unpack("A1" x length($alignment_string), $alignment_string);
-  $alignment_string = $gene2->alignment_string;
-  my @aln2 = unpack("A1" x length($alignment_string), $alignment_string);
-
-  for (my $i=0; $i <= $#aln1; $i++) {
-    next if ($aln1[$i] eq "-" && $aln2[$i] eq "-");
-    my ($cur_aln1state, $cur_aln2state) = qw(M M);
-    if ($aln1[$i] eq "-") {
-      $cur_aln1state = "D";
-    }
-    if ($aln2[$i] eq "-") {
-      $cur_aln2state = "D";
-    }
-    if ($cur_aln1state eq "M" && $cur_aln2state eq "M" && $aln1[$i] eq $aln2[$i]) {
-      $identical_matches++;
-      $positive_matches++;
-    } elsif ($cur_aln1state eq "M" && $cur_aln2state eq "M" && $m_hash->{uc $aln1[$i]}{uc $aln2[$i]} > 0) {
-        $positive_matches++;
-    }
-    unless (defined $aln1state) {
-      $aln1count = 1;
-      $aln2count = 1;
-      $aln1state = $cur_aln1state;
-      $aln2state = $cur_aln2state;
-      next;
-    }
-    if ($cur_aln1state eq $aln1state) {
-      $aln1count++;
-    } else {
-      if ($aln1count == 1) {
-        $new_aln1_cigarline .= $aln1state;
-      } else {
-        $new_aln1_cigarline .= $aln1count.$aln1state;
-      }
-      $aln1count = 1;
-      $aln1state = $cur_aln1state;
-    }
-    if ($cur_aln2state eq $aln2state) {
-      $aln2count++;
-    } else {
-      if ($aln2count == 1) {
-        $new_aln2_cigarline .= $aln2state;
-      } else {
-        $new_aln2_cigarline .= $aln2count.$aln2state;
-      }
-      $aln2count = 1;
-      $aln2state = $cur_aln2state;
-    }
-  }
-  if ($aln1count == 1) {
-    $new_aln1_cigarline .= $aln1state;
-  } else {
-    $new_aln1_cigarline .= $aln1count.$aln1state;
-  }
-  if ($aln2count == 1) {
-    $new_aln2_cigarline .= $aln2state;
-  } else {
-    $new_aln2_cigarline .= $aln2count.$aln2state;
-  }
-  my $seq_length1 = $gene1->seq_length;
-  unless (0 == $seq_length1) {
-    $perc_id1  = (int((100.0 * $identical_matches / $seq_length1 + 0.5)));
-    $perc_pos1 = (int((100.0 * $positive_matches  / $seq_length1 + 0.5)));
-  }
-  my $seq_length2 = $gene2->seq_length;
-  unless (0 == $seq_length2) {
-    $perc_id2  = (int((100.0 * $identical_matches / $seq_length2 + 0.5)));
-    $perc_pos2 = (int((100.0 * $positive_matches  / $seq_length2 + 0.5)));
-  }
-
-#   my $perc_id1 = $identical_matches*100.0/$gene1->seq_length;
-#   my $perc_pos1 = $positive_matches*100.0/$gene1->seq_length;
-#   my $perc_id2 = $identical_matches*100.0/$gene2->seq_length;
-#   my $perc_pos2 = $positive_matches*100.0/$gene2->seq_length;
-
-  return ($new_aln1_cigarline, $perc_id1, $perc_pos1, $new_aln2_cigarline, $perc_id2, $perc_pos2);
-}
-
-sub get_matrix_hash {
-  my $self = shift;
-
-  return $self->param('matrix_hash') if (defined $self->param('matrix_hash'));
-
-  my $BLOSUM62 = "#  Matrix made by matblas from blosum62.iij
-#  * column uses minimum score
-#  BLOSUM Clustered Scoring Matrix in 1/2 Bit Units
-#  Blocks Database = /data/blocks_5.0/blocks.dat
-#  Cluster Percentage: >= 62
-#  Entropy =   0.6979, Expected =  -0.5209
-   A  R  N  D  C  Q  E  G  H  I  L  K  M  F  P  S  T  W  Y  V  B  Z  X  *
-A  4 -1 -2 -2  0 -1 -1  0 -2 -1 -1 -1 -1 -2 -1  1  0 -3 -2  0 -2 -1  0 -4
-R -1  5  0 -2 -3  1  0 -2  0 -3 -2  2 -1 -3 -2 -1 -1 -3 -2 -3 -1  0 -1 -4
-N -2  0  6  1 -3  0  0  0  1 -3 -3  0 -2 -3 -2  1  0 -4 -2 -3  3  0 -1 -4
-D -2 -2  1  6 -3  0  2 -1 -1 -3 -4 -1 -3 -3 -1  0 -1 -4 -3 -3  4  1 -1 -4
-C  0 -3 -3 -3  9 -3 -4 -3 -3 -1 -1 -3 -1 -2 -3 -1 -1 -2 -2 -1 -3 -3 -2 -4
-Q -1  1  0  0 -3  5  2 -2  0 -3 -2  1  0 -3 -1  0 -1 -2 -1 -2  0  3 -1 -4
-E -1  0  0  2 -4  2  5 -2  0 -3 -3  1 -2 -3 -1  0 -1 -3 -2 -2  1  4 -1 -4
-G  0 -2  0 -1 -3 -2 -2  6 -2 -4 -4 -2 -3 -3 -2  0 -2 -2 -3 -3 -1 -2 -1 -4
-H -2  0  1 -1 -3  0  0 -2  8 -3 -3 -1 -2 -1 -2 -1 -2 -2  2 -3  0  0 -1 -4
-I -1 -3 -3 -3 -1 -3 -3 -4 -3  4  2 -3  1  0 -3 -2 -1 -3 -1  3 -3 -3 -1 -4
-L -1 -2 -3 -4 -1 -2 -3 -4 -3  2  4 -2  2  0 -3 -2 -1 -2 -1  1 -4 -3 -1 -4
-K -1  2  0 -1 -3  1  1 -2 -1 -3 -2  5 -1 -3 -1  0 -1 -3 -2 -2  0  1 -1 -4
-M -1 -1 -2 -3 -1  0 -2 -3 -2  1  2 -1  5  0 -2 -1 -1 -1 -1  1 -3 -1 -1 -4
-F -2 -3 -3 -3 -2 -3 -3 -3 -1  0  0 -3  0  6 -4 -2 -2  1  3 -1 -3 -3 -1 -4
-P -1 -2 -2 -1 -3 -1 -1 -2 -2 -3 -3 -1 -2 -4  7 -1 -1 -4 -3 -2 -2 -1 -2 -4
-S  1 -1  1  0 -1  0  0  0 -1 -2 -2  0 -1 -2 -1  4  1 -3 -2 -2  0  0  0 -4
-T  0 -1  0 -1 -1 -1 -1 -2 -2 -1 -1 -1 -1 -2 -1  1  5 -2 -2  0 -1 -1  0 -4
-W -3 -3 -4 -4 -2 -2 -3 -2 -2 -3 -2 -3 -1  1 -4 -3 -2 11  2 -3 -4 -3 -2 -4
-Y -2 -2 -2 -3 -2 -1 -2 -3  2 -1 -1 -2 -1  3 -3 -2 -2  2  7 -1 -3 -2 -1 -4
-V  0 -3 -3 -3 -1 -2 -2 -3 -3  3  1 -2  1 -1 -2 -2  0 -3 -1  4 -3 -2 -1 -4
-B -2 -1  3  4 -3  0  1 -1  0 -3 -4  0 -3 -3 -2  0 -1 -4 -3 -3  4  1 -1 -4
-Z -1  0  0  1 -3  3  4 -2  0 -3 -3  1 -1 -3 -1  0 -1 -3 -2 -2  1  4 -1 -4
-X  0 -1 -1 -1 -2 -1 -1 -1 -1 -1 -1 -1 -1 -1 -2  0  0 -2 -1 -1 -1 -1 -1 -4
-* -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4 -4  1
-";
-  my $matrix_string;
-  my @lines = split(/\n/,$BLOSUM62);
-  foreach my $line (@lines) {
-    next if ($line =~ /^\#/);
-    if ($line =~ /^[A-Z\*\s]+$/) {
-      $matrix_string .= sprintf "$line\n";
-    } else {
-      my @t = split(/\s+/,$line);
-      shift @t;
-      #       print scalar @t,"\n";
-      $matrix_string .= sprintf(join(" ",@t)."\n");
-    }
-  }
-
-  my %matrix_hash;
-  @lines = ();
-  @lines = split /\n/, $matrix_string;
-  my $lts = shift @lines;
-  $lts =~ s/^\s+//;
-  $lts =~ s/\s+$//;
-  my @letters = split /\s+/, $lts;
-
-  foreach my $letter (@letters) {
-    my $line = shift @lines;
-    $line =~ s/^\s+//;
-    $line =~ s/\s+$//;
-    my @penalties = split /\s+/, $line;
-    die "Size of letters array and penalties array are different\n"
-      unless (scalar @letters == scalar @penalties);
-    for (my $i=0; $i < scalar @letters; $i++) {
-      $matrix_hash{uc $letter}{uc $letters[$i]} = $penalties[$i];
-    }
-  }
-
-  $self->param('matrix_hash', \%matrix_hash);
-  return $self->param('matrix_hash');
-}
 
 1;

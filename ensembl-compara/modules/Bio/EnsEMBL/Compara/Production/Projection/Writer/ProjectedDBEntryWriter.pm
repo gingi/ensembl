@@ -102,7 +102,7 @@ sub write_projection {
   my $entry = $self->_process_entry($p);
   my ($object, $type) = $self->_to_ensembl_object($p->to());
   $object->add_DBEntry($entry);
-  $db_entry_a->store($entry, $object->dbID(), $type);
+  $db_entry_a->store($entry, $object->dbID(), $type, 1);
   return;
 }
 
@@ -153,9 +153,10 @@ sub _process_entry {
   my $from = $p->from()->stable_id();
   $entry->flush_linkage_types();
   $entry->add_linkage_type("IEA");
-  my $txt = "from $from_species translation $from";
+  my $txt = "from $from_species";
   $entry->info_type("PROJECTION");
   $entry->info_text($txt);
+  $entry->linkage_annotation("from $from_species entry $from");
   $self->_add_analysis($entry);
   return $entry;
 }

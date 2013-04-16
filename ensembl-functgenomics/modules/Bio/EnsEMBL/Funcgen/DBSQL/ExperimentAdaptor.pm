@@ -44,7 +44,7 @@ use warnings;
 
 package Bio::EnsEMBL::Funcgen::DBSQL::ExperimentAdaptor;
 
-use Bio::EnsEMBL::Utils::Exception qw( throw warning );
+use Bio::EnsEMBL::Utils::Exception qw( throw deprecate );
 use Bio::EnsEMBL::Funcgen::Experiment;
 use Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor;
 
@@ -83,30 +83,6 @@ sub fetch_by_name {
   return $result->[0];
 }
 
-
-=head2 fetch_by_archive_id
-
-  Arg [1]    : String - Archive ID to a public repository (ENA) e.g. SRX00381237
-  Example    : my $exp = $exp_a->fetch_by_archive_id('SRX00381237');
-  Description: Retrieves an Experiment via it's archive ID.
-  Returntype : Bio::EnsEMBL::Funcgen::Experiment
-  Exceptions : Throws if archive ID not defined
-  Caller     : General
-  Status     : At Risk
-
-=cut
-
-sub fetch_by_archive_id {
-  my $self = shift;
-  my $id = shift;
-  
-  throw("Need to specify and archive id argument") if (! defined $id);
-
-  $self->bind_param_generic_fetch($id, SQL_VARCHAR);
-  my $result = $self->generic_fetch("e.archive_id = ?");
- 
-  return $result->[0];
-}
 
 
 =head2 get_all_experiment_names
@@ -168,7 +144,7 @@ sub _tables {
 sub _columns {
 	my $self = shift;
 	
-	return qw(e.experiment_id e.name e.experimental_group_id e.date e.primary_design_type e.description e.archive_id e.data_url e.mage_xml_id);
+	return qw(e.experiment_id e.name e.experimental_group_id e.date e.primary_design_type e.description e.mage_xml_id);
 }
 
 =head2 _objs_from_sth
@@ -188,29 +164,28 @@ sub _columns {
 sub _objs_from_sth {
 	my ($self, $sth) = @_;
 	
-	my (@result, $exp_id, $name, $group_id, $p_design_type, $date, $description, $archive_id, $data_url, $xml_id);
+	my (@result, $exp_id, $name, $group_id, $p_design_type, $date, $description, $xml_id);
 	
 	my $eg_adaptor = $self->db->get_ExperimentalGroupAdaptor();
 
-	$sth->bind_columns(\$exp_id, \$name, \$group_id, \$date, \$p_design_type, \$description, \$archive_id, \$data_url, \$xml_id);
+	$sth->bind_columns(\$exp_id, \$name, \$group_id, \$date, \$p_design_type, \$description, \$xml_id);
 	
 
 	while ( $sth->fetch() ) {
 
 	  my $group = $eg_adaptor->fetch_by_dbID($group_id);#cache these in ExperimentalGroupAdaptor
 
-	  my $exp = Bio::EnsEMBL::Funcgen::Experiment->new(
-							   -DBID                => $exp_id,
-							   -ADAPTOR             => $self,
-							   -NAME                => $name,
-							   -EXPERIMENTAL_GROUP  => $group,
-							   -DATE                => $date,
-							   -PRIMARY_DESIGN_TYPE => $p_design_type,
-							   -DESCRIPTION         => $description,
-							   -ARCHIVE_ID        => $archive_id,
-							   -DATA_URL            => $data_url,
-							   -MAGE_XML_ID         => $xml_id,
-													  );
+	  my $exp = Bio::EnsEMBL::Funcgen::Experiment->new
+      (
+       -DBID                => $exp_id,
+       -ADAPTOR             => $self,
+       -NAME                => $name,
+       -EXPERIMENTAL_GROUP  => $group,
+       -DATE                => $date,
+       -PRIMARY_DESIGN_TYPE => $p_design_type,
+       -DESCRIPTION         => $description,
+       -MAGE_XML_ID         => $xml_id,
+      );
 	  
 	  push @result, $exp;
 	  
@@ -242,8 +217,8 @@ sub store {
 	my ($s_exp);
    	
 	my $sth = $self->prepare('INSERT INTO experiment
-                                 (name, experimental_group_id, date, primary_design_type, description, archive_id, data_url, mage_xml_id)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                                 (name, experimental_group_id, date, primary_design_type, description, mage_xml_id)
+                                 VALUES (?, ?, ?, ?, ?, ?)');
 
     foreach my $exp (@args) {
 	  throw('Can only store Experiment objects') 	if ( ! $exp->isa('Bio::EnsEMBL::Funcgen::Experiment'));
@@ -268,9 +243,7 @@ sub store {
 		$sth->bind_param(3, $exp->date(),                     SQL_VARCHAR);#date?
 		$sth->bind_param(4, $exp->primary_design_type(),      SQL_VARCHAR);
 		$sth->bind_param(5, $exp->description(),              SQL_VARCHAR);
-		$sth->bind_param(6, $exp->archive_id(),               SQL_VARCHAR);
-		$sth->bind_param(7, $exp->data_url(),                 SQL_VARCHAR);
-		$sth->bind_param(8, $exp->mage_xml_id(),              SQL_INTEGER);
+    $sth->bind_param(6, $exp->mage_xml_id(),              SQL_INTEGER);
 		
 		$sth->execute();
 		$exp->dbID($sth->{'mysql_insertid'});
@@ -401,84 +374,10 @@ sub list_dbIDs {
 }
 
 
+### DEPRECATED METHODS ###
+
 sub fetch_experiment_filter_counts{
-  my $self = shift;
-
-   my $sql = 'SELECT count(*), eg.name, eg.description, eg.is_project, ft.class, ct.name, ct.description '.
-	'FROM experimental_group eg, experiment e, feature_set fs, feature_type ft, cell_type ct, '.
-	  'status s, status_name sn '.
-		'WHERE fs.experiment_id=e.experiment_id AND e.experimental_group_id=eg.experimental_group_id '.
-		  'AND fs.feature_type_id=ft.feature_type_id AND fs.cell_type_id=ct.cell_type_id '.
-			'AND fs.feature_set_id=s.table_id AND fs.type="annotated" AND s.table_name="feature_set" '.
-			  'AND s.status_name_id=sn.status_name_id and sn.name="DISPLAYABLE" '.
-				'GROUP BY eg.name, eg.is_project, ft.class, ct.name';
-
-
-#  SELECT count(*), eg.name, eg.description, eg.is_project, ft.class, ct.name, ct.description FROM experimental_group eg, experiment e, feature_set fs, feature_type ft, cell_type ct, status s, status_name sn WHERE fs.experiment_id=e.experiment_id AND e.experimental_group_id=eg.experimental_group_id AND fs.feature_type_id=ft.feature_type_id AND fs.cell_type_id=ct.cell_type_id AND fs.feature_set_id=s.table_id AND fs.type="annotated" AND s.table_name="feature_set" AND s.status_name_id=sn.status_name_id and sn.name="DISPLAYABLE" and fs.name like "%NHEK%" GROUP BY eg.name, eg.is_project, ft.class, ct.name;
-#This looks good, maybe the extra count are coming from below?
-
-
-  my @rows = @{$self->db->dbc->db_handle->selectall_arrayref($sql)};
-  my $ftype_info = $self->db->get_FeatureTypeAdaptor->get_regulatory_evidence_info;
-
-  my %filter_info = ( 
-					 #Project=> {},
-					 #'Cell/Tissue' => {},
-					 All =>
-					 { All =>{ count       => 0,
-							   description => 'All experiments',
-							 }
-					 }
-					 
-					);
-  
-  foreach my $row(@rows){
-
-	my ($count, $project, $proj_desc, $is_proj, $ft_class, $ct_name, $ct_desc) = @$row;
-	
-	#All counts
-	$filter_info{All}{All}{count} += $count;
-  
-	#Project counts
-	if($is_proj){
-	  
-	  if(! exists $filter_info{Project}{$project}){
-		$filter_info{Project}{$project} = 
-		  { count       => 0,
-			description => $proj_desc,
-		  };
-	  }
-
-	  $filter_info{Project}{$project}{count} += $count;
-	}
-
-	#Cell/Tissue counts
-	if(! exists $filter_info{'Cell/Tissue'}{$ct_name}){
-	  $filter_info{'Cell/Tissue'}{$ct_name} = 
-		{ count       => 0,
-		  description => $ct_desc,
-		};
-	}	
-	$filter_info{'Cell/Tissue'}{$ct_name}{count} += $count;
-	
-	#Evidence class counts
-	#Do we want to split this into ft.class
-	#i.e. split 'DNase1 & TFBS'
-	my $ft_class_label = $ftype_info->{$ft_class}{label};
-
-	if(! exists $filter_info{'Evidence type'}{$ft_class_label}){
-	  $filter_info{'Evidence type'}{$ft_class_label} = 
-		{ count       => 0,
-		  description => $ftype_info->{$ft_class}{long_name},
-		};
-	}
-	$filter_info{'Evidence type'}{$ft_class_label}{count} += $count;
-  }
-
-  return \%filter_info;
-
-  #Do we need to add an 'in_build' filter /data field?
-
+  deprecate('Please use FeatureSetAdaptor::fetch_feature_set_filter_counts')
 }
 
 

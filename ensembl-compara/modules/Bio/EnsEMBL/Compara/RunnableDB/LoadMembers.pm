@@ -127,14 +127,17 @@ sub run {
 
     my $unfiltered_slices = $core_dba->get_SliceAdaptor->fetch_all('toplevel', $self->param('include_nonreference') ? (undef, 1, undef, 1) : ());
     die "Could not fetch any toplevel slices from ".$core_dba->dbc->dbname() unless(scalar(@$unfiltered_slices));
-
     my $slices = $self->param('include_reference')
                     ? $unfiltered_slices
                     : [ grep { not $_->is_reference() } @$unfiltered_slices ];
 
-    if(scalar(@$slices)) {
+    my $final_slices = ( ! $self->param('include_patches') ) ?
+                       [ grep { $_->assembly_exception_type() !~ /PATCH/ } @$slices ]
+                       : [ @$slices ];
 
-        $self->loadMembersFromCoreSlices( $slices );
+    if(scalar(@$final_slices)) {
+
+        $self->loadMembersFromCoreSlices( $final_slices );
 
     } else {
 
@@ -243,6 +246,7 @@ sub store_gene_and_all_transcripts {
   my $gene = shift;
 
   my $member_adaptor = $self->compara_dba->get_MemberAdaptor();
+  my $sequence_adaptor = $self->compara_dba->get_SequenceAdaptor();
   
   my @canonicalPeptideMember;
   my $gene_member;
@@ -331,6 +335,12 @@ sub store_gene_and_all_transcripts {
 
     my $stable_id = $pep_member->stable_id;
     $member_adaptor->store($pep_member);
+    if ($self->param('store_related_pep_sequences')) {
+        $sequence_adaptor->store_sequence_cds($pep_member);
+        $pep_member->sequence_cds('');
+        $sequence_adaptor->store_sequence_exon_bounded($pep_member);
+        $pep_member->sequence_exon_bounded('');
+    }
 
     $member_adaptor->store_gene_peptide_link($gene_member->dbID, $pep_member->dbID);
     print(" : stored\n") if($self->param('verbose'));

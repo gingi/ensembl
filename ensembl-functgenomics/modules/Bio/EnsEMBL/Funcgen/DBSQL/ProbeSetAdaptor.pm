@@ -74,10 +74,12 @@ use Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor;
 use vars qw(@ISA);
 @ISA = qw(Bio::EnsEMBL::Funcgen::DBSQL::BaseAdaptor);
 
-#Exported from BaseAdaptor
-$true_tables{probe_set} = [['probe_set', 'ps']];
-@{$tables{probe_set}} = @{$true_tables{probe_set}};
+#Query extension stuff
+use constant TRUE_TABLES => [[ 'probe_set', 'ps' ]];
+use constant TABLES      => [[ 'probe_set', 'ps' ]];
 
+
+#Not currently using final clause as we don't group by default
 
 =head2 fetch_by_array_probeset_name
 
@@ -101,26 +103,19 @@ sub fetch_by_array_probeset_name{
 	  throw('Must provide array_name and probeset_name arguments'); 
 	}
 	
-
 	#Extend query tables
-	push @{$tables{probe_set}}, (['probe', 'p'], ['array_chip', 'ac'], ['array', 'a']);
-	
-	#Extend query and group
-	#This needs generic_fetch_bind_param
+  push @{$self->TABLES}, (['probe', 'p'], ['array_chip', 'ac'], ['array', 'a']);
+  
 	my $constraint = 'ps.name= ? AND ps.probe_set_id=p.probe_set_id AND p.array_chip_id=ac.array_chip_id AND ac.array_id=a.array_id AND a.name= ? GROUP by ps.probe_set_id';
-	
-	#my $constraint = 'ps.name="'.$probeset_name.'" and ps.probe_set_id=p.probe_set_id and p.array_chip_id=ac.array_chip_id and ac.array_id=a.array_id and a.name="'.$array_name.'" group by ps.probe_set_id';
-	
-	$self->bind_param_generic_fetch($probeset_name,SQL_VARCHAR);
-	$self->bind_param_generic_fetch($array_name,SQL_VARCHAR);
-
+		
+	#bind params as we have unsafe string args
+  $self->bind_param_generic_fetch($probeset_name, SQL_VARCHAR);
+	$self->bind_param_generic_fetch($array_name,    SQL_VARCHAR);
 
 	my $pset =  $self->generic_fetch($constraint)->[0];
-	#Reset tables
-	@{$tables{probe_set}} = @{$true_tables{probe_set}};
-  
-	return $pset;
+  $self->reset_true_tables;
 
+	return $pset;
 }
 
 
@@ -147,15 +142,11 @@ sub fetch_by_array_probeset_name{
 sub fetch_all_by_name{
   my ($self, $name) = @_;
 
-
   throw('Must provide a probeset name argument') if ! defined $name;
-
   $self->bind_param_generic_fetch($name, SQL_VARCHAR);
 
   return $self->generic_fetch('ps.name=?');
 }
-
-
 
 
 =head2 fetch_by_ProbeFeature
@@ -186,18 +177,14 @@ sub fetch_by_ProbeFeature {
 	
 	$self->db->is_stored_and_valid('Bio::EnsEMBL::Funcgen::ProbeFeature', $pfeature);
 
-	#Extend query tables
-	push @{$tables{probe_set}}, (['probe', 'p']);
-	
-	#Extend query and group
+	#Extend query
+  push @{$self->TABLES}, (['probe', 'p']);
 	my $pset =  $self->generic_fetch('p.probe_id='.$pfeature->probe_id.' and p.probe_set_id=ps.probe_set_id GROUP by ps.probe_set_id')->[0];
-
-	#Reset tables
-	@{$tables{probe_set}} = @{$true_tables{probe_set}};
-  
+  $self->reset_true_tables;
   
 	return $pset;
 }
+
 
 =head2 fetch_all_by_Array
 
@@ -210,6 +197,8 @@ Caller     : General
 Status     : At Risk
 
 =cut
+
+#This is quicker than query extension?
 
 sub fetch_all_by_Array {
   my $self  = shift;
@@ -247,7 +236,7 @@ sub fetch_all_by_Array {
 sub _tables {
 	my $self = shift;
 
-  	return @{$tables{probe_set}};
+  return @{$self->TABLES};
 }
 
 =head2 _columns

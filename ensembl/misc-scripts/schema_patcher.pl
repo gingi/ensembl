@@ -8,7 +8,7 @@ use File::Spec::Functions qw/:ALL/;
 use Getopt::Long qw( :config no_ignore_case auto_version );
 use IO::Dir;
 
-my $rcsid = '$Revision: 1.26 $';
+my $rcsid = '$Revision: 1.33 $';
 our ($VERSION) = $rcsid =~ /(\d+\.\d+)/;
 
 sub usage {
@@ -27,7 +27,8 @@ Usage:
   $indent [ --interactive 0|1 ]\\
   $indent [ --verbose ] [ --quiet ] \\
   $indent [ --mysql=optional_path ]  \\
-  $indent [ --fix ]
+  $indent [ --fix ] \\
+  $indent [ --fixlast ]
 
   $0 --help | --about
 
@@ -66,6 +67,16 @@ Usage:
   --fix             also go through all old patches to find any missing
                     patch (patching starts at release equal to the
                     oldest patch in the database) >>USE WITH CAUTION<<
+                    
+  --oldest          used in conjunction with --fix, this option allows control
+                    over how many releases are included in the fix. This option
+                    exists for users who have incomplete meta entries and
+                    wish to bring their database automatically up to date.
+                    
+  --fixlast         an extension of B<--oldest> and B<--fix>. This combines
+                    to patch the current and last release only, giving an easy
+                    way to patch a database post-handover without worrying 
+                    about ancient patches.
   
   --mysql           specify the location of the mysql binary if it is not on
                     \$PATH. Otherwise we default this to mysql
@@ -169,6 +180,22 @@ sub about {
 
         $0 -h host -u user -p password \\
           -r 66 -d my_database --fix --dryrun
+          
+      The genebuilder above has an evil twin who has mislaid their meta tables. 
+      --fix threatens to apply ancient patches but they know their database 
+      is correct until halfway through release 64. They wish to apply any
+      missing patches between release 64 and 66.
+      
+        $0 -h host -u user -p password -r 66 \\
+        -d my_database --fix --oldest 64
+      
+      The genebuilder above also has a doppleganger who decided they
+      wanted to patch for the last and current release of Ensembl alone. This
+      is useful for applying late patches. In this situation we will apply  
+      patches for the current release (67) and the previous release (66).
+
+        $0 -h host -u user -p password -r 67 \\
+        -d my_database --fixlast 
 
 ABOUT_END
 } ## end sub about
@@ -183,6 +210,8 @@ my $opt_cvsdir;
 my $opt_dryrun;
 my $opt_from;
 my $opt_fix;
+my $opt_oldest;
+my $opt_fixlast;
 my $opt_mysql = 'mysql';
 my $opt_interactive = 1;
 
@@ -200,6 +229,8 @@ if ( !GetOptions( 'host|h=s'     => \$opt_host,
                   'cvsdir=s'     => \$opt_cvsdir,
                   'dryrun|n!'    => \$opt_dryrun,
                   'fix!'         => \$opt_fix,
+                  'fixlast!'     => \$opt_fixlast,
+                  'oldest=i'     => \$opt_oldest,
                   'mysql=s'      => \$opt_mysql,
                   'interactive|i!' => \$opt_interactive,
                   'verbose|v!'   => \$opt_verbose,
@@ -368,6 +399,10 @@ while ( $sth->fetch() ) {
       $species = $value;
     }
     elsif ( $key eq 'patch' ) {
+      if(index($value, "\n") > -1) {
+        warn "The patch value '$value' in database '$database' has line-breaks. Remove them to silence this message";
+        $value =~ s/\n/ /g;
+      } 
       if($value =~ /^(patch_\d+_(\d+)_?[a-z]?\.sql)\|(.*)$/) {
         my $patch_ident   = $1;
         my $patch_release = $2;
@@ -434,6 +469,16 @@ while ( $sth->fetch() ) {
     }
   }
   
+  #Quick check if fix-last is active. If so we will hard-code some values
+  if($opt_fixlast) {
+    if(defined $schema_version) {
+      $opt_fix = 1;
+      $opt_oldest = ($schema_version == $latest_release) ? $latest_release : $latest_release - 1;
+      die "Cannot use --fixlast with a schema release too far from the latest release; oldest allowed is $opt_oldest" if $schema_version < ($opt_oldest);
+      printf("--fixlast is active. Will apply patches for version %d and up (if available)\n", $opt_oldest);
+    }
+  }
+  
   if ( $schema_version_ok &&
        $schema_type_ok &&
        ( !defined($opt_species) ||
@@ -470,9 +515,9 @@ while ( $sth->fetch() ) {
   # Now figure out what patches we need to apply to this database.
 
   my $start_version;
-
+  
   if ($opt_fix) {
-    $start_version = ( sort { $a <=> $b } keys %dbpatches )[0];
+    $start_version = $opt_oldest || ( sort { $a <=> $b } keys %dbpatches )[0];
     if ( !defined($start_version) ) {
       warn( sprintf( "No patches in database, " .
                        "beginning fix from release %d\n",

@@ -15,7 +15,7 @@ Bio::EnsEMBL::Compara::Graph::OrthoXMLWriter
     -SOURCE => 'Ensembl', -SOURCE_VERSION => 63, -HANDLE => $string_handle
   );
   
-  my $pt = $dba->get_ProteinTreeAdaptor()->fetch_node_by_node_id(2);
+  my $pt = $dba->get_GeneTreeAdaptor()->fetch_by_dbID(3);
   
   $w->write_trees($pt);
   $w->finish(); #YOU MUST CALL THIS TO WRITE THE FINAL TAG
@@ -58,7 +58,7 @@ $Author: mm14 $
 
 =head VERSION
 
-$Revision: 1.10 $
+$Revision: 1.12 $
 
 =head1 LICENSE
 
@@ -307,8 +307,8 @@ sub write_data {
   # Prints each tree
   $w->startTag("groups");
   foreach my $tree (@{$list_trees}) {
-    $self->_write_tree($tree);
-    $tree->release_tree() if ! $self->no_release_trees;
+    $self->_write_tree($tree->root);
+    $tree->root->release_tree() if ! $self->no_release_trees;
   }
   $w->endTag("groups");
 

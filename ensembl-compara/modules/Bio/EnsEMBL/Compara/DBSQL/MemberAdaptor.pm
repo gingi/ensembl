@@ -6,6 +6,7 @@ use Bio::EnsEMBL::Compara::Member;
 use Bio::EnsEMBL::Compara::Attribute;
 use Bio::EnsEMBL::Compara::DBSQL::SequenceAdaptor;
 use Bio::EnsEMBL::Compara::DBSQL::BaseAdaptor;
+use Bio::EnsEMBL::Utils::Scalar qw(:all);
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
 use Bio::EnsEMBL::Utils::Exception qw(throw warning stack_trace_dump deprecate);
 
@@ -35,6 +36,7 @@ sub member_cache {
   return $result ; 
 }  
 
+
 =head2 fetch_by_dbID
 
   Arg [1]    : int $id
@@ -47,6 +49,7 @@ sub member_cache {
   Caller     : general
 
 =cut
+
 sub fetch_by_dbID {
   my ($self,$id) = @_;
 
@@ -76,8 +79,6 @@ sub fetch_by_dbID {
 }
 
 
-
-
 sub fetch_by_dbIDs {
   my $self = shift;
 
@@ -86,15 +87,14 @@ sub fetch_by_dbIDs {
   return $self->generic_fetch($constraint);
 }
 
-sub fetch_all_by_sequence_id {
-  my ($self, $sequence_id) = @_;
 
-  $self->throw("sequence_id arg is required\n")
-    unless (defined($sequence_id));
+sub fetch_by_sequence_id {
+    my ($self, $sequence_id) = @_;
 
-  my $constraint = "m.sequence_id = $sequence_id";
-  return $self->generic_fetch($constraint);
+    my ($member) = @{ $self->generic_fetch( "m.sequence_id = $sequence_id", undef, "LIMIT 1" )};
+    return $member;
 }
+
 
 =head2 fetch_by_source_stable_id
 
@@ -350,7 +350,7 @@ sub _fetch_all_by_source_taxon_chr_name_start_end_strand_limit {
 
   my $constraint = "m.source_name = '$source_name' and m.taxon_id = $taxon_id 
                     and m.chr_name = '$chr_name' 
-                    and m.chr_start >= $chr_start and m.chr_end <= $chr_end 
+                    and m.chr_start >= $chr_start and m.chr_start <= $chr_end and m.chr_end <= $chr_end 
                     and m.chr_strand = $chr_strand";
 
   return $self->generic_fetch($constraint, undef, defined $limit ? "LIMIT $limit" : "");
@@ -413,21 +413,11 @@ sub fetch_all_by_relation {
                             fm.cigar_line)];
     $join = [[['family_member', 'fm'], 'm.member_id = fm.member_id', $extra_columns]];
   }
-  elsif ($relation->isa('Bio::EnsEMBL::Compara::Domain')) {
-    my $domain_id = $relation->dbID;
-    $constraint = "dm.domain_id = $domain_id";
-    my $extra_columns = [qw(dm.domain_id
-                            dm.member_id
-                            dm.member_start
-                            dm.member_end)];
-    $join = [[['domain_member', 'dm'], 'm.member_id = dm.member_id', $extra_columns]];
-  }
   elsif ($relation->isa('Bio::EnsEMBL::Compara::Homology')) {
     my $homology_id = $relation->dbID;
     $constraint .= "hm.homology_id = $homology_id";
     my $extra_columns = [qw(hm.homology_id
                             hm.member_id
-                            hm.peptide_member_id
                             hm.cigar_line
                             hm.perc_cov
                             hm.perc_id
@@ -440,6 +430,44 @@ sub fetch_all_by_relation {
 
   return $self->generic_fetch($constraint, $join);
 }
+
+sub fetch_all_by_Domain {
+    my ($self, $domain) = @_;
+    assert_ref($domain, 'Bio::EnsEMBL::Compara::Domain');
+
+    my $domain_id = $domain->dbID;
+    my $constraint = "dm.domain_id = $domain_id";
+    my $extra_columns = [qw(dm.domain_id dm.member_start dm.member_end)];
+    my $join = [[['domain_member', 'dm'], 'm.member_id = dm.member_id', $extra_columns]];
+
+    return $self->generic_fetch($constraint, $join);
+}
+
+
+=head2 fetch_all_by_MemberSet
+
+  Arg[1]     : MemberSet $set: Currently: Domain, Family, Homology and GeneTree
+                are supported
+  Example    : $family_members = $m_adaptor->fetch_all_by_MemberSet($family);
+  Description: Fetches from the database all the members attached to this set
+  Returntype : arrayref of Bio::EnsEMBL::Compara::Member
+  Exceptions : none
+  Caller     : general
+
+=cut
+
+sub fetch_all_by_MemberSet {
+    my ($self, $set) = @_;
+    assert_ref($set, 'Bio::EnsEMBL::Compara::MemberSet');
+    if (UNIVERSAL::isa($set, 'Bio::EnsEMBL::Compara::AlignedMemberSet')) {
+        return $self->db->get_AlignedMemberAdaptor->fetch_all_by_AlignedMemberSet($set);
+    } elsif (UNIVERSAL::isa($set, 'Bio::EnsEMBL::Compara::Domain')) {
+        return $self->fetch_all_by_Domain($set);
+    } else {
+        throw("$self is not a recognized MemberSet object\n");
+    }
+}
+
 
 
 =head2 fetch_all_by_subset_id
@@ -661,11 +689,17 @@ sub _objs_from_sth {
     
     my @_columns = $self->_columns;
     if (scalar keys %{$rowhash} > scalar @_columns) {
-      $attribute = new Bio::EnsEMBL::Compara::Attribute;
-      $attribute->member_id($rowhash->{'member_id'});
-      foreach my $autoload_method (keys %$rowhash) {
-        next if (grep /$autoload_method/,  @_columns);
-        $attribute->$autoload_method($rowhash->{$autoload_method});
+      if (exists $rowhash->{domain_id}) {
+        bless $member, 'Bio::EnsEMBL::Compara::MemberDomain';
+        $member->member_start($rowhash->{member_start});
+        $member->member_end($rowhash->{member_end});
+      } else {
+        $attribute = new Bio::EnsEMBL::Compara::Attribute;
+        $attribute->member_id($rowhash->{'member_id'});
+        foreach my $autoload_method (keys %$rowhash) {
+          next if (grep /$autoload_method/,  @_columns);
+          $attribute->$autoload_method($rowhash->{$autoload_method});
+        }
       }
     }
     if (defined $attribute) {
@@ -677,38 +711,6 @@ sub _objs_from_sth {
   $sth->finish;
   return \@members
 }
-
-
-sub _fetch_sequence_by_id {
-  my ($self, $sequence_id) = @_;
-  return $self->db->get_SequenceAdaptor->fetch_by_dbID($sequence_id);
-}
-
-sub _fetch_sequence_exon_bounded_by_member_id {
-  my ($self, $member_id) = @_;
-  return $self->db->get_SequenceAdaptor->fetch_sequence_exon_bounded_by_member_id($member_id);
-}
-
-sub _fetch_sequence_cds_by_member_id {
-  my ($self, $member_id) = @_;
-  return $self->db->get_SequenceAdaptor->fetch_sequence_cds_by_member_id($member_id);
-}
-
-
-sub create_AlignedMember_from_member_attribute {    # deprecated method?
-  my $self = shift;
-  my $member_attribute = shift;
-
-  my ($gene_member, $attribute) = @{$member_attribute};
-  my $member = $self->fetch_by_dbID($attribute->peptide_member_id);
-
-  bless $member, "Bio::EnsEMBL::Compara::AlignedMember";
-  $member->cigar_line($attribute->cigar_line);
-  $member->adaptor(undef);
-
-  return $member;
-}
-
 
 
 #

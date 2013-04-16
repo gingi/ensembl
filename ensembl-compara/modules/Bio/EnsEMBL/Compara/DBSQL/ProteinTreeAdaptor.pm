@@ -42,11 +42,11 @@ Ensembl Team. Individual contributions can be found in the CVS log.
 
 =head1 MAINTAINER
 
-$Author: jh7 $
+$Author: mm14 $
 
 =head1 VERSION
 
-$Revision: 1.52 $
+$Revision: 1.55 $
 
 =head1 APPENDIX
 
@@ -58,17 +58,14 @@ Internal methods are usually preceded with an underscore (_)
 package Bio::EnsEMBL::Compara::DBSQL::ProteinTreeAdaptor;
 
 use strict;
+use Bio::EnsEMBL::Utils::Exception;
 
 use base ('Bio::EnsEMBL::Compara::DBSQL::GeneTreeNodeAdaptor');
 
-
-sub _default_where_clause {
-    return "tr.member_type = 'protein'";
-}
+deprecate('ProteinTreeAdaptor and NCTreeAdaptor are deprecated. Please use GeneTreeAdaptor to fetch trees or GeneTreeNodeAdaptor if you are interested in tree-node operations.');
 
 sub _default_member_type {
     return 'protein';
 }
-
 
 1;

@@ -30,9 +30,13 @@ sub default_options {
         
         force_species => [],
         
-        version => software_version(),
+        process_logic_names => [],
         
-        previous_version => (software_version() - 1),
+        skip_logic_names => [],
+        
+        release => software_version(),
+        
+        previous_release => (software_version() - 1),
         
         ### SCP code
         
@@ -42,10 +46,11 @@ sub default_options {
         
         scp_user => $self->o('ENV', 'USER'),
         scp_identity => '',
+        no_scp => 0,
         
         ### Defaults 
         
-        pipeline_name => 'fasta_dump_'.$self->o('version'),
+        pipeline_name => 'fasta_dump_'.$self->o('release'),
         
         wublast_exe => 'xdformat',
         blat_exe => 'faToTwoBit',
@@ -86,7 +91,6 @@ sub pipeline_analyses {
           4 => 'CopyDNA',
           5 => 'ChecksumGeneratorFactory'
         },
-        -rc_id => 1,
       },
       
       ######### DUMPING DATA
@@ -94,6 +98,10 @@ sub pipeline_analyses {
       {
         -logic_name => 'DumpDNA',
         -module     => 'Bio::EnsEMBL::Pipeline::FASTA::DumpFile',
+        -parameters => {
+          process_logic_names => $self->o('process_logic_names'),
+          skip_logic_names => $self->o('skip_logic_names'),
+        },
         -can_be_empty => 1,
         -flow_into  => {
           1 => 'ConcatFiles'
@@ -101,7 +109,7 @@ sub pipeline_analyses {
         -can_be_empty     => 1,
         -max_retry_count  => 1,
         -hive_capacity    => 10,
-        -rc_id => 3,
+        -rc_name          => 'dump',
       },
       
       {
@@ -114,17 +122,17 @@ sub pipeline_analyses {
         -max_retry_count  => 1,
         -hive_capacity    => 10,
         -can_be_empty     => 1,
-        -rc_id => 4,
+        -rc_name          => 'dump',
         -wait_for         => 'DumpDNA' #block until DNA is done
       },
       
       {
         -logic_name => 'ConcatFiles',
         -module     => 'Bio::EnsEMBL::Pipeline::FASTA::ConcatFiles',
-        -rc_id      => 1,
         -can_be_empty => 1,
+        -max_retry_count => 5,
         -flow_into  => {
-          1 => [qw/BlastDNAIndex BlatDNAIndex/]
+          1 => [qw/BlastDNAIndex BlatDNAIndex BlatSmDNAIndex/]
         },
       },
       
@@ -133,13 +141,11 @@ sub pipeline_analyses {
       {
         -logic_name => 'CopyDNA',
         -module     => 'Bio::EnsEMBL::Pipeline::FASTA::CopyDNA',
-        -rc_id      => 1,
         -can_be_empty => 1,
         -hive_capacity => 5,
         -parameters => {
           ftp_dir => $self->o('ftp_dir')
         },
-        -rc_id => 1,
       },
       
       ######## INDEXING
@@ -152,7 +158,7 @@ sub pipeline_analyses {
         },
         -hive_capacity => 10,
         -can_be_empty => 1,
-        -rc_id => 5,
+        -rc_name => 'indexing',
       },
       
       {
@@ -166,7 +172,6 @@ sub pipeline_analyses {
         -flow_into => {
           1 => [qw/SCPBlast/],
         },
-        -rc_id => 1,
       },
       
       {
@@ -180,7 +185,6 @@ sub pipeline_analyses {
         -flow_into => {
           1 => [qw/SCPBlast/],
         },
-        -rc_id => 1,
       },
       
       {
@@ -193,7 +197,20 @@ sub pipeline_analyses {
         },
         -can_be_empty => 1,
         -hive_capacity => 5,
-        -rc_id => 5,
+        -rc_name => 'indexing',
+      },
+      
+      {
+        -logic_name => 'BlatSmDNAIndex',
+        -module     => 'Bio::EnsEMBL::Pipeline::FASTA::BlatIndexer',
+        -parameters => {
+          port_offset => $self->o('port_offset'), 
+          program => $self->o('blat_exe'),
+          'index' => 'dna_sm' 
+        },
+        -can_be_empty => 1,
+        -hive_capacity => 5,
+        -rc_name => 'indexing',
       },
       
       ######## COPYING
@@ -208,10 +225,10 @@ sub pipeline_analyses {
           scp_user => $self->o('scp_user'),
           scp_identity => $self->o('scp_identity'),
           
+          no_scp => $self->o('no_scp'),
         },
         -hive_capacity => 3,
         -can_be_empty => 1,
-        -rc_id => 1,
         -wait_for => [qw/DumpDNA DumpGenes BlastDNAIndex BlastGeneIndex BlastPepIndex/]
       },
       
@@ -225,29 +242,25 @@ sub pipeline_analyses {
           input_id => { 'dir' => '#dir#' },
           fan_branch_code => 2,
         },
-        -rc_id => 1,
         -wait_for   => [qw/DumpDNA DumpGenes BlastDNAIndex BlastGeneIndex BlastPepIndex/],
         -flow_into  => { 2 => ['ChecksumGenerator'] } 
       },
       
       {
         -logic_name => 'ChecksumGenerator',
-        -module     => 'Bio::EnsEMBL::Pipeline::FASTA::ChecksumGenerator',
+        -module     => 'Bio::EnsEMBL::Pipeline::ChecksumGenerator',
         -hive_capacity => 10,
-        -rc_id      => 1,
       },
       
       ####### NOTIFICATION
       
       {
         -logic_name => 'Notify',
-        -module     => 'Bio::EnsEMBL::Hive::RunnableDB::NotifyByEmail',
+        -module     => 'Bio::EnsEMBL::Pipeline::FASTA::EmailSummary',
         -parameters => {
           email   => $self->o('email'),
           subject => $self->o('pipeline_name').' has finished',
-          text    => 'Your pipeline has finished. Please consult the hive output'
         },
-        -rc_id      => 1,
         -wait_for   => ['SCPBlast', 'ChecksumGenerator'],
       }
     
@@ -261,8 +274,8 @@ sub pipeline_wide_parameters {
         %{ $self->SUPER::pipeline_wide_parameters() },  # inherit other stuff from the base class
         base_path => $self->o('base_path'), 
         db_types => $self->o('db_types'),
-        version => $self->o('version'),
-        previous_version => $self->o('previous_version'),
+        release => $self->o('release'),
+        previous_release => $self->o('previous_release'),
     };
 }
 
@@ -275,11 +288,8 @@ sub beekeeper_extra_cmdline_options {
 sub resource_classes {
     my $self = shift;
     return {
-      0 => { -desc => 'default',      'LSF' => '-q normal -M1000000 -R"select[mem>1000] rusage[mem=1000]"'},
-      1 => { -desc => 'small',        'LSF' => '-q normal -M300000 -R"select[mem>300] rusage[mem=300]"'},
-      3 => { -desc => 'long_lowmem',  'LSF' => '-q long -M1000000 -R"select[mem>1000] rusage[mem=1000]"'},
-      4 => { -desc => 'long_himem',   'LSF' => '-q long -M3000000 -R"select[mem>3000] rusage[mem=3000]"'},
-      5 => { -desc => 'himem',        'LSF' => '-q normal -M3000000 -R"select[mem>3000] rusage[mem=3000]"'},
+      'dump'      => { LSF => '-q long -M1000000 -R"select[mem>1000] rusage[mem=1000]"' },
+      'indexing'  => { LSF => '-q normal -M2000000 -R"select[mem>2000] rusage[mem=2000]"' },
     }
 }
 

@@ -238,6 +238,11 @@
     2.  Load the schema from 'tables.sql' located in
         ensembl/misc-scripts/ontology/sql/
 
+    3.  Update the url for SO.obo file in script 'get_OBO_files.ksh' to the latest
+        released version, if the version is not already up to date.
+        Check directory: http://sourceforge.net/projects/song/files/Sequence%20Ontology/
+	for available releases of the SO.obo file.
+
     3.  Run script 'get_OBO_files.ksh' to download all the currently
 	handled ontologies.
 	perl get_OBO_files.ksh 
@@ -270,4 +275,4 @@
     8.  Copy the newly created database to ens-staging2 using ensembl/misc-srcipts/CopyDBOverServer.pl script.
 
 
-$Id: README,v 1.22 2012-03-06 12:11:48 mk8 Exp $
+$Id: README,v 1.24 2012-05-28 12:24:21 mk8 Exp $

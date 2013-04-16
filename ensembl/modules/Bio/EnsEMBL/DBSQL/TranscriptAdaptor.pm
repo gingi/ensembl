@@ -482,6 +482,8 @@ sub fetch_all_by_Slice {
   Arg [2]    : (optional) String $external_db_name
                The name of the external database from which the
                identifier originates.
+  Arg [3]    : Boolean override. Force SQL regex matching for users
+               who really do want to find all 'NM%'
   Example    : my @transcripts =
                   @{ $tr_adaptor->fetch_all_by_external_name( 'NP_065811.1') };
                my @more_transcripts = 
@@ -498,6 +500,9 @@ sub fetch_all_by_Slice {
                If no transcripts with the external identifier are found,
                a reference to an empty list is returned.
                SQL wildcards % and _ are supported in the $external_name
+               but their use is somewhat restricted for performance reasons.
+               Users that really do want % and _ in the first three characters
+               should use argument 3 to prevent optimisations
   Returntype : listref of Bio::EnsEMBL::Transcript
   Exceptions : none
   Caller     : general
@@ -506,13 +511,13 @@ sub fetch_all_by_Slice {
 =cut
 
 sub fetch_all_by_external_name {
-  my ( $self, $external_name, $external_db_name ) = @_;
+  my ( $self, $external_name, $external_db_name, $override) = @_;
 
   my $entryAdaptor = $self->db->get_DBEntryAdaptor();
 
   my @ids =
     $entryAdaptor->list_transcript_ids_by_extids( $external_name,
-                                                  $external_db_name );
+                                                  $external_db_name, $override );
 
   return $self->fetch_all_by_dbID_list( \@ids );
 }
@@ -1064,6 +1069,14 @@ sub store {
   $attr_adaptor->store_on_Transcript( $transc_dbID,
                                     $transcript->get_all_Attributes() );
 
+  # store the IntronSupportingEvidence features
+  my $ise_adaptor = $db->get_IntronSupportingEvidenceAdaptor();
+  my $intron_supporting_evidence = $transcript->get_all_IntronSupportingEvidence();
+  foreach my $ise (@{$intron_supporting_evidence}) {
+    $ise_adaptor->store($ise);
+    $ise_adaptor->store_transcript_linkage($ise, $transcript, $transc_dbID);
+  }
+
   # Update the original transcript object - not the transfered copy that
   # we might have created.
   $original->dbID($transc_dbID);
@@ -1246,6 +1259,16 @@ sub remove {
   $sfsth->bind_param(1, $transcript->dbID, SQL_INTEGER);
   $sfsth->execute();
   $sfsth->finish();
+  
+  # delete the associated IntronSupportingEvidence and if the ISE had no more
+  # linked transcripts remove it
+  my $ise_adaptor = $self->db->get_IntronSupportingEvidenceAdaptor();
+  foreach my $ise (@{$transcript->get_all_IntronSupportingEvidence()}) {
+    $ise_adaptor->remove_transcript_linkage($ise, $transcript);
+    if(! $ise->has_linked_transcripts()) {
+      $ise_adaptor->remove($ise);
+    }
+  }
 
   # remove all xref linkages to this transcript
 
@@ -1539,9 +1562,21 @@ sub _objs_from_sth {
     #
     if($dest_mapper) {
 
-      ($seq_region_id,$seq_region_start,$seq_region_end,$seq_region_strand) =
-        $dest_mapper->fastmap($sr_name, $seq_region_start, $seq_region_end,
-                              $seq_region_strand, $sr_cs);
+      if (defined $dest_slice && $dest_mapper->isa('Bio::EnsEMBL::ChainedAssemblyMapper')  ) {
+	    ( $seq_region_id,  $seq_region_start,
+	      $seq_region_end, $seq_region_strand )
+		=
+		$dest_mapper->map( $sr_name, $seq_region_start, $seq_region_end,
+                          $seq_region_strand, $sr_cs, 1, $dest_slice);
+
+      } else {
+
+	    ( $seq_region_id,  $seq_region_start,
+	      $seq_region_end, $seq_region_strand )
+		= $dest_mapper->fastmap( $sr_name, $seq_region_start,
+                                 $seq_region_end, $seq_region_strand,
+                                 $sr_cs );
+      }
 
       #skip features that map to gaps or coord system boundaries
       next FEATURE if(!defined($seq_region_id));
