@@ -1,0 +1,20 @@
+[submodule "ensembl"]
+	path = ensembl
+	url = git://github.com/ensembl/ensembl.git
+	branch = release/75
+[submodule "ensembl-variation"]
+	path = ensembl-variation
+	url = git://github.com/ensembl/ensembl-variation.git
+	branch = release/75
+[submodule "ensembl-funcgen"]
+	path = ensembl-funcgen
+	url = git://github.com/ensembl/ensembl-funcgen.git
+	branch = release/75
+[submodule "ensembl-compara"]
+	path = ensembl-compara
+	url = git://github.com/ensembl/ensembl-compara.git
+	branch = release/75
+[submodule "ensembl-tools"]
+	path = ensembl-tools
+	url = git://github.com/ensembl/ensembl-tools.git
+	branch = release/75

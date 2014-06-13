@@ -1,21 +1,34 @@
-#The EnsEMBL Perl API
-Ported from the official EnsEMBL CVS repository (`cvs.sanger.ac.uk:/cvsroot/ensembl`). Includes:
+#The EnsEMBL API
 
-* The EnsEMBL Core API
-* The EnsEMBL Compara API
-* The EnsEMBL FuncGen API
-* The EnsEMBL Variation API
-* The EnsEMBL External API
-* EnsEMBL tools
+**[Release 75][release-75]**
 
-The mirror is maintained manually, including release branches between Version 67 and 71. It does not, unfortunately, retain the entire CVS history in the original repository. However, I've included CVS metadata in case you wish to check out older or more fine-grained file sets.
+A collection of Ensembl API modules maintained at [Github/Ensembl][gh-ens]. This is just a convenience repository that aggregates those modules in one place.
 
-###Importing CVS revisions
+Please see [the main Ensembl page on Github][gh-ens] for more information.
 
-I've tried really hard to make the import of the CVS history automatic. I used [git cvsimport][1], [cvs2git][2], but to no avail. In the meantime, a script (`cvsimport.sh`) is included for automatic import of a specified release branch.
+###Contents:
 
-[1]: https://www.kernel.org/pub/software/scm/git/docs/git-cvsimport.html
-[2]: http://cvs2svn.tigris.org/cvs2git.html
+* `ensembl/`: [The EnsEMBL Core API](https://github.com/ensembl/ensembl)
+* `ensembl-compara/`: [The EnsEMBL Compara API](https://github.com/ensembl/ensembl-compara)
+* `ensembl-funcgen/`: [The EnsEMBL FuncGen API](https://github.com/ensembl/ensembl-funcgen)
+* `ensembl-variation/`: [The EnsEMBL Variation API](https://github.com/ensembl/ensembl-variation)
+* `ensembl-tools/`: [EnsEMBL tools](https://github.com/ensembl/ensembl-tools)
+
+###Installation
+
+    git clone --recursive git://github.com/gingi/ensembl
+
+This will automatically fetch all the submodules. To do so manually after the repository has been cloned:
+
+    git submodule update --init
+
+###Upgrading to the latest Ensembl sources
+
+    git submodule foreach git pull origin master
+
 
 ###Author
 Shiran Pasternak <shiranpasternak@gmail.com>
+
+ [gh-ens]: https://github.com/Ensembl
+ [release-75]: http://ensembl.info/blog/2014/02/27/ensembl-75-has-been-released
